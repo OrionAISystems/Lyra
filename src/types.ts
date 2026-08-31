@@ -68,6 +68,12 @@ export interface SessionSnapshot {
   fallbackReason: string | null;
 }
 
+export interface HotkeyStatus {
+  hotkey: string;
+  registered: boolean;
+  error: string | null;
+}
+
 export interface TranscriptionResult {
   text: string;
   backend: string;

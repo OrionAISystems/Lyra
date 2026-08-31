@@ -43,6 +43,7 @@ import {
   saveSettings,
   saveOpenAiCredential,
   clearOpenAiCredential,
+  getHotkeyStatus,
   showSettings,
   startDictation,
   stopDictation,
@@ -52,6 +53,7 @@ import type {
   DictationState,
   LanguagePreference,
   AudioDeviceInfo,
+  HotkeyStatus,
   RuntimeStatus,
   SessionSnapshot,
   Settings,
@@ -92,6 +94,12 @@ const initialSession: SessionSnapshot = {
   fallbackReason: null,
 };
 
+const initialHotkey: HotkeyStatus = {
+  hotkey: defaultSettings.hotkey,
+  registered: false,
+  error: "Waiting for Lyra to finish startup",
+};
+
 const sectionLabels: Record<SettingsSection, string> = {
   general: "General",
   dictation: "Dictation",
@@ -111,11 +119,13 @@ function useLyraState() {
   const [devices, setDevices] = useState<AudioDeviceInfo[]>([]);
   const [credentialConfigured, setCredentialConfigured] = useState(false);
   const [artifacts, setArtifacts] = useState<SetupArtifact[]>([]);
+  const [hotkeyStatus, setHotkeyStatus] = useState<HotkeyStatus>(initialHotkey);
 
   const refresh = useCallback(async () => {
-    const [loadedSettings, loadedRuntime, loadedArtifacts, loadedSession, loadedDevices, loadedCredential] = await Promise.all([
+    const [loadedSettings, loadedRuntime, loadedHotkey, loadedArtifacts, loadedSession, loadedDevices, loadedCredential] = await Promise.all([
       getSettings(),
       getRuntimeStatus(),
+      getHotkeyStatus(),
       getSetupArtifacts(),
       getSessionSnapshot(),
       listAudioDevices(),
@@ -123,6 +133,7 @@ function useLyraState() {
     ]);
     if (loadedSettings) setSettings(loadedSettings);
     if (loadedRuntime) setRuntime(loadedRuntime);
+    if (loadedHotkey) setHotkeyStatus(loadedHotkey);
     setArtifacts(loadedArtifacts);
     if (loadedSession) setSession(loadedSession);
     setDevices(loadedDevices);
@@ -136,6 +147,7 @@ function useLyraState() {
       onState: setSession,
       onInputLevel: (inputLevel) => setSession((current) => ({ ...current, inputLevel })),
       onRuntimeStatus: setRuntime,
+      onHotkeyStatus: setHotkeyStatus,
       onResult: (result) => {
         setLastResult(result);
         setSession((current) => ({
@@ -159,7 +171,7 @@ function useLyraState() {
     if (saved) setSettings(saved);
   }, [settings]);
 
-  return { settings, runtime, session, lastResult, devices, credentialConfigured, artifacts, refresh, updateSettings, setCredentialConfigured };
+  return { settings, runtime, session, lastResult, devices, credentialConfigured, artifacts, hotkeyStatus, refresh, updateSettings, setCredentialConfigured };
 }
 
 function useWindowLabel() {
@@ -259,13 +271,13 @@ function DictationBar({ session, settings, runtime }: { session: SessionSnapshot
   );
 }
 
-function SetupChecklist({ runtime, settings, devices, artifacts }: { runtime: RuntimeStatus; settings: Settings; devices: AudioDeviceInfo[]; artifacts: SetupArtifact[] }) {
+function SetupChecklist({ runtime, settings, devices, artifacts, hotkeyStatus }: { runtime: RuntimeStatus; settings: Settings; devices: AudioDeviceInfo[]; artifacts: SetupArtifact[]; hotkeyStatus: HotkeyStatus }) {
   const checks = [
     { label: "Microphone available", done: devices.length > 0 || !isTauri, icon: Mic },
     { label: "GPU detected", done: Boolean(runtime.gpuName && runtime.gpuName !== "Detecting hardware…"), icon: Cpu },
     { label: "Native runtime verified", done: runtime.runtimeInstalled && runtime.runtimeVerified, icon: ShieldCheck },
     { label: "Parakeet model ready", done: runtime.modelInstalled && runtime.modelVerified, icon: Sparkles },
-    { label: `Hotkey · ${settings.hotkey}`, done: Boolean(settings.hotkey), icon: Keyboard },
+    { label: `Hotkey · ${hotkeyStatus.hotkey || settings.hotkey}`, done: !isTauri || hotkeyStatus.registered, icon: Keyboard },
     { label: "Recording path ready", done: true, icon: Radio },
   ];
   const ready = checks.every((check) => check.done);
@@ -288,6 +300,7 @@ function SetupChecklist({ runtime, settings, devices, artifacts }: { runtime: Ru
         ))}
       </div>
       <p className="muted-copy">Lyra keeps audio in memory and does not keep a transcript history. Runtime and model downloads are always explicit.</p>
+      {isTauri && !hotkeyStatus.registered && <div className="info-callout"><CircleHelp size={16} /><span>The global shortcut is unavailable: {hotkeyStatus.error ?? "another application may already be using it"}. The tray and dictation bar remain available.</span></div>}
       {artifacts.length > 0 && <div className="artifact-summary">{artifacts.map((artifact) => <span key={artifact.kind}><b>{artifact.kind === "runtime" ? "Runtime" : "Model"}</b> {formatBytes(artifact.sizeBytes)} · pinned {artifact.revision ?? "current"}</span>)}</div>}
     </div>
   );
@@ -479,7 +492,7 @@ function RouteIcon(_props: { size?: number }) {
   return <span className="route-icon" aria-hidden="true"><span /><span /><span /></span>;
 }
 
-function SettingsApp({ settings, runtime, session, lastResult, devices, credentialConfigured, artifacts, updateSettings, setCredentialConfigured, refresh }: ReturnType<typeof useLyraState>) {
+function SettingsApp({ settings, runtime, session, lastResult, devices, credentialConfigured, artifacts, hotkeyStatus, updateSettings, setCredentialConfigured, refresh }: ReturnType<typeof useLyraState>) {
   const [section, setSection] = useState<SettingsSection>("general");
   const [copied, setCopied] = useState(false);
   const [onboardingDismissed, setOnboardingDismissed] = useState(settings.onboardingComplete);
@@ -494,7 +507,7 @@ function SettingsApp({ settings, runtime, session, lastResult, devices, credenti
 
   const content = useMemo(() => {
     switch (section) {
-      case "general": return <><SetupChecklist runtime={runtime} settings={settings} devices={devices} artifacts={artifacts} /><GeneralSection settings={settings} updateSettings={updateSettings} /></>;
+      case "general": return <><SetupChecklist runtime={runtime} settings={settings} devices={devices} artifacts={artifacts} hotkeyStatus={hotkeyStatus} /><GeneralSection settings={settings} updateSettings={updateSettings} /></>;
       case "dictation": return <DictationSection settings={settings} updateSettings={updateSettings} />;
       case "audio": return <AudioSection settings={settings} devices={devices} updateSettings={updateSettings} />;
       case "language": return <LanguageSection settings={settings} updateSettings={updateSettings} />;
@@ -503,7 +516,7 @@ function SettingsApp({ settings, runtime, session, lastResult, devices, credenti
       case "appearance": return <AppearanceSection settings={settings} updateSettings={updateSettings} />;
       case "diagnostics": return <DiagnosticsSection runtime={runtime} session={session} refresh={refresh} />;
     }
-  }, [lastResult, refresh, runtime, section, session, settings, updateSettings]);
+  }, [hotkeyStatus, lastResult, refresh, runtime, section, session, settings, updateSettings]);
 
   return <main className="settings-shell">
     <aside className="sidebar">

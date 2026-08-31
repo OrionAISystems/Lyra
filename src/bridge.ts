@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { AudioDeviceInfo, RuntimeStatus, SessionSnapshot, Settings, SetupArtifact, TranscriptionResult } from "./types";
+import type { AudioDeviceInfo, HotkeyStatus, RuntimeStatus, SessionSnapshot, Settings, SetupArtifact, TranscriptionResult } from "./types";
 
 export const isTauri = "__TAURI_INTERNALS__" in window;
 
@@ -19,6 +19,10 @@ export async function saveSettings(settings: Settings): Promise<Settings | null>
 
 export async function getRuntimeStatus(): Promise<RuntimeStatus | null> {
   return command<RuntimeStatus>("get_runtime_status");
+}
+
+export async function getHotkeyStatus(): Promise<HotkeyStatus | null> {
+  return command<HotkeyStatus>("get_hotkey_status");
 }
 
 export async function getSetupArtifacts(): Promise<SetupArtifact[]> {
@@ -77,6 +81,7 @@ export async function listenToLyraEvents(handlers: {
   onState: (snapshot: SessionSnapshot) => void;
   onInputLevel: (level: number) => void;
   onRuntimeStatus: (status: RuntimeStatus) => void;
+  onHotkeyStatus: (status: HotkeyStatus) => void;
   onResult: (result: TranscriptionResult) => void;
 }): Promise<UnlistenFn[]> {
   if (!isTauri) return [];
@@ -84,6 +89,7 @@ export async function listenToLyraEvents(handlers: {
     listen<SessionSnapshot>("lyra://state", (event) => handlers.onState(event.payload)),
     listen<number>("lyra://input-level", (event) => handlers.onInputLevel(event.payload)),
     listen<RuntimeStatus>("lyra://runtime-status", (event) => handlers.onRuntimeStatus(event.payload)),
+    listen<HotkeyStatus>("lyra://hotkey-status", (event) => handlers.onHotkeyStatus(event.payload)),
     listen<TranscriptionResult>("lyra://transcription-result", (event) => handlers.onResult(event.payload)),
   ]);
   return unlisteners;

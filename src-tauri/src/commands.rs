@@ -4,6 +4,7 @@ use std::{
     time::Instant,
 };
 
+use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
@@ -37,8 +38,17 @@ pub struct AppState {
     pub target: Option<TargetContext>,
     pub last_transcript: Option<String>,
     pub last_result: Option<TranscriptionResult>,
+    pub hotkey_status: HotkeyStatus,
     pub app: AppHandle,
     pub started_at: Option<Instant>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HotkeyStatus {
+    pub hotkey: String,
+    pub registered: bool,
+    pub error: Option<String>,
 }
 
 impl AppState {
@@ -63,6 +73,11 @@ impl AppState {
             target: None,
             last_transcript: None,
             last_result: None,
+            hotkey_status: HotkeyStatus {
+                hotkey: settings_value.hotkey,
+                registered: false,
+                error: Some("Hotkey registration has not completed".to_owned()),
+            },
             app,
             started_at: None,
         }
@@ -76,6 +91,12 @@ impl AppState {
 
     pub fn emit_runtime_status(&self, status: RuntimeStatus) {
         let _ = self.app.emit("lyra://runtime-status", status);
+    }
+
+    pub fn emit_hotkey_status(&self) {
+        let _ = self
+            .app
+            .emit("lyra://hotkey-status", self.hotkey_status.clone());
     }
 
     pub fn duration_ms(&self) -> u64 {
@@ -94,10 +115,31 @@ impl AppState {
 
 pub fn initialize(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let settings = app.state::<Arc<Mutex<AppState>>>().inner().clone();
-    register_hotkey(app, settings)?;
+    let hotkey_label = settings
+        .lock()
+        .map(|state| state.settings.get().hotkey)
+        .unwrap_or_else(|_| "Ctrl+Alt+Space".to_owned());
+    let hotkey_status = match register_hotkey(app, settings) {
+        Ok(()) => HotkeyStatus {
+            hotkey: hotkey_label,
+            registered: true,
+            error: None,
+        },
+        Err(error) => {
+            let message = error.to_string();
+            warn!(hotkey = %hotkey_label, error = %message, "global shortcut unavailable; bar and tray remain available");
+            HotkeyStatus {
+                hotkey: hotkey_label,
+                registered: false,
+                error: Some(message),
+            }
+        }
+    };
     create_tray(app)?;
     let runtime = app.state::<Arc<Mutex<AppState>>>().inner().clone();
-    if let Ok(state) = runtime.lock() {
+    if let Ok(mut state) = runtime.lock() {
+        state.hotkey_status = hotkey_status;
+        state.emit_hotkey_status();
         state.emit_runtime_status(state.runtime.status());
         state.emit_state();
     }
@@ -187,6 +229,14 @@ pub fn get_settings(state: State<'_, Arc<Mutex<AppState>>>) -> Result<Settings, 
     state
         .lock()
         .map(|state| state.settings.get())
+        .map_err(|_| "state lock poisoned".to_owned())
+}
+
+#[tauri::command]
+pub fn get_hotkey_status(state: State<'_, Arc<Mutex<AppState>>>) -> Result<HotkeyStatus, String> {
+    state
+        .lock()
+        .map(|state| state.hotkey_status.clone())
         .map_err(|_| "state lock poisoned".to_owned())
 }
 

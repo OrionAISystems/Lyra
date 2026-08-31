@@ -61,6 +61,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_settings,
+            commands::get_hotkey_status,
             commands::save_settings,
             commands::get_runtime_status,
             commands::get_setup_artifacts,
