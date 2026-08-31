@@ -275,10 +275,35 @@ fn find_library(root: &Path) -> Option<PathBuf> {
                 .and_then(|name| name.to_str())
                 .unwrap_or_default()
                 .to_ascii_lowercase();
-            if name.contains("nemo") || name.contains("speech") {
+            // The archive includes both the C++ ABI DLL and the stable C ABI
+            // DLL. Only the latter matches the function table above; loading
+            // the generic ASR library first would make an installed runtime
+            // appear broken even though the correct DLL is present.
+            if name == "nemo_speech_asr_c.dll" {
                 return Some(path);
             }
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::find_library;
+    use std::fs;
+
+    #[test]
+    fn finds_the_stable_c_abi_library_when_cpp_dll_is_also_present() {
+        let root =
+            std::env::temp_dir().join(format!("lyra-native-loader-{}", uuid::Uuid::new_v4()));
+        let bin = root.join("bin");
+        fs::create_dir_all(&bin).expect("create test runtime");
+        let cpp = bin.join("nemo_speech_asr.dll");
+        let c_abi = bin.join("nemo_speech_asr_c.dll");
+        fs::write(&cpp, b"cpp").expect("write C++ ABI fixture");
+        fs::write(&c_abi, b"c").expect("write C ABI fixture");
+
+        assert_eq!(find_library(&root), Some(c_abi));
+        fs::remove_dir_all(root).expect("remove test runtime");
+    }
 }
