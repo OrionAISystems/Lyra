@@ -125,6 +125,7 @@ impl SettingsStore {
         store
     }
 
+    #[cfg(test)]
     pub fn in_memory(settings: Settings) -> Self {
         Self {
             path: PathBuf::from("settings.json"),
@@ -144,10 +145,6 @@ impl SettingsStore {
             "settings updated"
         );
         Ok(self.settings.clone())
-    }
-
-    pub fn path(&self) -> &PathBuf {
-        &self.path
     }
 
     fn persist(&self) -> Result<(), SettingsError> {

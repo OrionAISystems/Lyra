@@ -175,10 +175,6 @@ impl OpenAiTranscriptionBackend {
             client,
         })
     }
-
-    pub fn credentials(&self) -> &CredentialStore {
-        &self.credentials
-    }
 }
 
 #[derive(Debug, Deserialize)]

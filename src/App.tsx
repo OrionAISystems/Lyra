@@ -31,6 +31,7 @@ import {
   cancelDictation,
   copyLastTranscript,
   getRuntimeStatus,
+  getSetupArtifacts,
   getSessionSnapshot,
   getSettings,
   hasOpenAiCredential,
@@ -54,6 +55,7 @@ import type {
   RuntimeStatus,
   SessionSnapshot,
   Settings,
+  SetupArtifact,
   TranscriptionRoute,
   TranscriptionResult,
 } from "./types";
@@ -108,17 +110,20 @@ function useLyraState() {
   const [lastResult, setLastResult] = useState<TranscriptionResult | null>(null);
   const [devices, setDevices] = useState<AudioDeviceInfo[]>([]);
   const [credentialConfigured, setCredentialConfigured] = useState(false);
+  const [artifacts, setArtifacts] = useState<SetupArtifact[]>([]);
 
   const refresh = useCallback(async () => {
-    const [loadedSettings, loadedRuntime, loadedSession, loadedDevices, loadedCredential] = await Promise.all([
+    const [loadedSettings, loadedRuntime, loadedArtifacts, loadedSession, loadedDevices, loadedCredential] = await Promise.all([
       getSettings(),
       getRuntimeStatus(),
+      getSetupArtifacts(),
       getSessionSnapshot(),
       listAudioDevices(),
       hasOpenAiCredential(),
     ]);
     if (loadedSettings) setSettings(loadedSettings);
     if (loadedRuntime) setRuntime(loadedRuntime);
+    setArtifacts(loadedArtifacts);
     if (loadedSession) setSession(loadedSession);
     setDevices(loadedDevices);
     setCredentialConfigured(loadedCredential);
@@ -154,7 +159,7 @@ function useLyraState() {
     if (saved) setSettings(saved);
   }, [settings]);
 
-  return { settings, runtime, session, lastResult, devices, credentialConfigured, refresh, updateSettings, setCredentialConfigured };
+  return { settings, runtime, session, lastResult, devices, credentialConfigured, artifacts, refresh, updateSettings, setCredentialConfigured };
 }
 
 function useWindowLabel() {
@@ -254,7 +259,7 @@ function DictationBar({ session, settings, runtime }: { session: SessionSnapshot
   );
 }
 
-function SetupChecklist({ runtime, settings, devices }: { runtime: RuntimeStatus; settings: Settings; devices: AudioDeviceInfo[] }) {
+function SetupChecklist({ runtime, settings, devices, artifacts }: { runtime: RuntimeStatus; settings: Settings; devices: AudioDeviceInfo[]; artifacts: SetupArtifact[] }) {
   const checks = [
     { label: "Microphone available", done: devices.length > 0 || !isTauri, icon: Mic },
     { label: "GPU detected", done: Boolean(runtime.gpuName && runtime.gpuName !== "Detecting hardware…"), icon: Cpu },
@@ -283,6 +288,7 @@ function SetupChecklist({ runtime, settings, devices }: { runtime: RuntimeStatus
         ))}
       </div>
       <p className="muted-copy">Lyra keeps audio in memory and does not keep a transcript history. Runtime and model downloads are always explicit.</p>
+      {artifacts.length > 0 && <div className="artifact-summary">{artifacts.map((artifact) => <span key={artifact.kind}><b>{artifact.kind === "runtime" ? "Runtime" : "Model"}</b> {formatBytes(artifact.sizeBytes)} · pinned {artifact.revision ?? "current"}</span>)}</div>}
     </div>
   );
 }
@@ -473,7 +479,7 @@ function RouteIcon(_props: { size?: number }) {
   return <span className="route-icon" aria-hidden="true"><span /><span /><span /></span>;
 }
 
-function SettingsApp({ settings, runtime, session, lastResult, devices, credentialConfigured, updateSettings, setCredentialConfigured, refresh }: ReturnType<typeof useLyraState>) {
+function SettingsApp({ settings, runtime, session, lastResult, devices, credentialConfigured, artifacts, updateSettings, setCredentialConfigured, refresh }: ReturnType<typeof useLyraState>) {
   const [section, setSection] = useState<SettingsSection>("general");
   const [copied, setCopied] = useState(false);
   const [onboardingDismissed, setOnboardingDismissed] = useState(settings.onboardingComplete);
@@ -488,7 +494,7 @@ function SettingsApp({ settings, runtime, session, lastResult, devices, credenti
 
   const content = useMemo(() => {
     switch (section) {
-      case "general": return <><SetupChecklist runtime={runtime} settings={settings} devices={devices} /><GeneralSection settings={settings} updateSettings={updateSettings} /></>;
+      case "general": return <><SetupChecklist runtime={runtime} settings={settings} devices={devices} artifacts={artifacts} /><GeneralSection settings={settings} updateSettings={updateSettings} /></>;
       case "dictation": return <DictationSection settings={settings} updateSettings={updateSettings} />;
       case "audio": return <AudioSection settings={settings} devices={devices} updateSettings={updateSettings} />;
       case "language": return <LanguageSection settings={settings} updateSettings={updateSettings} />;

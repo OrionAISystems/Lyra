@@ -46,6 +46,17 @@ export interface RuntimeStatus {
   lastError: string | null;
 }
 
+export interface SetupArtifact {
+  kind: "runtime" | "model";
+  name: string;
+  source: string;
+  sizeBytes: number;
+  destination: string;
+  checksumSource: string;
+  revision: string | null;
+  license: string | null;
+}
+
 export interface SessionSnapshot {
   state: DictationState;
   durationMs: number;

@@ -18,7 +18,7 @@ use crate::{
         ConservativePostProcessor, DictationState, DictationStateMachine, PostProcessor,
         SessionEvent, SessionSnapshot, ShortcutEdge, TranscriptionRequest, TranscriptionResult,
     },
-    runtime::{RuntimeManager, RuntimeStatus},
+    runtime::{RuntimeManager, RuntimeStatus, SetupArtifact},
     settings::{Settings, SettingsStore},
     transcription::TranscriptionRouter,
     windows::{capture_foreground_target, place_bar_on_target_monitor, TargetContext},
@@ -230,6 +230,14 @@ pub fn get_runtime_status(state: State<'_, Arc<Mutex<AppState>>>) -> Result<Runt
     let status = state.runtime.refresh();
     state.emit_runtime_status(status.clone());
     Ok(status)
+}
+
+#[tauri::command]
+pub fn get_setup_artifacts(
+    state: State<'_, Arc<Mutex<AppState>>>,
+) -> Result<Vec<SetupArtifact>, String> {
+    let state = state.lock().map_err(|_| "state lock poisoned".to_owned())?;
+    Ok(state.runtime.setup_artifacts())
 }
 
 #[tauri::command]

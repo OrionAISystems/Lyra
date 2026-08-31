@@ -3,12 +3,6 @@ pub struct TargetContext {
     pub hwnd: isize,
 }
 
-impl TargetContext {
-    pub fn is_valid(self) -> bool {
-        self.hwnd != 0
-    }
-}
-
 #[cfg(windows)]
 mod platform {
     use std::{mem::size_of, thread, time::Duration};

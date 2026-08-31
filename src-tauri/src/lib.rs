@@ -46,12 +46,24 @@ pub fn run() {
             let state = AppState::new(settings, runtime, audio, router, app.handle().clone());
             app.manage(Arc::new(Mutex::new(state)));
             commands::initialize(app.handle())?;
+            if app
+                .state::<Arc<Mutex<AppState>>>()
+                .inner()
+                .lock()
+                .map(|state| state.settings.get().onboarding_complete)
+                .unwrap_or(false)
+            {
+                if let Some(settings_window) = app.get_webview_window("settings") {
+                    let _ = settings_window.hide();
+                }
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_settings,
             commands::save_settings,
             commands::get_runtime_status,
+            commands::get_setup_artifacts,
             commands::get_session_snapshot,
             commands::list_audio_devices,
             commands::start_dictation,

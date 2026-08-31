@@ -114,6 +114,9 @@ select:focus { border-color: rgba(138,216,206,.7); }
 .check-state { color: var(--accent); font-size: 9px; }
 .check-state--pending { color: var(--warn); }
 .muted-copy { margin: 15px 0 0; color: var(--faint); font-size: 10px; line-height: 1.5; }
+.artifact-summary { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 12px; color: var(--faint); font-size: 9px; }
+.artifact-summary span { display: inline-flex; align-items: center; gap: 4px; }
+.artifact-summary b { color: var(--muted); font-weight: 560; }
 .benchmark-card { display: flex; justify-content: space-between; gap: 18px; margin-top: 13px; padding: 15px; border: 1px solid var(--line); border-radius: 10px; background: rgba(138,216,206,.04); }
 .benchmark-card > div:first-child { display: flex; flex-direction: column; gap: 7px; }
 .benchmark-card strong { font-size: 11px; font-weight: 560; }

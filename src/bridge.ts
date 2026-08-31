@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { AudioDeviceInfo, RuntimeStatus, SessionSnapshot, Settings, TranscriptionResult } from "./types";
+import type { AudioDeviceInfo, RuntimeStatus, SessionSnapshot, Settings, SetupArtifact, TranscriptionResult } from "./types";
 
 export const isTauri = "__TAURI_INTERNALS__" in window;
 
@@ -19,6 +19,10 @@ export async function saveSettings(settings: Settings): Promise<Settings | null>
 
 export async function getRuntimeStatus(): Promise<RuntimeStatus | null> {
   return command<RuntimeStatus>("get_runtime_status");
+}
+
+export async function getSetupArtifacts(): Promise<SetupArtifact[]> {
+  return (await command<SetupArtifact[]>("get_setup_artifacts")) ?? [];
 }
 
 export async function getSessionSnapshot(): Promise<SessionSnapshot | null> {

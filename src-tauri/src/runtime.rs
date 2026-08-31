@@ -12,6 +12,24 @@ pub const RUNTIME_VERSION: &str = "0.1.0";
 pub const MODEL_NAME: &str = "parakeet-tdt-0.6b-v3.q8_0.gguf";
 pub const MODEL_REVISION: &str = "541d1f99c6b0c3cd0b11a95167540bb8edefd82b";
 pub const MODEL_SIZE_BYTES: u64 = 713_975_456;
+pub const RUNTIME_ARCHIVE_SIZE_BYTES: u64 = 106_044_768;
+pub const RUNTIME_ARCHIVE_URL: &str = "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.1.0/nemo-speech-0.1.0-windows-x86_64-cuda.zip";
+pub const RUNTIME_CHECKSUM_URL: &str = "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.1.0/nemo-speech-0.1.0-windows-x86_64-cuda.zip.sha256";
+pub const MODEL_SOURCE_URL: &str = "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3";
+pub const MODEL_DOWNLOAD_URL: &str = "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3/resolve/541d1f99c6b0c3cd0b11a95167540bb8edefd82b/parakeet-tdt-0.6b-v3.q8_0.gguf?download=true";
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetupArtifact {
+    pub kind: String,
+    pub name: String,
+    pub source: String,
+    pub size_bytes: u64,
+    pub destination: String,
+    pub checksum_source: String,
+    pub revision: Option<String>,
+    pub license: Option<String>,
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -46,6 +64,7 @@ impl RuntimeManager {
         Self { root, status }
     }
 
+    #[cfg(test)]
     pub fn for_tests(root: PathBuf) -> Self {
         let status = Arc::new(Mutex::new(Self::inspect(&root)));
         Self { root, status }
@@ -66,10 +85,6 @@ impl RuntimeManager {
         status
     }
 
-    pub fn root(&self) -> &Path {
-        &self.root
-    }
-
     pub fn model_path(&self) -> PathBuf {
         self.root.join("models").join(MODEL_NAME)
     }
@@ -81,6 +96,7 @@ impl RuntimeManager {
             .join(format!("windows-x86_64-{variant}"))
     }
 
+    #[allow(dead_code)]
     pub fn is_ready(&self) -> bool {
         let status = self.status();
         status.runtime_installed
@@ -89,6 +105,32 @@ impl RuntimeManager {
             && status.model_verified
     }
 
+    pub fn setup_artifacts(&self) -> Vec<SetupArtifact> {
+        vec![
+            SetupArtifact {
+                kind: "runtime".to_owned(),
+                name: "NeMo-Speech.cpp v0.1.0 · Windows x64 CUDA".to_owned(),
+                source: RUNTIME_ARCHIVE_URL.to_owned(),
+                size_bytes: RUNTIME_ARCHIVE_SIZE_BYTES,
+                destination: self.runtime_path("cuda").to_string_lossy().into_owned(),
+                checksum_source: RUNTIME_CHECKSUM_URL.to_owned(),
+                revision: Some(RUNTIME_VERSION.to_owned()),
+                license: Some("Apache-2.0".to_owned()),
+            },
+            SetupArtifact {
+                kind: "model".to_owned(),
+                name: MODEL_NAME.to_owned(),
+                source: MODEL_DOWNLOAD_URL.to_owned(),
+                size_bytes: MODEL_SIZE_BYTES,
+                destination: self.model_path().to_string_lossy().into_owned(),
+                checksum_source: MODEL_SOURCE_URL.to_owned(),
+                revision: Some(MODEL_REVISION.to_owned()),
+                license: Some("CC BY 4.0".to_owned()),
+            },
+        ]
+    }
+
+    #[allow(dead_code)]
     pub fn mark_runtime_verified(&self, variant: &str, sha256: &str) -> Result<(), RuntimeError> {
         let directory = self.runtime_path(variant);
         fs::create_dir_all(&directory)?;
@@ -110,6 +152,7 @@ impl RuntimeManager {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn mark_model_verified(&self, sha256: &str) -> Result<(), RuntimeError> {
         let model_dir = self.root.join("models");
         fs::create_dir_all(&model_dir)?;
