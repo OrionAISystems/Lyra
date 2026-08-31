@@ -31,6 +31,25 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci --no-audit --no-fund
 
+      - name: Validate updater signing key
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY)) {
+            throw "TAURI_SIGNING_PRIVATE_KEY must be configured before signing release artifacts."
+          }
+          $probe = Join-Path $env:RUNNER_TEMP "lyra-updater-signing-probe.txt"
+          Set-Content -LiteralPath $probe -Value "Lyra updater signing check" -NoNewline
+          try {
+            npm run tauri -- signer sign --password "" $probe
+            if ($LASTEXITCODE -ne 0) {
+              throw "Tauri updater signing key validation failed."
+            }
+          } finally {
+            Remove-Item -LiteralPath $probe, "$probe.sig" -Force -ErrorAction SilentlyContinue
+          }
+
       - name: Verify release version
         run: npm run verify:version
 
@@ -113,7 +132,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ steps.release-token.outputs.token }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
           projectPath: .
           tauriScript: npm run tauri

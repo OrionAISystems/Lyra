@@ -5,7 +5,7 @@ Lyra keeps source private in [`OrionAISystems/Lyra`](https://github.com/OrionAIS
 ## Release contract
 
 1. Update all version files together and run `npm run verify:version`.
-2. Replace the updater public-key marker in `src-tauri/tauri.conf.json`, then run `npm run verify:release-config`.
+2. Confirm the committed updater public key in `src-tauri/tauri.conf.json`, then run `npm run verify:release-config`.
 3. Push a protected `vX.Y.Z` tag to the private source repository.
 4. GitHub Actions runs frontend checks, Rust checks/tests, an unbundled Tauri validation build, then the NSIS build. Authenticode signing is applied when the optional Windows certificate is configured.
 5. The pinned Tauri Action publishes the installer, updater artifact and signature, `latest.json`, and the release notes to `Lyra-Releases`.
@@ -17,11 +17,11 @@ The public repository must remain release-only. Do not add source code, models, 
 
 The release workflow expects:
 
-- `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` for Tauri updater signatures;
+- `TAURI_SIGNING_PRIVATE_KEY` for Tauri updater signatures. The v0.2.0 key is intentionally unencrypted; GitHub Secret storage protects the private key at rest and in workflow logs;
 - `LYRA_RELEASES_APP_CLIENT_ID` as a repository variable and `LYRA_RELEASES_APP_PRIVATE_KEY` as a repository secret for the GitHub App installed only on `OrionAISystems/Lyra-Releases`;
 - optionally, `WINDOWS_CERTIFICATE` and `WINDOWS_CERTIFICATE_PASSWORD` for Authenticode signing.
 
-The updater public key is intentionally committed in `src-tauri/tauri.conf.json`; the updater private key, Authenticode material, passwords, and GitHub App private key never are. Replace the `REPLACE_WITH_TAURI_UPDATER_PUBLIC_KEY` marker before the first production tag. The workflow creates a short-lived GitHub App installation token for each release and derives the imported Authenticode certificate thumbprint on the runner when a certificate is available. If the Windows certificate secrets are omitted, the installer is intentionally unsigned by Authenticode while the updater artifacts remain Tauri-signed.
+The updater public key is intentionally committed in `src-tauri/tauri.conf.json`; the updater private key, Authenticode material, passwords, and GitHub App private key never are. The workflow validates the updater key immediately after dependency installation so malformed or unusable signing credentials fail quickly. It creates a short-lived GitHub App installation token for each release and derives the imported Authenticode certificate thumbprint on the runner when a certificate is available. If the Windows certificate secrets are omitted, the installer is intentionally unsigned by Authenticode while the updater artifacts remain Tauri-signed.
 
 ## Update manifest
 

@@ -54,8 +54,7 @@ Lyra checks the public signed feed at startup, once per hour while running, and 
 The release workflow publishes only the NSIS installer, Tauri updater artifact/signature, `latest.json`, and sanitized release notes to [`OrionAISystems/Lyra-Releases`](https://github.com/OrionAISystems/Lyra-Releases). Before tagging a production release, configure the Tauri updater public key in `src-tauri/tauri.conf.json`, the GitHub App credentials below, and the following repository secrets/variables:
 
 - `TAURI_SIGNING_PRIVATE_KEY`
-- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
 - `LYRA_RELEASES_APP_CLIENT_ID` (repository variable)
 - `LYRA_RELEASES_APP_PRIVATE_KEY` (repository secret)
 
-`WINDOWS_CERTIFICATE` and `WINDOWS_CERTIFICATE_PASSWORD` are optional until Authenticode signing is available. When omitted, Lyra publishes an unsigned Windows installer but retains Tauri updater signatures. The workflow creates the short-lived GitHub App installation token automatically; no personal access token is stored or manually renewed.
+`WINDOWS_CERTIFICATE` and `WINDOWS_CERTIFICATE_PASSWORD` are optional until Authenticode signing is available. When omitted, Lyra publishes an unsigned Windows installer but retains Tauri updater signatures. The v0.2.0 updater key is unencrypted, so no signing-password secret is required; the private key remains protected by GitHub Secret storage. The workflow creates the short-lived GitHub App installation token automatically; no personal access token is stored or manually renewed.
