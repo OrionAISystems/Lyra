@@ -1,0 +1,59 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Lyra",
+  "version": "0.1.0",
+  "identifier": "com.orionaisystems.lyra",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "label": "settings",
+        "title": "Lyra Settings",
+        "url": "/",
+        "width": 900,
+        "height": 680,
+        "minWidth": 680,
+        "minHeight": 520,
+        "resizable": true,
+        "decorations": true,
+        "visible": true,
+        "center": true
+      },
+      {
+        "label": "bar",
+        "title": "Lyra",
+        "url": "/",
+        "width": 190,
+        "height": 42,
+        "minWidth": 150,
+        "minHeight": 30,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "focusable": false,
+        "visible": true,
+        "shadow": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost http://localhost:1420; img-src 'self' asset: data:; style-src 'self' 'unsafe-inline'; script-src 'self'"
+    },
+    "trayIcon": {
+      "iconPath": "icons/icon.png",
+      "iconAsTemplate": true,
+      "tooltip": "Lyra dictation"
+    }
+  },
+  "bundle": {
+    "active": false,
+    "targets": "all",
+    "createUpdaterArtifacts": false
+  }
+}
