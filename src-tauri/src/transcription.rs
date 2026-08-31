@@ -285,6 +285,9 @@ impl TranscriptionRouter {
             TranscriptionRoute::LocalFirstCloudFallback => match self.local.transcribe(request) {
                 Ok(result) => Ok(result),
                 Err(local_error) => {
+                    if matches!(&local_error, BackendError::EmptyRecording) {
+                        return Err(local_error);
+                    }
                     let local_reason = local_error.to_string();
                     match self.cloud.transcribe(request) {
                         Ok(mut result) => {
@@ -292,7 +295,7 @@ impl TranscriptionRouter {
                             Ok(result)
                         }
                         Err(cloud_error) if matches!(cloud_error, BackendError::CredentialFailure(_)) => {
-                            Err(BackendError::MissingRuntimeModel(format!("local transcription failed: {local_reason}; cloud fallback unavailable because no credential is configured")))
+                            Err(BackendError::CloudFallbackUnavailable(local_reason))
                         }
                         Err(cloud_error) => Err(BackendError::NetworkFailure(format!("local transcription failed: {local_reason}; cloud fallback failed: {cloud_error}"))),
                     }
@@ -386,6 +389,27 @@ mod tests {
                 .backend,
             "local"
         );
+        assert_eq!(local_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(cloud_calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn empty_local_recording_does_not_attempt_cloud_fallback() {
+        let local_calls = Arc::new(AtomicUsize::new(0));
+        let cloud_calls = Arc::new(AtomicUsize::new(0));
+        let router = TranscriptionRouter::with_backends(
+            Arc::new(StubBackend::failure(
+                "local",
+                local_calls.clone(),
+                BackendError::EmptyRecording,
+            )),
+            Arc::new(StubBackend::success("cloud", cloud_calls.clone())),
+            CredentialStore::default(),
+        );
+        assert!(matches!(
+            router.transcribe(&request(), TranscriptionRoute::LocalFirstCloudFallback),
+            Err(BackendError::EmptyRecording)
+        ));
         assert_eq!(local_calls.load(Ordering::SeqCst), 1);
         assert_eq!(cloud_calls.load(Ordering::SeqCst), 0);
     }

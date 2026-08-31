@@ -210,8 +210,8 @@ impl NativeNemoRecognizer {
 }
 
 fn load_api(path: &Path) -> Result<NativeApi, BackendError> {
-    let library = unsafe { Library::new(path) }.map_err(|error| {
-        BackendError::MissingRuntimeModel(format!("could not load {}: {error}", path.display()))
+    let library = load_library(path).map_err(|error| {
+        BackendError::MissingRuntimeModel(format!("could not load {}: {error:?}", path.display()))
     })?;
     unsafe {
         Ok(NativeApi {
@@ -226,6 +226,31 @@ fn load_api(path: &Path) -> Result<NativeApi, BackendError> {
             _library: library,
         })
     }
+}
+
+#[cfg(windows)]
+fn load_library(path: &Path) -> Result<Library, libloading::Error> {
+    use libloading::os::windows::{
+        Library as WindowsLibrary, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS,
+        LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR,
+    };
+
+    // The NeMo archive is self-contained under its runtime `bin` directory.
+    // LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR makes Windows resolve transitive DLL
+    // dependencies (ggml, CUDA, and the MSVC runtime) beside the selected
+    // library instead of depending on the process working directory or PATH.
+    unsafe {
+        WindowsLibrary::load_with_flags(
+            path,
+            LOAD_LIBRARY_SEARCH_DEFAULT_DIRS | LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR,
+        )
+        .map(Into::into)
+    }
+}
+
+#[cfg(not(windows))]
+fn load_library(path: &Path) -> Result<Library, libloading::Error> {
+    unsafe { Library::new(path) }
 }
 
 unsafe fn symbol<'a, T>(library: &'a Library, name: &[u8]) -> Result<Symbol<'a, T>, BackendError> {

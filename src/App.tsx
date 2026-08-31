@@ -40,6 +40,7 @@ import {
   isTauri,
   listenToLyraEvents,
   quitLyra,
+  retryHotkey,
   saveSettings,
   saveOpenAiCredential,
   clearOpenAiCredential,
@@ -171,7 +172,13 @@ function useLyraState() {
     if (saved) setSettings(saved);
   }, [settings]);
 
-  return { settings, runtime, session, lastResult, devices, credentialConfigured, artifacts, hotkeyStatus, refresh, updateSettings, setCredentialConfigured };
+  const retryHotkeyRegistration = useCallback(async () => {
+    const status = await retryHotkey();
+    if (status) setHotkeyStatus(status);
+    return status;
+  }, []);
+
+  return { settings, runtime, session, lastResult, devices, credentialConfigured, artifacts, hotkeyStatus, refresh, updateSettings, retryHotkey: retryHotkeyRegistration, setCredentialConfigured };
 }
 
 function useWindowLabel() {
@@ -186,8 +193,17 @@ function useWindowLabel() {
 }
 
 function formatDuration(durationMs: number) {
-  const totalSeconds = Math.max(0, Math.floor(durationMs / 1000));
+  const totalSeconds = Math.max(0, Math.floor(toFiniteNumber(durationMs) / 1000));
   return `${String(Math.floor(totalSeconds / 60)).padStart(2, "0")} : ${String(totalSeconds % 60).padStart(2, "0")}`;
+}
+
+function toFiniteNumber(value: number | null | undefined, fallback = 0) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function formatSeconds(seconds: number) {
+  return `${Math.max(0, Math.floor(toFiniteNumber(seconds)))}s`;
 }
 
 function formatBytes(bytes: number | null) {
@@ -201,10 +217,31 @@ function StatusDot({ tone = "muted" }: { tone?: "good" | "warn" | "muted" }) {
 
 function DictationBar({ session, settings, runtime }: { session: SessionSnapshot; settings: Settings; runtime: RuntimeStatus }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const sessionDurationMs = Math.max(0, toFiniteNumber(session.durationMs));
+  const maxDurationSeconds = Math.max(1, Math.floor(toFiniteNumber(settings.maxDurationSeconds, 120)));
+  const inputLevel = Math.max(0, toFiniteNumber(session.inputLevel));
+  const [displayDurationMs, setDisplayDurationMs] = useState(sessionDurationMs);
   const barRef = useRef<HTMLElement>(null);
   const isListening = session.state === "listening";
   const isProcessing = session.state === "processing";
   const isError = session.state === "error";
+
+  useEffect(() => {
+    if (!isListening) {
+      setDisplayDurationMs(sessionDurationMs);
+      return;
+    }
+
+    const maxDurationMs = maxDurationSeconds * 1_000;
+    const startedAt = performance.now() - sessionDurationMs;
+    const updateDuration = () => {
+      const elapsed = Math.max(0, performance.now() - startedAt);
+      setDisplayDurationMs(Math.min(elapsed, maxDurationMs));
+    };
+    updateDuration();
+    const interval = window.setInterval(updateDuration, 250);
+    return () => window.clearInterval(interval);
+  }, [isListening, maxDurationSeconds, sessionDurationMs, session.requestId]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -231,7 +268,7 @@ function DictationBar({ session, settings, runtime }: { session: SessionSnapshot
 
   const waveform = Array.from({ length: 18 }, (_, index) => {
     const base = isListening ? 4 + ((index * 7) % 10) : 3;
-    const level = isListening ? Math.max(3, Math.round(base * (0.35 + session.inputLevel))) : base;
+    const level = isListening ? Math.max(3, Math.round(base * (0.35 + inputLevel))) : base;
     return <span key={index} style={{ height: `${level}px` }} />;
   });
 
@@ -248,7 +285,7 @@ function DictationBar({ session, settings, runtime }: { session: SessionSnapshot
         {isListening ? (
           <>
             <span className="bar-waveform">{waveform}</span>
-            <span className="bar-timer">{formatDuration(session.durationMs)}</span>
+            <span className="bar-timer">{formatSeconds(displayDurationMs / 1_000)}:{formatSeconds(maxDurationSeconds)}</span>
           </>
         ) : isProcessing ? (
           <span className="bar-label">Transcribing…</span>
@@ -271,7 +308,7 @@ function DictationBar({ session, settings, runtime }: { session: SessionSnapshot
   );
 }
 
-function SetupChecklist({ runtime, settings, devices, artifacts, hotkeyStatus }: { runtime: RuntimeStatus; settings: Settings; devices: AudioDeviceInfo[]; artifacts: SetupArtifact[]; hotkeyStatus: HotkeyStatus }) {
+function SetupChecklist({ runtime, settings, devices, artifacts, hotkeyStatus, retryHotkey }: { runtime: RuntimeStatus; settings: Settings; devices: AudioDeviceInfo[]; artifacts: SetupArtifact[]; hotkeyStatus: HotkeyStatus; retryHotkey: () => Promise<HotkeyStatus | null> }) {
   const checks = [
     { label: "Microphone available", done: devices.length > 0 || !isTauri, icon: Mic },
     { label: "GPU detected", done: Boolean(runtime.gpuName && runtime.gpuName !== "Detecting hardware…"), icon: Cpu },
@@ -300,7 +337,7 @@ function SetupChecklist({ runtime, settings, devices, artifacts, hotkeyStatus }:
         ))}
       </div>
       <p className="muted-copy">Lyra keeps audio in memory and does not keep a transcript history. Runtime and model downloads are always explicit.</p>
-      {isTauri && !hotkeyStatus.registered && <div className="info-callout"><CircleHelp size={16} /><span>The global shortcut is unavailable: {hotkeyStatus.error ?? "another application may already be using it"}. The tray and dictation bar remain available.</span></div>}
+      {isTauri && !hotkeyStatus.registered && <div className="info-callout"><CircleHelp size={16} /><span>The global shortcut is unavailable: {hotkeyStatus.error ?? "another application may already be using it"}. The tray and dictation bar remain available.</span><button className="secondary-button" onClick={() => void retryHotkey()}>Retry</button></div>}
       {artifacts.length > 0 && <div className="artifact-summary">{artifacts.map((artifact) => <span key={artifact.kind}><b>{artifact.kind === "runtime" ? "Runtime" : "Model"}</b> {formatBytes(artifact.sizeBytes)} · pinned {artifact.revision ?? "current"}</span>)}</div>}
     </div>
   );
@@ -492,7 +529,7 @@ function RouteIcon(_props: { size?: number }) {
   return <span className="route-icon" aria-hidden="true"><span /><span /><span /></span>;
 }
 
-function SettingsApp({ settings, runtime, session, lastResult, devices, credentialConfigured, artifacts, hotkeyStatus, updateSettings, setCredentialConfigured, refresh }: ReturnType<typeof useLyraState>) {
+function SettingsApp({ settings, runtime, session, lastResult, devices, credentialConfigured, artifacts, hotkeyStatus, updateSettings, retryHotkey, setCredentialConfigured, refresh }: ReturnType<typeof useLyraState>) {
   const [section, setSection] = useState<SettingsSection>("general");
   const [copied, setCopied] = useState(false);
   const [onboardingDismissed, setOnboardingDismissed] = useState(settings.onboardingComplete);
@@ -507,7 +544,7 @@ function SettingsApp({ settings, runtime, session, lastResult, devices, credenti
 
   const content = useMemo(() => {
     switch (section) {
-      case "general": return <><SetupChecklist runtime={runtime} settings={settings} devices={devices} artifacts={artifacts} hotkeyStatus={hotkeyStatus} /><GeneralSection settings={settings} updateSettings={updateSettings} /></>;
+      case "general": return <><SetupChecklist runtime={runtime} settings={settings} devices={devices} artifacts={artifacts} hotkeyStatus={hotkeyStatus} retryHotkey={retryHotkey} /><GeneralSection settings={settings} updateSettings={updateSettings} /></>;
       case "dictation": return <DictationSection settings={settings} updateSettings={updateSettings} />;
       case "audio": return <AudioSection settings={settings} devices={devices} updateSettings={updateSettings} />;
       case "language": return <LanguageSection settings={settings} updateSettings={updateSettings} />;
@@ -547,6 +584,17 @@ function NavIcon({ section }: { section: SettingsSection }) {
 export default function App() {
   const state = useLyraState();
   const label = useWindowLabel();
+
+  useEffect(() => {
+    const isBar = label === "bar";
+    document.documentElement.classList.toggle("bar-window", isBar);
+    document.body.classList.toggle("bar-window", isBar);
+    return () => {
+      document.documentElement.classList.remove("bar-window");
+      document.body.classList.remove("bar-window");
+    };
+  }, [label]);
+
   if (label === "bar") return <DictationBar session={state.session} settings={state.settings} runtime={state.runtime} />;
   return <SettingsApp {...state} />;
 }

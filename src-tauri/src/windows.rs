@@ -9,10 +9,8 @@ mod platform {
 
     use tauri::{PhysicalPosition, WebviewWindow};
     use windows_sys::Win32::{
-        Foundation::{HWND, RECT},
-        Graphics::Gdi::{
-            GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
-        },
+        Foundation::{HWND, POINT, RECT},
+        Graphics::Gdi::{GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTOPRIMARY},
         UI::{
             Input::KeyboardAndMouse::{
                 SendInput, INPUT, INPUT_0, KEYBDINPUT, KEYEVENTF_KEYUP, VK_CONTROL, VK_V,
@@ -94,14 +92,11 @@ mod platform {
         }
     }
 
-    pub fn place_bar_on_target_monitor(
-        bar: &WebviewWindow,
-        target: TargetContext,
-    ) -> Result<(), BackendError> {
-        let monitor = unsafe { MonitorFromWindow(target.hwnd as HWND, MONITOR_DEFAULTTONEAREST) };
+    pub fn place_bar_on_primary_monitor(bar: &WebviewWindow) -> Result<(), BackendError> {
+        let monitor = unsafe { MonitorFromPoint(POINT { x: 0, y: 0 }, MONITOR_DEFAULTTOPRIMARY) };
         if monitor.is_null() {
             return Err(BackendError::DeviceFailure(
-                "could not resolve the target monitor".to_owned(),
+                "could not resolve the primary monitor".to_owned(),
             ));
         }
         let mut info = MONITORINFO {
@@ -112,7 +107,7 @@ mod platform {
         };
         if unsafe { GetMonitorInfoW(monitor, &mut info) } == 0 {
             return Err(BackendError::DeviceFailure(
-                "could not read the target monitor work area".to_owned(),
+                "could not read the primary monitor work area".to_owned(),
             ));
         }
         let size = bar
@@ -153,14 +148,11 @@ mod platform {
             "Windows input injection is unavailable".to_owned(),
         ))
     }
-    pub fn place_bar_on_target_monitor(
-        _bar: &tauri::WebviewWindow,
-        _target: TargetContext,
-    ) -> Result<(), BackendError> {
+    pub fn place_bar_on_primary_monitor(_bar: &tauri::WebviewWindow) -> Result<(), BackendError> {
         Ok(())
     }
 }
 
 pub use platform::{
-    capture_foreground_target, focus_target, inject_ctrl_v, place_bar_on_target_monitor,
+    capture_foreground_target, focus_target, inject_ctrl_v, place_bar_on_primary_monitor,
 };

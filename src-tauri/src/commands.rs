@@ -1,7 +1,7 @@
 use std::{
     sync::{Arc, Mutex},
     thread,
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use serde::Serialize;
@@ -22,8 +22,10 @@ use crate::{
     runtime::{RuntimeManager, RuntimeStatus, SetupArtifact},
     settings::{Settings, SettingsStore},
     transcription::TranscriptionRouter,
-    windows::{capture_foreground_target, place_bar_on_target_monitor, TargetContext},
+    windows::{capture_foreground_target, place_bar_on_primary_monitor, TargetContext},
 };
+
+const TRANSIENT_ERROR_RESET_SECONDS: u64 = 4;
 
 pub struct AppState {
     pub settings: SettingsStore,
@@ -115,11 +117,42 @@ impl AppState {
 
 pub fn initialize(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let settings = app.state::<Arc<Mutex<AppState>>>().inner().clone();
-    let hotkey_label = settings
+    let hotkey_status = try_register_hotkey(app, settings);
+    create_tray(app)?;
+    let show_bar = app
+        .state::<Arc<Mutex<AppState>>>()
+        .inner()
+        .lock()
+        .map(|state| state.settings.get().show_bar)
+        .unwrap_or(true);
+    if let Some(bar) = app.get_webview_window("bar") {
+        if let Err(error) = place_bar_on_primary_monitor(&bar) {
+            warn!(error = %error, "could not place dictation bar on the primary monitor at startup");
+        }
+        if show_bar {
+            bar.show()?;
+        }
+    }
+    let runtime = app.state::<Arc<Mutex<AppState>>>().inner().clone();
+    if let Ok(mut state) = runtime.lock() {
+        state.hotkey_status = hotkey_status;
+        state.emit_hotkey_status();
+        state.emit_runtime_status(state.runtime.status());
+        state.emit_state();
+    }
+    Ok(())
+}
+
+fn current_hotkey_label(state: &Arc<Mutex<AppState>>) -> String {
+    state
         .lock()
         .map(|state| state.settings.get().hotkey)
-        .unwrap_or_else(|_| "Ctrl+Alt+Space".to_owned());
-    let hotkey_status = match register_hotkey(app, settings) {
+        .unwrap_or_else(|_| "Ctrl+Alt+Space".to_owned())
+}
+
+fn try_register_hotkey(app: &AppHandle, state: Arc<Mutex<AppState>>) -> HotkeyStatus {
+    let hotkey_label = current_hotkey_label(&state);
+    match register_hotkey(app, state) {
         Ok(()) => HotkeyStatus {
             hotkey: hotkey_label,
             registered: true,
@@ -134,23 +167,14 @@ pub fn initialize(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                 error: Some(message),
             }
         }
-    };
-    create_tray(app)?;
-    let runtime = app.state::<Arc<Mutex<AppState>>>().inner().clone();
-    if let Ok(mut state) = runtime.lock() {
-        state.hotkey_status = hotkey_status;
-        state.emit_hotkey_status();
-        state.emit_runtime_status(state.runtime.status());
-        state.emit_state();
     }
-    Ok(())
 }
 
 fn register_hotkey(
     app: &AppHandle,
     state: Arc<Mutex<AppState>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let shortcut = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::Space);
+    let shortcut = configured_shortcut();
     let handler_state = state.clone();
     app.global_shortcut()
         .on_shortcut(shortcut, move |app, _shortcut, event| {
@@ -184,6 +208,10 @@ fn register_hotkey(
         })?;
     app.global_shortcut().register(shortcut)?;
     Ok(())
+}
+
+fn configured_shortcut() -> Shortcut {
+    Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::Space)
 }
 
 fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
@@ -238,6 +266,31 @@ pub fn get_hotkey_status(state: State<'_, Arc<Mutex<AppState>>>) -> Result<Hotke
         .lock()
         .map(|state| state.hotkey_status.clone())
         .map_err(|_| "state lock poisoned".to_owned())
+}
+
+#[tauri::command]
+pub fn retry_hotkey(state: State<'_, Arc<Mutex<AppState>>>) -> Result<HotkeyStatus, String> {
+    let shared_state = state.inner().clone();
+    let app = shared_state
+        .lock()
+        .map(|state| state.app.clone())
+        .map_err(|_| "state lock poisoned".to_owned())?;
+    let shortcut = configured_shortcut();
+    let status = if app.global_shortcut().is_registered(shortcut) {
+        HotkeyStatus {
+            hotkey: current_hotkey_label(&shared_state),
+            registered: true,
+            error: None,
+        }
+    } else {
+        try_register_hotkey(&app, shared_state.clone())
+    };
+    let mut state = shared_state
+        .lock()
+        .map_err(|_| "state lock poisoned".to_owned())?;
+    state.hotkey_status = status.clone();
+    state.emit_hotkey_status();
+    Ok(status)
 }
 
 #[tauri::command]
@@ -419,6 +472,7 @@ fn show_settings_window(app: &AppHandle) -> Result<(), String> {
 }
 
 fn start_session(state: Arc<Mutex<AppState>>, _source: ActivationSource) -> Result<(), String> {
+    let state_for_error_reset = state.clone();
     let target = capture_foreground_target().map_err(|error| error.to_string())?;
     let app = {
         let mut state = state.lock().map_err(|_| "state lock poisoned".to_owned())?;
@@ -467,17 +521,16 @@ fn start_session(state: Arc<Mutex<AppState>>, _source: ActivationSource) -> Resu
                 state.snapshot.state = DictationState::Error;
                 state.snapshot.error = Some(error.to_string());
                 state.started_at = None;
+                let request_id = state.snapshot.request_id.clone();
                 state.emit_state();
+                if let Some(request_id) = request_id.as_deref() {
+                    schedule_error_reset(&state_for_error_reset, request_id);
+                }
                 return Err(error.to_string());
             }
         };
         state.active_capture = Some(capture);
         state.target = Some(target);
-        if let Some(bar) = state.app.get_webview_window("bar") {
-            if let Err(error) = place_bar_on_target_monitor(&bar, target) {
-                warn!(error = %error, "could not place dictation bar on target monitor");
-            }
-        }
         state.emit_state();
         app
     };
@@ -615,7 +668,8 @@ fn process_capture(
     } else if let Err(error) = injector.copy_text(&result.text) {
         injection_error = Some(error);
     }
-    if let Ok(mut state) = state.lock() {
+    let has_injection_error = injection_error.is_some();
+    let state_updated = if let Ok(mut state) = state.lock() {
         if state.snapshot.request_id.as_deref() != Some(request_id.as_str()) {
             return;
         }
@@ -643,11 +697,17 @@ fn process_capture(
             .unwrap_or(result.audio_duration_ms);
         state.started_at = None;
         state.emit_state();
+        true
+    } else {
+        false
+    };
+    if state_updated && has_injection_error {
+        schedule_error_reset(&state, &request_id);
     }
 }
 
 fn finish_error(state: &Arc<Mutex<AppState>>, request_id: &str, error: BackendError) {
-    if let Ok(mut state) = state.lock() {
+    let state_updated = if let Ok(mut state) = state.lock() {
         if state.snapshot.request_id.as_deref() != Some(request_id) {
             return;
         }
@@ -657,5 +717,35 @@ fn finish_error(state: &Arc<Mutex<AppState>>, request_id: &str, error: BackendEr
         state.snapshot.input_level = 0.0;
         state.started_at = None;
         state.emit_state();
+        true
+    } else {
+        false
+    };
+    if state_updated {
+        schedule_error_reset(state, request_id);
+    }
+}
+
+fn schedule_error_reset(state: &Arc<Mutex<AppState>>, request_id: &str) {
+    let state = Arc::clone(state);
+    let request_id = request_id.to_owned();
+    if let Err(error) = thread::Builder::new()
+        .name("lyra-error-reset".to_owned())
+        .spawn(move || {
+            thread::sleep(Duration::from_secs(TRANSIENT_ERROR_RESET_SECONDS));
+            if let Ok(mut state) = state.lock() {
+                if state.snapshot.request_id.as_deref() != Some(request_id.as_str())
+                    || state.session.state() != DictationState::Error
+                {
+                    return;
+                }
+                state.session.transition(SessionEvent::Reset).ok();
+                state.snapshot = SessionSnapshot::default();
+                state.emit_state();
+                info!(request_id = %request_id, "transient error state reset to idle");
+            }
+        })
+    {
+        warn!(error = %error, "could not schedule transient error reset");
     }
 }

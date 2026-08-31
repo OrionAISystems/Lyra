@@ -42,7 +42,7 @@ The Rust side owns state transitions and side effects. The frontend renders even
 - `transcription.rs`: `TranscriptionBackend` contract, local/cloud implementations, and route/fallback policy.
 - `native/nemo.rs`: app-local dynamic loading boundary for the pinned NeMo-Speech.cpp C ABI. No machine-wide SDK or PATH dependency.
 - `clipboard.rs`: text snapshot, sequence-number guard, and Windows clipboard operations.
-- `windows.rs`: foreground target capture, active-monitor placement, non-activating bar behavior, and `SendInput` integration.
+- `windows.rs`: foreground target capture, primary-monitor bar placement, non-activating bar behavior, and `SendInput` integration.
 - `commands.rs`: Tauri commands and event emission; this is presentation wiring, not domain policy.
 
 ## Privacy boundaries

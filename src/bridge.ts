@@ -25,6 +25,10 @@ export async function getHotkeyStatus(): Promise<HotkeyStatus | null> {
   return command<HotkeyStatus>("get_hotkey_status");
 }
 
+export async function retryHotkey(): Promise<HotkeyStatus | null> {
+  return command<HotkeyStatus>("retry_hotkey");
+}
+
 export async function getSetupArtifacts(): Promise<SetupArtifact[]> {
   return (await command<SetupArtifact[]>("get_setup_artifacts")) ?? [];
 }

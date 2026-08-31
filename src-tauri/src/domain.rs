@@ -135,6 +135,7 @@ pub enum BackendError {
     GpuFailure(String),
     CredentialFailure(String),
     NetworkFailure(String),
+    CloudFallbackUnavailable(String),
     Cancellation,
     Unsupported(String),
 }
@@ -154,6 +155,10 @@ impl fmt::Display for BackendError {
             Self::GpuFailure(message) => write!(f, "GPU recognition failed: {message}"),
             Self::CredentialFailure(message) => write!(f, "cloud credential failure: {message}"),
             Self::NetworkFailure(message) => write!(f, "cloud network failure: {message}"),
+            Self::CloudFallbackUnavailable(message) => write!(
+                f,
+                "local transcription failed: {message}; cloud fallback unavailable because no credential is configured"
+            ),
             Self::Cancellation => write!(f, "dictation cancelled"),
             Self::Unsupported(message) => write!(f, "unsupported: {message}"),
         }
@@ -180,6 +185,7 @@ impl TranscriptionRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct TranscriptionResult {
     pub text: String,
     pub backend: String,
@@ -192,6 +198,7 @@ pub struct TranscriptionResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct SessionSnapshot {
     pub state: DictationState,
     pub duration_ms: u64,
@@ -385,5 +392,37 @@ mod tests {
         assert_eq!(post_process("  world!  ", Some('!')), "world!");
         assert_eq!(post_process("...", Some('a')), "...");
         assert_eq!(post_process("\r\n", Some('a')), "");
+    }
+
+    #[test]
+    fn frontend_payloads_use_camel_case_field_names() {
+        let snapshot = SessionSnapshot {
+            duration_ms: 1_250,
+            input_level: 0.4,
+            request_id: Some("request-1".to_owned()),
+            fallback_reason: Some("local unavailable".to_owned()),
+            ..SessionSnapshot::default()
+        };
+        let snapshot_json = serde_json::to_value(snapshot).unwrap();
+        assert_eq!(snapshot_json["durationMs"], 1_250);
+        assert!((snapshot_json["inputLevel"].as_f64().unwrap() - 0.4).abs() < 1e-6);
+        assert_eq!(snapshot_json["requestId"], "request-1");
+        assert!(snapshot_json.get("duration_ms").is_none());
+
+        let result = TranscriptionResult {
+            text: "hello".to_owned(),
+            backend: "local".to_owned(),
+            model: "parakeet".to_owned(),
+            language: Some("en".to_owned()),
+            audio_duration_ms: 1_250,
+            transcription_duration_ms: 300,
+            latency_ms: 350,
+            fallback_reason: None,
+        };
+        let result_json = serde_json::to_value(result).unwrap();
+        assert_eq!(result_json["audioDurationMs"], 1_250);
+        assert_eq!(result_json["transcriptionDurationMs"], 300);
+        assert_eq!(result_json["latencyMs"], 350);
+        assert!(result_json.get("audio_duration_ms").is_none());
     }
 }

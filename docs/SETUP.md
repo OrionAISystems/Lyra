@@ -26,7 +26,15 @@ The first candidate is the official NeMo-Speech.cpp v0.1.0 Windows x64 CUDA arch
 5. Confirm `Ctrl+Alt+Space` and push-to-talk behavior.
 6. Record a short sample and verify the target application paste.
 
+The dictation bar starts at the bottom center of the Windows primary monitor and remains there while dictating, even when the target application is on another monitor.
+
 If any injection step fails, Lyra leaves the transcript on the clipboard and says `Copied — paste manually.` It never presses Enter.
+
+## Troubleshooting
+
+If the hotkey shows `Pending`, another application still owns the global registration. Fully restart that application, then use `Retry` in Lyra's readiness checklist; Lyra keeps the tray and dictation bar available while the shortcut is unavailable.
+
+The native runtime is loaded with its app-local `bin` directory as the dependency search location. No machine-wide CUDA Toolkit or PATH entry is required. If a local attempt reports `no audio was captured`, the runtime and model have already loaded and the recording itself was empty.
 
 ## Cloud credential
 
