@@ -32,7 +32,7 @@ The current implementation target is v0.2.0, the first Windows x64 installer rel
 - [x] Release workflow for type checks, frontend tests, Rust checks/tests, unbundled validation, NSIS, updater artifacts, and cross-repository publication.
 - [x] Configure the real Tauri updater public key in `src-tauri/tauri.conf.json`.
 - [x] Add the updater signing key and GitHub App credential to repository/organization secrets; Authenticode signing remains optional until a certificate is available.
-- [ ] Run a tagged CI release and inspect the public `latest.json`, installer, signature, and sanitized notes.
+- [x] Run a tagged CI release and inspect the public `latest.json`, installer, signature, and sanitized notes.
 - [ ] Fresh-install, upgrade, offline, invalid-signature, active-dictation, and restart acceptance tests.
 
 ## Explicit setup gates
