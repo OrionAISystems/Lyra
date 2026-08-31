@@ -9,6 +9,9 @@
 - Alternatives: Windows x64 Vulkan and CPU archives, separately approved
 - Source: <https://github.com/NVIDIA/NeMo-Speech.cpp/releases/tag/v0.1.0>
 - ABI reference: <https://raw.githubusercontent.com/NVIDIA/NeMo-Speech.cpp/main/include/nemo_speech/asr.h>
+- Pinned archive SHA-256: `ba024204e76ca2fa4eefa8787506c3c49e418147f627f60cf9206a582b60089c`
+
+Lyra also exposes the official Windows x64 Vulkan fallback (21,967,184 bytes, SHA-256 `b5e7b04a637da4eb25a60253e2db65774998e8dfb48c08b4db763009b82ac7ac`) and CPU fallback (4,730,421 bytes, SHA-256 `5e4ea81046012edcd77fd8848de8eefb5a4ba38cc26f52eb544ab184695a75d6`). Each variant is separately approved, downloaded, verified, and stored under its own versioned runtime directory.
 
 Lyra verifies the adjacent official SHA-256 file before extracting an archive. Only an app-local, verified runtime is loadable.
 
@@ -19,6 +22,7 @@ Lyra verifies the adjacent official SHA-256 file before extracting an archive. O
 - File size: 713,975,456 bytes (approximately 714 MB)
 - Model license: CC BY 4.0
 - Source: <https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3>
+- Pinned file SHA-256/ETag: `e3880d0aaaaf2c308ea2c35016b2b895c423eb3fda924c1b463d1c19b7f4d32e`
 
 The model supports English and Greek and performs automatic language detection. The selected NeMo-Speech.cpp customization matrix does not expose forced-language behavior or language metadata for this model, so Lyra presents English/Greek/Auto as preferences and labels local recognition truthfully as auto-detecting.
 

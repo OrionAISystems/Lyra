@@ -48,13 +48,39 @@ export interface RuntimeStatus {
 
 export interface SetupArtifact {
   kind: "runtime" | "model";
+  variant: string | null;
   name: string;
   source: string;
   sizeBytes: number;
   destination: string;
   checksumSource: string;
+  expectedSha256: string;
   revision: string | null;
   license: string | null;
+}
+
+export type SetupProgressState = "idle" | "downloading" | "verifying" | "installing" | "complete" | "cancelled" | "error";
+
+export interface SetupProgress {
+  kind: "runtime" | "model" | null;
+  variant: string | null;
+  state: SetupProgressState;
+  downloadedBytes: number;
+  totalBytes: number;
+  error: string | null;
+}
+
+export type UpdateState = "idle" | "checking" | "up_to_date" | "available" | "downloading" | "installing" | "error";
+
+export interface UpdateStatus {
+  state: UpdateState;
+  currentVersion: string;
+  availableVersion: string | null;
+  notes: string | null;
+  publishedAt: string | null;
+  progress: number | null;
+  lastCheckedAt: string | null;
+  error: string | null;
 }
 
 export interface SessionSnapshot {

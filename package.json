@@ -1,7 +1,7 @@
 {
   "name": "lyra",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Lightweight local-first Windows dictation for the Orion ecosystem",
   "type": "module",
   "scripts": {
@@ -11,12 +11,16 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "verify:version": "node scripts/verify-version.mjs",
+    "verify:release-config": "node scripts/verify-release-config.mjs",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"
   },
   "dependencies": {
     "@tauri-apps/api": "2.11.1",
+    "@tauri-apps/plugin-process": "2.3.1",
+    "@tauri-apps/plugin-updater": "2.11.0",
     "lucide-react": "0.468.0",
     "react": "19.2.8",
     "react-dom": "19.2.8"

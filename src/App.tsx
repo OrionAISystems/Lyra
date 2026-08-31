@@ -8,6 +8,7 @@ import {
   Clipboard,
   Cloud,
   Cpu,
+  Download,
   Gauge,
   Globe2,
   Keyboard,
@@ -18,6 +19,7 @@ import {
   Power,
   Radio,
   RotateCcw,
+  RefreshCw,
   Settings2,
   ShieldCheck,
   SlidersHorizontal,
@@ -44,8 +46,15 @@ import {
   saveSettings,
   saveOpenAiCredential,
   clearOpenAiCredential,
+  cancelSetupArtifact,
+  checkForUpdates,
+  deferUpdate,
   getHotkeyStatus,
+  getSetupProgress,
+  getUpdateStatus,
+  installUpdate,
   showSettings,
+  startSetupArtifact,
   startDictation,
   stopDictation,
 } from "./bridge";
@@ -59,11 +68,14 @@ import type {
   SessionSnapshot,
   Settings,
   SetupArtifact,
+  SetupProgress,
   TranscriptionRoute,
   TranscriptionResult,
+  UpdateStatus,
 } from "./types";
 import { defaultSettings } from "./types";
 import lyraIcon from "./assets/lyra-icon.png";
+import packageJson from "../package.json";
 
 type SettingsSection = "general" | "dictation" | "audio" | "language" | "transcription" | "cloud" | "appearance" | "diagnostics";
 
@@ -102,6 +114,26 @@ const initialHotkey: HotkeyStatus = {
   error: "Waiting for Lyra to finish startup",
 };
 
+const initialSetupProgress: SetupProgress = {
+  kind: null,
+  variant: null,
+  state: "idle",
+  downloadedBytes: 0,
+  totalBytes: 0,
+  error: null,
+};
+
+const initialUpdateStatus: UpdateStatus = {
+  state: "idle",
+  currentVersion: packageJson.version,
+  availableVersion: null,
+  notes: null,
+  publishedAt: null,
+  progress: null,
+  lastCheckedAt: null,
+  error: null,
+};
+
 const sectionLabels: Record<SettingsSection, string> = {
   general: "General",
   dictation: "Dictation",
@@ -122,9 +154,11 @@ function useLyraState() {
   const [credentialConfigured, setCredentialConfigured] = useState(false);
   const [artifacts, setArtifacts] = useState<SetupArtifact[]>([]);
   const [hotkeyStatus, setHotkeyStatus] = useState<HotkeyStatus>(initialHotkey);
+  const [setupProgress, setSetupProgress] = useState<SetupProgress>(initialSetupProgress);
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>(initialUpdateStatus);
 
   const refresh = useCallback(async () => {
-    const [loadedSettings, loadedRuntime, loadedHotkey, loadedArtifacts, loadedSession, loadedDevices, loadedCredential] = await Promise.all([
+    const [loadedSettings, loadedRuntime, loadedHotkey, loadedArtifacts, loadedSession, loadedDevices, loadedCredential, loadedSetupProgress, loadedUpdateStatus] = await Promise.all([
       getSettings(),
       getRuntimeStatus(),
       getHotkeyStatus(),
@@ -132,6 +166,8 @@ function useLyraState() {
       getSessionSnapshot(),
       listAudioDevices(),
       hasOpenAiCredential(),
+      getSetupProgress(),
+      getUpdateStatus(),
     ]);
     if (loadedSettings) setSettings(loadedSettings);
     if (loadedRuntime) setRuntime(loadedRuntime);
@@ -140,6 +176,8 @@ function useLyraState() {
     if (loadedSession) setSession(loadedSession);
     setDevices(loadedDevices);
     setCredentialConfigured(loadedCredential);
+    if (loadedSetupProgress) setSetupProgress(loadedSetupProgress);
+    if (loadedUpdateStatus) setUpdateStatus(loadedUpdateStatus);
   }, []);
 
   useEffect(() => {
@@ -150,6 +188,8 @@ function useLyraState() {
       onInputLevel: (inputLevel) => setSession((current) => ({ ...current, inputLevel })),
       onRuntimeStatus: setRuntime,
       onHotkeyStatus: setHotkeyStatus,
+      onSetupProgress: setSetupProgress,
+      onUpdateStatus: setUpdateStatus,
       onResult: (result) => {
         setLastResult(result);
         setSession((current) => ({
@@ -179,7 +219,33 @@ function useLyraState() {
     return status;
   }, []);
 
-  return { settings, runtime, session, lastResult, devices, credentialConfigured, artifacts, hotkeyStatus, refresh, updateSettings, retryHotkey: retryHotkeyRegistration, setCredentialConfigured };
+  const startSetup = useCallback(async (kind: "runtime" | "model", variant: string | null) => {
+    await startSetupArtifact(kind, variant);
+  }, []);
+
+  const cancelSetup = useCallback(async () => {
+    await cancelSetupArtifact();
+  }, []);
+
+  const checkUpdates = useCallback(async () => {
+    const status = await checkForUpdates();
+    if (status) setUpdateStatus(status);
+    return status;
+  }, []);
+
+  const installAvailableUpdate = useCallback(async () => {
+    const status = await installUpdate();
+    if (status) setUpdateStatus(status);
+    return status;
+  }, []);
+
+  const deferAvailableUpdate = useCallback(async () => {
+    const status = await deferUpdate();
+    if (status) setUpdateStatus(status);
+    return status;
+  }, []);
+
+  return { settings, runtime, session, lastResult, devices, credentialConfigured, artifacts, hotkeyStatus, setupProgress, updateStatus, refresh, updateSettings, retryHotkey: retryHotkeyRegistration, setCredentialConfigured, startSetup, cancelSetup, checkUpdates, installUpdate: installAvailableUpdate, deferUpdate: deferAvailableUpdate };
 }
 
 function useWindowLabel() {
@@ -210,6 +276,11 @@ function formatSeconds(seconds: number) {
 function formatBytes(bytes: number | null) {
   if (bytes === null) return "—";
   return `${(bytes / 1024 / 1024).toFixed(0)} MB`;
+}
+
+function formatUpdateProgress(progress: number | null) {
+  if (progress === null || !Number.isFinite(progress)) return "—";
+  return `${Math.round(Math.max(0, Math.min(1, progress)) * 100)}%`;
 }
 
 function StatusDot({ tone = "muted" }: { tone?: "good" | "warn" | "muted" }) {
@@ -309,7 +380,8 @@ function DictationBar({ session, settings, runtime }: { session: SessionSnapshot
   );
 }
 
-function SetupChecklist({ runtime, settings, devices, artifacts, hotkeyStatus, retryHotkey }: { runtime: RuntimeStatus; settings: Settings; devices: AudioDeviceInfo[]; artifacts: SetupArtifact[]; hotkeyStatus: HotkeyStatus; retryHotkey: () => Promise<HotkeyStatus | null> }) {
+function SetupChecklist({ runtime, settings, devices, artifacts, hotkeyStatus, retryHotkey, setupProgress, startSetup, cancelSetup }: { runtime: RuntimeStatus; settings: Settings; devices: AudioDeviceInfo[]; artifacts: SetupArtifact[]; hotkeyStatus: HotkeyStatus; retryHotkey: () => Promise<HotkeyStatus | null>; setupProgress: SetupProgress; startSetup: (kind: "runtime" | "model", variant: string | null) => Promise<void>; cancelSetup: () => Promise<void> }) {
+  const [setupError, setSetupError] = useState<string | null>(null);
   const checks = [
     { label: "Microphone available", done: devices.length > 0 || !isTauri, icon: Mic },
     { label: "GPU detected", done: Boolean(runtime.gpuName && runtime.gpuName !== "Detecting hardware…"), icon: Cpu },
@@ -339,7 +411,39 @@ function SetupChecklist({ runtime, settings, devices, artifacts, hotkeyStatus, r
       </div>
       <p className="muted-copy">Lyra keeps audio in memory and does not keep a transcript history. Runtime and model downloads are always explicit.</p>
       {isTauri && !hotkeyStatus.registered && <div className="info-callout"><CircleHelp size={16} /><span>The global shortcut is unavailable: {hotkeyStatus.error ?? "another application may already be using it"}. The tray and dictation bar remain available.</span><button className="secondary-button" onClick={() => void retryHotkey()}>Retry</button></div>}
-      {artifacts.length > 0 && <div className="artifact-summary">{artifacts.map((artifact) => <span key={artifact.kind}><b>{artifact.kind === "runtime" ? "Runtime" : "Model"}</b> {formatBytes(artifact.sizeBytes)} · pinned {artifact.revision ?? "current"}</span>)}</div>}
+      {artifacts.length > 0 && <div className="artifact-setup-list">
+        {artifacts.map((artifact) => {
+          const installed = artifact.kind === "runtime"
+            ? runtime.runtimeInstalled && runtime.runtimeVerified && runtime.runtimeVariant === artifact.variant
+            : runtime.modelInstalled && runtime.modelVerified;
+          const isCurrentArtifact = setupProgress.kind === artifact.kind && setupProgress.variant === artifact.variant;
+          const active = isCurrentArtifact && ["downloading", "verifying", "installing"].includes(setupProgress.state);
+          const failed = isCurrentArtifact && setupProgress.state === "error";
+          const percent = isCurrentArtifact && setupProgress.totalBytes > 0
+            ? Math.round((setupProgress.downloadedBytes / setupProgress.totalBytes) * 100)
+            : 0;
+          const variantLabel = artifact.variant === "cuda" ? "CUDA" : artifact.variant === "vulkan" ? "Vulkan" : artifact.variant === "cpu" ? "CPU" : null;
+          const title = artifact.kind === "runtime" ? `Native runtime · ${variantLabel ?? "fallback"}` : "Parakeet model";
+          const actionLabel = artifact.kind === "runtime" ? `Install ${variantLabel ?? "runtime"}` : "Install model";
+          return <div className="artifact-setup" key={`${artifact.kind}-${artifact.variant ?? "default"}`}>
+            <div className="artifact-setup-copy">
+              <div><strong>{title}</strong><span>{formatBytes(artifact.sizeBytes)} · {artifact.license ?? "licensed"}</span></div>
+              <span>Source: {artifact.source}</span>
+              <span>Stored at: {artifact.destination}</span>
+              <code>SHA-256 {artifact.expectedSha256}</code>
+            </div>
+            <div className="artifact-setup-action">
+              {active ? <>
+                <span className="setup-progress-label">{setupProgress.state === "downloading" ? `${percent}%` : setupProgress.state}</span>
+                <button className="secondary-button" onClick={() => void cancelSetup()}>Cancel</button>
+              </> : installed ? <span className="status-pill"><StatusDot tone="good" />Verified</span> : <button className="secondary-button" onClick={() => { setSetupError(null); void startSetup(artifact.kind, artifact.variant).catch((error) => setSetupError(error instanceof Error ? error.message : "Could not start setup")); }}>{failed ? "Try again" : actionLabel}</button>}
+            </div>
+            {active && <div className="setup-progress-track"><span style={{ width: `${Math.max(0, Math.min(100, percent))}%` }} /></div>}
+            {failed && <span className="artifact-setup-error">{setupProgress.error ?? "Setup failed; try again."}</span>}
+          </div>;
+        })}
+        {setupError && <span className="artifact-setup-error">{setupError}</span>}
+      </div>}
     </div>
   );
 }
@@ -354,7 +458,48 @@ function SettingRow({ icon: Icon, label, description, children }: { icon: Compon
   );
 }
 
-function GeneralSection({ settings, updateSettings }: { settings: Settings; updateSettings: (patch: Partial<Settings>) => Promise<void> }) {
+function UpdateSection({ updateStatus, checkUpdates, installUpdate, deferUpdate }: { updateStatus: UpdateStatus; checkUpdates: () => Promise<UpdateStatus | null>; installUpdate: () => Promise<UpdateStatus | null>; deferUpdate: () => Promise<UpdateStatus | null> }) {
+  const [actionError, setActionError] = useState<string | null>(null);
+  const busy = ["checking", "downloading", "installing"].includes(updateStatus.state);
+  const stateLabel: Record<UpdateStatus["state"], string> = {
+    idle: "Ready to check",
+    checking: "Checking",
+    up_to_date: "Up to date",
+    available: "Update available",
+    downloading: "Downloading",
+    installing: "Installing",
+    error: "Unable to check",
+  };
+  const run = async (action: () => Promise<UpdateStatus | null>) => {
+    setActionError(null);
+    try {
+      await action();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "The update action could not be completed");
+    }
+  };
+
+  return <div className="update-card">
+    <div className="update-card-icon"><Download size={16} /></div>
+    <div className="update-card-copy">
+      <div className="update-card-title"><span className="eyebrow">Software updates</span><span className={`update-state update-state--${updateStatus.state}`}><StatusDot tone={updateStatus.state === "available" ? "good" : updateStatus.state === "error" ? "warn" : "muted"} />{stateLabel[updateStatus.state]}</span></div>
+      <strong>{updateStatus.availableVersion ? `Lyra ${updateStatus.availableVersion} is ready` : `Lyra ${updateStatus.currentVersion}`}</strong>
+      <p>{updateStatus.notes ?? "Lyra checks the public signed release feed after startup and once per hour."}</p>
+      {updateStatus.progress !== null && ["downloading", "installing"].includes(updateStatus.state) && <div className="update-progress"><span style={{ width: `${Math.round(Math.max(0, Math.min(1, updateStatus.progress)) * 100)}%` }} /></div>}
+      {actionError && <span className="update-error">{actionError}</span>}
+      {updateStatus.error && <span className="update-error">{updateStatus.error}</span>}
+    </div>
+    <div className="update-card-actions">
+      {updateStatus.state === "available" && <>
+        <button className="secondary-button update-install-button" onClick={() => void run(installUpdate)}><Download size={13} /> Install and restart</button>
+        <button className="quiet-button" onClick={() => void run(deferUpdate)}>Defer</button>
+      </>}
+      <button className="secondary-button" disabled={busy} onClick={() => void run(checkUpdates)}><RefreshCw size={13} className={updateStatus.state === "checking" ? "spin-icon" : ""} />{updateStatus.state === "checking" ? "Checking…" : updateStatus.state === "error" ? "Try again" : "Check for updates"}</button>
+    </div>
+  </div>;
+}
+
+function GeneralSection({ settings, updateSettings, updateStatus, checkUpdates, installUpdate, deferUpdate }: { settings: Settings; updateSettings: (patch: Partial<Settings>) => Promise<void>; updateStatus: UpdateStatus; checkUpdates: () => Promise<UpdateStatus | null>; installUpdate: () => Promise<UpdateStatus | null>; deferUpdate: () => Promise<UpdateStatus | null> }) {
   return <>
     <SectionHeader eyebrow="Workspace" title="General" description="Keep Lyra close, quiet, and ready when you need it." />
     <div className="settings-card">
@@ -368,6 +513,7 @@ function GeneralSection({ settings, updateSettings }: { settings: Settings; upda
         <button className={`toggle ${settings.keepModelWarm ? "toggle--on" : ""}`} aria-pressed={settings.keepModelWarm} onClick={() => void updateSettings({ keepModelWarm: !settings.keepModelWarm })}><span /></button>
       </SettingRow>
     </div>
+    <UpdateSection updateStatus={updateStatus} checkUpdates={checkUpdates} installUpdate={installUpdate} deferUpdate={deferUpdate} />
   </>;
 }
 
@@ -530,10 +676,24 @@ function RouteIcon(_props: { size?: number }) {
   return <span className="route-icon" aria-hidden="true"><span /><span /><span /></span>;
 }
 
-function SettingsApp({ settings, runtime, session, lastResult, devices, credentialConfigured, artifacts, hotkeyStatus, updateSettings, retryHotkey, setCredentialConfigured, refresh }: ReturnType<typeof useLyraState>) {
+function SettingsApp({ settings, runtime, session, lastResult, devices, credentialConfigured, artifacts, hotkeyStatus, setupProgress, updateStatus, updateSettings, retryHotkey, setCredentialConfigured, refresh, startSetup, cancelSetup, checkUpdates, installUpdate, deferUpdate }: ReturnType<typeof useLyraState>) {
   const [section, setSection] = useState<SettingsSection>("general");
   const [copied, setCopied] = useState(false);
   const [onboardingDismissed, setOnboardingDismissed] = useState(settings.onboardingComplete);
+  const [updatePromptVisible, setUpdatePromptVisible] = useState(false);
+  const promptedVersion = useRef<string | null>(null);
+
+  useEffect(() => {
+    setOnboardingDismissed(settings.onboardingComplete);
+  }, [settings.onboardingComplete]);
+
+  useEffect(() => {
+    const version = updateStatus.availableVersion;
+    if (updateStatus.state !== "available" || !version || promptedVersion.current === version) return;
+    promptedVersion.current = version;
+    setUpdatePromptVisible(true);
+    void showSettings();
+  }, [updateStatus.availableVersion, updateStatus.state]);
 
   const copy = async () => {
     const text = await copyLastTranscript();
@@ -545,7 +705,7 @@ function SettingsApp({ settings, runtime, session, lastResult, devices, credenti
 
   const content = useMemo(() => {
     switch (section) {
-      case "general": return <><SetupChecklist runtime={runtime} settings={settings} devices={devices} artifacts={artifacts} hotkeyStatus={hotkeyStatus} retryHotkey={retryHotkey} /><GeneralSection settings={settings} updateSettings={updateSettings} /></>;
+      case "general": return <><SetupChecklist runtime={runtime} settings={settings} devices={devices} artifacts={artifacts} hotkeyStatus={hotkeyStatus} retryHotkey={retryHotkey} setupProgress={setupProgress} startSetup={startSetup} cancelSetup={cancelSetup} /><GeneralSection settings={settings} updateSettings={updateSettings} updateStatus={updateStatus} checkUpdates={checkUpdates} installUpdate={installUpdate} deferUpdate={deferUpdate} /></>;
       case "dictation": return <DictationSection settings={settings} updateSettings={updateSettings} />;
       case "audio": return <AudioSection settings={settings} devices={devices} updateSettings={updateSettings} />;
       case "language": return <LanguageSection settings={settings} updateSettings={updateSettings} />;
@@ -554,7 +714,7 @@ function SettingsApp({ settings, runtime, session, lastResult, devices, credenti
       case "appearance": return <AppearanceSection settings={settings} updateSettings={updateSettings} />;
       case "diagnostics": return <DiagnosticsSection runtime={runtime} session={session} refresh={refresh} />;
     }
-  }, [hotkeyStatus, lastResult, refresh, runtime, section, session, settings, updateSettings]);
+  }, [artifacts, cancelSetup, checkUpdates, deferUpdate, devices, hotkeyStatus, installUpdate, lastResult, refresh, retryHotkey, runtime, section, session, settings, setupProgress, startSetup, updateSettings, updateStatus]);
 
   return <main className="settings-shell">
     <aside className="sidebar">
@@ -563,12 +723,13 @@ function SettingsApp({ settings, runtime, session, lastResult, devices, credenti
       <nav className="settings-nav" aria-label="Settings">
         {(Object.keys(sectionLabels) as SettingsSection[]).map((item) => <button key={item} className={section === item ? "nav-active" : ""} onClick={() => setSection(item)}><NavIcon section={item} /><span>{sectionLabels[item]}</span>{section === item && <ChevronRight size={14} />}</button>)}
       </nav>
-      <div className="sidebar-footer"><button className="sidebar-footer-button" onClick={() => void copy()}><Clipboard size={14} /> {copied ? "Copied" : "Copy last transcription"}</button><span>v0.1 · Windows x64</span></div>
+      <div className="sidebar-footer"><button className="sidebar-footer-button" onClick={() => void copy()}><Clipboard size={14} /> {copied ? "Copied" : "Copy last transcription"}</button><span>v{updateStatus.currentVersion} · Windows x64</span></div>
     </aside>
     <section className="settings-content">
       <header className="topbar"><div className="window-title"><span className="window-title-dot" />Settings</div><div className="topbar-actions"><button className="icon-button" title="Open dictation bar" onClick={() => void showSettings()}><MoreHorizontal size={17} /></button><button className="window-close" title="Hide settings" onClick={() => void import("@tauri-apps/api/window").then(({ getCurrentWindow }) => getCurrentWindow().hide())}><X size={16} /></button></div></header>
       <div className="content-scroll">
         {!onboardingDismissed && <div className="onboarding-banner"><div className="onboarding-icon"><Sparkles size={17} /></div><div><strong>Welcome to Lyra</strong><span>Finish setup when you are ready. Downloads require your explicit approval.</span></div><button onClick={() => { setOnboardingDismissed(true); void updateSettings({ onboardingComplete: true }); }}>Got it <ArrowLeft size={14} className="rotate-180" /></button></div>}
+        {updatePromptVisible && updateStatus.state === "available" && <div className="update-prompt"><div className="update-prompt-icon"><Download size={15} /></div><div><strong>Lyra {updateStatus.availableVersion} is ready</strong><span>{updateStatus.notes ?? "A signed update is available."}</span></div><button className="secondary-button" onClick={() => { setUpdatePromptVisible(false); void installUpdate().catch(() => undefined); }}><Download size={13} /> Install and restart</button><button className="quiet-button" onClick={() => { setUpdatePromptVisible(false); void deferUpdate().catch(() => undefined); }}>Defer</button></div>}
         {content}
         <footer className="settings-footer"><span><StatusDot tone="good" />Lyra is running in the tray</span><span>Audio stays in memory</span></footer>
       </div>

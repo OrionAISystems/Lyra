@@ -6,6 +6,8 @@ mod native_nemo;
 mod runtime;
 mod settings;
 mod transcription;
+mod tray;
+mod updater;
 mod windows;
 
 use std::sync::{Arc, Mutex};
@@ -18,6 +20,7 @@ use crate::commands::AppState;
 use crate::runtime::RuntimeManager;
 use crate::settings::SettingsStore;
 use crate::transcription::TranscriptionRouter;
+use crate::updater::UpdateManager;
 
 pub fn run() {
     let _ = tracing_subscriber::fmt()
@@ -28,8 +31,16 @@ pub fn run() {
         .try_init();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(settings) = app.get_webview_window("settings") {
+                let _ = settings.show();
+                let _ = settings.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_autostart::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .on_window_event(|window, event| {
             if window.label() == "settings" {
                 if let WindowEvent::CloseRequested { api, .. } = event {
@@ -43,7 +54,15 @@ pub fn run() {
             let runtime = RuntimeManager::new(app.handle());
             let audio = Arc::new(CpalAudioCapture::new());
             let router = TranscriptionRouter::new(runtime.clone());
-            let state = AppState::new(settings, runtime, audio, router, app.handle().clone());
+            let updater = UpdateManager::new(app.handle());
+            let state = AppState::new(
+                settings,
+                runtime,
+                audio,
+                router,
+                updater,
+                app.handle().clone(),
+            );
             app.manage(Arc::new(Mutex::new(state)));
             commands::initialize(app.handle())?;
             if app
@@ -66,6 +85,13 @@ pub fn run() {
             commands::save_settings,
             commands::get_runtime_status,
             commands::get_setup_artifacts,
+            commands::get_setup_progress,
+            commands::start_setup_artifact,
+            commands::cancel_setup_artifact,
+            commands::get_update_status,
+            commands::check_for_updates,
+            commands::install_update,
+            commands::defer_update,
             commands::get_session_snapshot,
             commands::list_audio_devices,
             commands::start_dictation,

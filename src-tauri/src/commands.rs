@@ -19,9 +19,11 @@ use crate::{
         ConservativePostProcessor, DictationState, DictationStateMachine, PostProcessor,
         SessionEvent, SessionSnapshot, ShortcutEdge, TranscriptionRequest, TranscriptionResult,
     },
-    runtime::{RuntimeManager, RuntimeStatus, SetupArtifact},
+    runtime::{RuntimeManager, RuntimeStatus, SetupArtifact, SetupArtifactKind, SetupProgress},
     settings::{Settings, SettingsStore},
     transcription::TranscriptionRouter,
+    tray::TrayController,
+    updater::{UpdateManager, UpdateStatus},
     windows::{capture_foreground_target, place_bar_on_primary_monitor, TargetContext},
 };
 
@@ -32,6 +34,7 @@ pub struct AppState {
     pub runtime: RuntimeManager,
     pub audio: Arc<dyn AudioCapture>,
     pub router: TranscriptionRouter,
+    pub updater: UpdateManager,
     pub injector: Arc<dyn TextInjector>,
     pub session: DictationStateMachine,
     pub snapshot: SessionSnapshot,
@@ -59,6 +62,7 @@ impl AppState {
         runtime: RuntimeManager,
         audio: Arc<dyn AudioCapture>,
         router: TranscriptionRouter,
+        updater: UpdateManager,
         app: AppHandle,
     ) -> Self {
         let settings_value = settings.get();
@@ -67,6 +71,7 @@ impl AppState {
             runtime,
             audio,
             router,
+            updater,
             injector: Arc::new(ClipboardService),
             session: DictationStateMachine::default(),
             snapshot: SessionSnapshot::default(),
@@ -118,7 +123,8 @@ impl AppState {
 pub fn initialize(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let settings = app.state::<Arc<Mutex<AppState>>>().inner().clone();
     let hotkey_status = try_register_hotkey(app, settings);
-    create_tray(app)?;
+    let tray = create_tray(app)?;
+    app.manage(tray);
     let show_bar = app
         .state::<Arc<Mutex<AppState>>>()
         .inner()
@@ -140,6 +146,7 @@ pub fn initialize(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         state.emit_runtime_status(state.runtime.status());
         state.emit_state();
     }
+    schedule_update_checks(app);
     Ok(())
 }
 
@@ -213,7 +220,7 @@ fn configured_shortcut() -> Shortcut {
     Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::Space)
 }
 
-fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+fn create_tray(app: &AppHandle) -> Result<TrayController, Box<dyn std::error::Error>> {
     use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
     use tauri::tray::TrayIconBuilder;
 
@@ -226,8 +233,9 @@ fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         None::<&str>,
     )?;
     let separator = PredefinedMenuItem::separator(app)?;
+    let update = MenuItem::with_id(app, "update", "Check for updates", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit Lyra", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&settings, &copy, &separator, &quit])?;
+    let menu = Menu::with_items(app, &[&settings, &copy, &separator, &update, &quit])?;
     let icon = app.default_window_icon().cloned().ok_or_else(|| {
         std::io::Error::new(
             std::io::ErrorKind::NotFound,
@@ -252,11 +260,24 @@ fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
+            "update" => {
+                let available = app
+                    .try_state::<Arc<Mutex<AppState>>>()
+                    .and_then(|state| state.lock().ok().map(|state| state.updater.status()))
+                    .is_some_and(|status| {
+                        matches!(status.state, crate::updater::UpdateState::Available)
+                    });
+                if available {
+                    let _ = show_settings_window(app);
+                } else {
+                    spawn_update_check(app);
+                }
+            }
             "quit" => app.exit(0),
             _ => {}
         })
         .build(app)?;
-    Ok(())
+    Ok(TrayController::new(update))
 }
 
 #[tauri::command]
@@ -348,6 +369,70 @@ pub fn get_setup_artifacts(
 ) -> Result<Vec<SetupArtifact>, String> {
     let state = state.lock().map_err(|_| "state lock poisoned".to_owned())?;
     Ok(state.runtime.setup_artifacts())
+}
+
+#[tauri::command]
+pub fn get_setup_progress(state: State<'_, Arc<Mutex<AppState>>>) -> Result<SetupProgress, String> {
+    let state = state.lock().map_err(|_| "state lock poisoned".to_owned())?;
+    Ok(state.runtime.setup_progress())
+}
+
+#[tauri::command]
+pub fn start_setup_artifact(
+    kind: String,
+    variant: Option<String>,
+    state: State<'_, Arc<Mutex<AppState>>>,
+) -> Result<(), String> {
+    let (runtime, app) = {
+        let state = state.lock().map_err(|_| "state lock poisoned".to_owned())?;
+        (state.runtime.clone(), state.app.clone())
+    };
+    let kind = SetupArtifactKind::parse_with_variant(&kind, variant.as_deref())
+        .map_err(|error| error.to_string())?;
+    runtime
+        .start_setup(&app, kind)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn cancel_setup_artifact(state: State<'_, Arc<Mutex<AppState>>>) -> Result<bool, String> {
+    let state = state.lock().map_err(|_| "state lock poisoned".to_owned())?;
+    Ok(state.runtime.cancel_setup())
+}
+
+#[tauri::command]
+pub fn get_update_status(state: State<'_, Arc<Mutex<AppState>>>) -> Result<UpdateStatus, String> {
+    let state = state.lock().map_err(|_| "state lock poisoned".to_owned())?;
+    Ok(state.updater.status())
+}
+
+#[tauri::command]
+pub async fn check_for_updates(
+    state: State<'_, Arc<Mutex<AppState>>>,
+) -> Result<UpdateStatus, String> {
+    let updater = state
+        .lock()
+        .map_err(|_| "state lock poisoned".to_owned())?
+        .updater
+        .clone();
+    Ok(updater.check_for_updates().await)
+}
+
+#[tauri::command]
+pub async fn install_update(
+    state: State<'_, Arc<Mutex<AppState>>>,
+) -> Result<UpdateStatus, String> {
+    let (updater, session_state) = {
+        let state = state.lock().map_err(|_| "state lock poisoned".to_owned())?;
+        (state.updater.clone(), state.session.state())
+    };
+    Ok(updater.install_update(session_state).await)
+}
+
+#[tauri::command]
+pub fn defer_update(state: State<'_, Arc<Mutex<AppState>>>) -> Result<UpdateStatus, String> {
+    let state = state.lock().map_err(|_| "state lock poisoned".to_owned())?;
+    Ok(state.updater.defer_update())
 }
 
 #[tauri::command]
@@ -476,6 +561,28 @@ fn show_settings_window(app: &AppHandle) -> Result<(), String> {
     settings.show().map_err(|error| error.to_string())?;
     settings.set_focus().map_err(|error| error.to_string())?;
     Ok(())
+}
+
+pub fn spawn_update_check(app: &AppHandle) {
+    let updater = app
+        .try_state::<Arc<Mutex<AppState>>>()
+        .and_then(|state| state.lock().ok().map(|state| state.updater.clone()));
+    if let Some(updater) = updater {
+        tauri::async_runtime::spawn(async move {
+            let _ = updater.check_for_updates().await;
+        });
+    }
+}
+
+fn schedule_update_checks(app: &AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        loop {
+            spawn_update_check(&app);
+            tokio::time::sleep(Duration::from_secs(60 * 60)).await;
+        }
+    });
 }
 
 fn start_session(state: Arc<Mutex<AppState>>, _source: ActivationSource) -> Result<(), String> {

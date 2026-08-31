@@ -25,6 +25,10 @@ src-tauri/icons/StoreLogo.png
 *.pem
 *.key
 *.pfx
+*.p12
+*.cer
+*.crt
+certificate/
 
 # Lyra-managed runtime/model/user data. These must never enter Git.
 models/
@@ -39,6 +43,11 @@ app-data/
 *.wav
 *.pcm
 *.dmp
+*.partial
+*.installing
+
+# Locally staged release output (public release assets are uploaded by CI).
+release-artifacts/
 
 # Native SDK archives and extracted binaries
 *.zip

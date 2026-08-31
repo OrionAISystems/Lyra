@@ -118,6 +118,38 @@ select:focus { border-color: rgba(138,216,206,.7); }
 .artifact-summary { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 12px; color: var(--faint); font-size: 9px; }
 .artifact-summary span { display: inline-flex; align-items: center; gap: 4px; }
 .artifact-summary b { color: var(--muted); font-weight: 560; }
+.artifact-setup-list { display: grid; gap: 8px; margin-top: 14px; }
+.artifact-setup { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 14px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: rgba(0,0,0,.12); }
+.artifact-setup-copy { display: flex; flex-direction: column; gap: 4px; min-width: 0; color: var(--faint); font-size: 9px; line-height: 1.35; }
+.artifact-setup-copy > div { display: flex; align-items: baseline; gap: 8px; }
+.artifact-setup-copy strong { color: var(--text); font-size: 10px; font-weight: 560; }
+.artifact-setup-copy > div span { color: var(--muted); }
+.artifact-setup-copy > span { overflow-wrap: anywhere; }
+.artifact-setup-copy code { overflow-wrap: anywhere; color: var(--faint); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 8px; }
+.artifact-setup-action { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
+.setup-progress-label { color: var(--accent); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 9px; }
+.setup-progress-track, .update-progress { grid-column: 1 / -1; height: 4px; overflow: hidden; border-radius: 999px; background: #2a3030; }
+.setup-progress-track span, .update-progress span { display: block; height: 100%; border-radius: inherit; background: var(--accent); box-shadow: 0 0 8px rgba(138,216,206,.5); transition: width .2s ease; }
+.artifact-setup-error, .update-error { grid-column: 1 / -1; color: var(--danger); font-size: 9px; line-height: 1.4; }
+.update-card { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: start; gap: 12px; margin-top: 13px; padding: 14px; border: 1px solid rgba(138,216,206,.15); border-radius: 10px; background: linear-gradient(110deg, rgba(138,216,206,.075), rgba(22,26,27,.7) 55%); }
+.update-card-icon, .update-prompt-icon { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; color: var(--accent); background: rgba(138,216,206,.12); }
+.update-card-copy { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.update-card-title { display: flex; align-items: center; gap: 9px; }
+.update-state { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 9px; white-space: nowrap; }
+.update-state--available { color: var(--accent); }
+.update-state--error { color: var(--warn); }
+.update-card-copy strong { font-size: 11px; font-weight: 560; }
+.update-card-copy p { max-width: 410px; margin: 0; overflow: hidden; color: var(--muted); font-size: 10px; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
+.update-card-actions { display: flex; align-items: center; justify-content: flex-end; gap: 7px; }
+.update-install-button { color: #10201e; border-color: var(--accent); background: var(--accent); }
+.update-install-button:hover { color: #10201e; background: #a4e5dc; }
+.quiet-button { padding: 6px 4px; color: var(--muted); background: transparent; font-size: 10px; white-space: nowrap; }
+.quiet-button:hover { color: var(--text); }
+.update-prompt { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto auto; align-items: center; gap: 10px; margin-bottom: 20px; padding: 11px 12px; border: 1px solid rgba(138,216,206,.2); border-radius: 9px; background: rgba(138,216,206,.065); }
+.update-prompt > div:nth-child(2) { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.update-prompt strong { font-size: 10px; font-weight: 600; }
+.update-prompt span { overflow: hidden; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.spin-icon { animation: spin .8s linear infinite; }
 .benchmark-card { display: flex; justify-content: space-between; gap: 18px; margin-top: 13px; padding: 15px; border: 1px solid var(--line); border-radius: 10px; background: rgba(138,216,206,.04); }
 .benchmark-card > div:first-child { display: flex; flex-direction: column; gap: 7px; }
 .benchmark-card strong { font-size: 11px; font-weight: 560; }
@@ -179,4 +211,8 @@ select:focus { border-color: rgba(138,216,206,.7); }
   .benchmark-stats { justify-content: space-between; text-align: left; }
   .credential-editor { align-items: stretch; flex-direction: column; }
   .credential-actions input { flex: 1; width: auto; }
+  .artifact-setup, .update-card { grid-template-columns: 1fr; }
+  .artifact-setup-action, .update-card-actions { justify-content: flex-start; }
+  .update-prompt { grid-template-columns: 28px minmax(0, 1fr); }
+  .update-prompt > .secondary-button, .update-prompt > .quiet-button { grid-column: 2; justify-self: start; }
 }

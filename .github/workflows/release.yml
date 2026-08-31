@@ -1,0 +1,135 @@
+name: Lyra Windows release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lyra-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish NSIS release
+    runs-on: windows-latest
+    steps:
+      - name: Checkout tagged source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Verify release version
+        run: npm run verify:version
+
+      - name: Verify release configuration
+        run: npm run verify:release-config
+
+      - name: Type check and frontend tests
+        run: |
+          npm run typecheck
+          npm test -- --run
+
+      - name: Format and test Rust
+        run: |
+          cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+          cargo check --manifest-path src-tauri/Cargo.toml
+          cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Validate an unbundled Tauri build
+        run: npm run tauri build -- --no-bundle
+
+      - name: Import Authenticode certificate when configured
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          $hasCertificate = -not [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE)
+          $hasPassword = -not [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PASSWORD)
+          if (-not $hasCertificate -and -not $hasPassword) {
+            Write-Host "No Authenticode certificate configured; continuing with an unsigned Windows installer."
+            exit 0
+          }
+          if (-not $hasCertificate -or -not $hasPassword) {
+            throw "WINDOWS_CERTIFICATE and WINDOWS_CERTIFICATE_PASSWORD must either both be configured or both be omitted."
+          }
+          New-Item -ItemType Directory -Force -Path certificate | Out-Null
+          Set-Content -Path certificate/tempCert.txt -Value $env:WINDOWS_CERTIFICATE -NoNewline
+          certutil -decode certificate/tempCert.txt certificate/certificate.pfx
+          Remove-Item -LiteralPath certificate/tempCert.txt
+          $certificate = Import-PfxCertificate -FilePath certificate/certificate.pfx -CertStoreLocation Cert:\CurrentUser\My -Password (ConvertTo-SecureString -String $env:WINDOWS_CERTIFICATE_PASSWORD -Force -AsPlainText) | Select-Object -First 1
+          if ($null -eq $certificate -or [string]::IsNullOrWhiteSpace($certificate.Thumbprint)) {
+            throw "The Authenticode certificate could not be imported or has no thumbprint."
+          }
+          $config = Get-Content -Raw src-tauri/tauri.conf.json | ConvertFrom-Json
+          $config.bundle.windows.certificateThumbprint = $certificate.Thumbprint
+          $config.bundle.windows.digestAlgorithm = "sha256"
+          $config.bundle.windows.timestampUrl = "http://timestamp.digicert.com"
+          $config | ConvertTo-Json -Depth 100 | Set-Content -Encoding utf8 src-tauri/tauri.conf.json
+          Remove-Item -LiteralPath certificate/certificate.pfx -Force
+
+      - name: Validate publication credentials
+        shell: pwsh
+        env:
+          LYRA_RELEASES_APP_CLIENT_ID: ${{ vars.LYRA_RELEASES_APP_CLIENT_ID }}
+          LYRA_RELEASES_APP_PRIVATE_KEY: ${{ secrets.LYRA_RELEASES_APP_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:LYRA_RELEASES_APP_CLIENT_ID)) {
+            throw "LYRA_RELEASES_APP_CLIENT_ID must be configured as a repository variable before publishing to OrionAISystems/Lyra-Releases."
+          }
+          if ([string]::IsNullOrWhiteSpace($env:LYRA_RELEASES_APP_PRIVATE_KEY)) {
+            throw "LYRA_RELEASES_APP_PRIVATE_KEY must be configured as a repository secret before publishing to OrionAISystems/Lyra-Releases."
+          }
+          if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY)) {
+            throw "TAURI_SIGNING_PRIVATE_KEY must be configured before generating updater artifacts."
+          }
+
+      - name: Create short-lived release repository token
+        id: release-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          client-id: ${{ vars.LYRA_RELEASES_APP_CLIENT_ID }}
+          private-key: ${{ secrets.LYRA_RELEASES_APP_PRIVATE_KEY }}
+          owner: OrionAISystems
+          repositories: Lyra-Releases
+          permission-contents: write
+
+      - name: Build and publish release artifacts
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5
+        env:
+          GITHUB_TOKEN: ${{ steps.release-token.outputs.token }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: .
+          tauriScript: npm run tauri
+          tagName: ${{ github.ref_name }}
+          releaseName: Lyra ${{ github.ref_name }}
+          releaseBody: |
+            Windows x64 NSIS installer for Lyra.
+
+            Authenticode signing is enabled when the organization certificate is configured. Tauri updater artifacts remain cryptographically signed.
+
+            Runtime and Parakeet model downloads remain explicit and app-managed after installation.
+          releaseDraft: false
+          prerelease: false
+          owner: OrionAISystems
+          repo: Lyra-Releases
+          releaseCommitish: main
+          includeUpdaterJson: true
+          updaterJsonPreferNsis: true
+          args: --bundles nsis
