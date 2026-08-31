@@ -206,7 +206,6 @@ fn register_hotkey(
             }
             let _ = app.emit("lyra://shortcut", edge);
         })?;
-    app.global_shortcut().register(shortcut)?;
     Ok(())
 }
 
@@ -229,7 +228,15 @@ fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let separator = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "Quit Lyra", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&settings, &copy, &separator, &quit])?;
+    let icon = app.default_window_icon().cloned().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "Lyra application icon is unavailable",
+        )
+    })?;
     TrayIconBuilder::new()
+        .icon(icon)
+        .icon_as_template(true)
         .menu(&menu)
         .tooltip("Lyra dictation")
         .on_menu_event(|app, event| match event.id.as_ref() {

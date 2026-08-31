@@ -63,6 +63,7 @@ import type {
   TranscriptionResult,
 } from "./types";
 import { defaultSettings } from "./types";
+import lyraIcon from "./assets/lyra-icon.png";
 
 type SettingsSection = "general" | "dictation" | "audio" | "language" | "transcription" | "cloud" | "appearance" | "diagnostics";
 
@@ -557,7 +558,7 @@ function SettingsApp({ settings, runtime, session, lastResult, devices, credenti
 
   return <main className="settings-shell">
     <aside className="sidebar">
-      <div className="brand-lockup"><span className="brand-orbit"><span /></span><div><strong>Lyra</strong><span>Orion voice layer</span></div></div>
+      <div className="brand-lockup"><img className="brand-icon" src={lyraIcon} alt="" /><div><strong>Lyra</strong><span>Orion voice layer</span></div></div>
       <div className="sidebar-status"><StatusDot tone={runtime.runtimeInstalled && runtime.modelInstalled ? "good" : "warn"} /><span>{runtime.runtimeInstalled && runtime.modelInstalled ? "Ready locally" : "Setup in progress"}</span></div>
       <nav className="settings-nav" aria-label="Settings">
         {(Object.keys(sectionLabels) as SettingsSection[]).map((item) => <button key={item} className={section === item ? "nav-active" : ""} onClick={() => setSection(item)}><NavIcon section={item} /><span>{sectionLabels[item]}</span>{section === item && <ChevronRight size={14} />}</button>)}

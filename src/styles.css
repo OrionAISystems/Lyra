@@ -33,11 +33,7 @@ button { color: inherit; border: 0; cursor: pointer; }
 .brand-lockup { display: flex; align-items: center; gap: 11px; padding: 0 10px 26px; }
 .brand-lockup strong { display: block; font-size: 16px; letter-spacing: -.02em; }
 .brand-lockup div > span { display: block; margin-top: 2px; color: var(--faint); font-size: 10px; letter-spacing: .03em; }
-.brand-orbit { position: relative; display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid rgba(138, 216, 206, .52); border-radius: 50%; transform: rotate(-26deg); }
-.brand-orbit::before, .brand-orbit::after { position: absolute; content: ""; width: 15px; height: 7px; border: 1px solid rgba(138, 216, 206, .65); border-radius: 50%; }
-.brand-orbit::before { transform: rotate(50deg); }
-.brand-orbit::after { transform: rotate(-50deg); }
-.brand-orbit span { width: 4px; height: 4px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+.brand-icon { display: block; width: 28px; height: 28px; border-radius: 8px; box-shadow: 0 0 14px rgba(84, 134, 255, .14); object-fit: contain; }
 .sidebar-status { display: flex; align-items: center; gap: 8px; margin: 0 8px 22px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); font-size: 11px; }
 .status-dot { display: inline-block; flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
 .status-dot--good { background: var(--accent); box-shadow: 0 0 9px rgba(138, 216, 206, .72); }

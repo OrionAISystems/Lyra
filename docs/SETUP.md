@@ -32,7 +32,7 @@ If any injection step fails, Lyra leaves the transcript on the clipboard and say
 
 ## Troubleshooting
 
-If the hotkey shows `Pending`, another application still owns the global registration. Fully restart that application, then use `Retry` in Lyra's readiness checklist; Lyra keeps the tray and dictation bar available while the shortcut is unavailable.
+Lyra registers the hotkey and its event handler together during startup. If the hotkey still shows `Pending`, another application owns the global registration; fully restart that application, then use `Retry` in Lyra's readiness checklist. Lyra keeps the tray and dictation bar available while the shortcut is unavailable.
 
 The native runtime is loaded with its app-local `bin` directory as the dependency search location. No machine-wide CUDA Toolkit or PATH entry is required. If a local attempt reports `no audio was captured`, the runtime and model have already loaded and the recording itself was empty.
 
