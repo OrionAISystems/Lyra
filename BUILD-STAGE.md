@@ -34,7 +34,7 @@ The current implementation target is v0.3.0, the first daily-use hardening relea
 - [x] Add the updater signing key and GitHub App credential to repository/organization secrets; Authenticode signing remains optional until a certificate is available.
 - [x] Run a tagged CI release and inspect the public `latest.json`, installer, signature, and sanitized notes.
 - [x] Rust updater gate and local signed fixture cover valid, offline, corrupt-signature, and failed-install paths.
-- [ ] Installed v0.2.0 → public v0.3.0 check/download/passive-install/restart acceptance.
+- [x] Installed v0.2.0 → public v0.3.0 check/download/passive-install/restart acceptance.
 
 ## Stage 3 — v0.3.0 release gate
 

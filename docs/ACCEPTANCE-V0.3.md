@@ -87,7 +87,7 @@ Status values: `Not run`, `Pass`, `Fail`, or `Blocked`. Keep failed evidence in 
 | Local offline check | Pass | `npm run test:updater-fixture` — offline update check passed | 2026-09-01 | Codex |  |
 | Local invalid/corrupt signature | Pass | `npm run test:updater-fixture` — invalid/corrupt signature passed | 2026-09-01 | Codex |  |
 | Local failed install preserves app | Pass | `npm run test:updater-fixture` — failed install preserves existing application passed | 2026-09-01 | Codex |  |
-| Installed v0.2.0 → public v0.3.0 check | Not run |  |  |  | Real production feed. |
-| Installed v0.2.0 → v0.3.0 download | Not run |  |  |  |  |
-| Passive install and restart | Not run |  |  |  |  |
-| Post-upgrade version and migrated settings | Not run |  |  |  | Confirm v0.3.0, warm policy migration, seeded dictionary, stats store. |
+| Installed v0.2.0 → public v0.3.0 check | Pass | Computer Use opened the installed v0.2.0 Settings surface, clicked `Check for updates`, and observed `Update available — Lyra 0.3.0 is ready` from the public signed feed. | 2026-09-01 | Codex |  |
+| Installed v0.2.0 → v0.3.0 download | Pass | The confirmed installed updater action downloaded the public v0.3.0 NSIS artifact and advanced to installation. | 2026-09-01 | Codex |  |
+| Passive install and restart | Pass | The confirmed `Install and restart` action returned Lyra to the tray; the restarted installed process was verified at `C:\Users\Met\AppData\Local\Lyra\lyra.exe`. | 2026-09-01 | Codex |  |
+| Post-upgrade version and migrated settings | Pass | Post-restart process metadata reported file version `0.3.0`; settings reported schema v2, `always_warm`, the three seeded corrections, and the valid aggregate usage-store schema. Computer Use also showed the v0.3 Usage/Vocabulary surfaces and Model runtime `Ready`. | 2026-09-01 | Codex | No transcript or raw-audio history was introduced. |
