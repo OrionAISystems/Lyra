@@ -91,6 +91,7 @@ pub struct UpdateManager {
     deferred_version: Arc<Mutex<Option<String>>>,
     provider: Arc<dyn UpdateProvider>,
     sink: Arc<dyn UpdateEventSink>,
+    installation_gate: Arc<AtomicBool>,
 }
 
 impl UpdateManager {
@@ -113,6 +114,7 @@ impl UpdateManager {
             deferred_version: Arc::new(Mutex::new(None)),
             provider,
             sink,
+            installation_gate: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -173,19 +175,47 @@ impl UpdateManager {
         published
     }
 
+    #[allow(dead_code)]
     pub async fn install_update(
         &self,
         session_state: crate::domain::DictationState,
     ) -> UpdateStatus {
+        if let Err(status) = self.reserve_installation(session_state) {
+            return status;
+        }
+        self.install_reserved().await
+    }
+
+    pub fn reserve_installation(
+        &self,
+        session_state: crate::domain::DictationState,
+    ) -> Result<(), UpdateStatus> {
         if matches!(
             session_state,
             crate::domain::DictationState::Listening | crate::domain::DictationState::Processing
         ) {
-            return self.publish_error("Finish dictation before installing an update");
+            return Err(self.publish_error("Finish dictation before installing an update"));
         }
 
+        if self
+            .installation_gate
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return Err(self.publish_error("An update installation is already in progress"));
+        }
+
+        if self.status().available_version.is_none() {
+            self.installation_gate.store(false, Ordering::Release);
+            return Err(self.publish_error("No update is ready to install"));
+        }
+        Ok(())
+    }
+
+    pub async fn install_reserved(&self) -> UpdateStatus {
         let version = self.status().available_version;
         let Some(version) = version else {
+            self.installation_gate.store(false, Ordering::Release);
             return self.publish_error("No update is ready to install");
         };
         if self
@@ -193,6 +223,7 @@ impl UpdateManager {
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .is_err()
         {
+            self.installation_gate.store(false, Ordering::Release);
             return self.status();
         }
 
@@ -224,10 +255,17 @@ impl UpdateManager {
                 installing.progress = Some(1.0);
                 self.publish(installing)
             }
-            Err(error) => self.publish_error(&error.to_string()),
+            Err(error) => {
+                self.installation_gate.store(false, Ordering::Release);
+                self.publish_error(&error.to_string())
+            }
         };
         self.operation_in_flight.store(false, Ordering::Release);
         status
+    }
+
+    pub fn installation_blocks_sessions(&self) -> bool {
+        self.installation_gate.load(Ordering::Acquire)
     }
 
     pub fn defer_update(&self) -> UpdateStatus {
@@ -498,7 +536,39 @@ mod tests {
             manager.install_update(crate::domain::DictationState::Idle),
         );
         assert_eq!(status.state, UpdateState::Installing);
+        assert!(manager.installation_blocks_sessions());
         assert!(emissions.lock().unwrap().len() >= 4);
+    }
+
+    struct FailingProvider {
+        fail_check: bool,
+    }
+
+    impl UpdateProvider for FailingProvider {
+        fn check(&self) -> UpdateFuture<Option<UpdateManifest>> {
+            if self.fail_check {
+                return Box::pin(async {
+                    Err(UpdateError::Provider(
+                        "offline fixture endpoint unavailable".to_owned(),
+                    ))
+                });
+            }
+            Box::pin(async {
+                Ok(Some(UpdateManifest {
+                    version: "0.3.0".to_owned(),
+                    notes: None,
+                    published_at: None,
+                }))
+            })
+        }
+
+        fn install(&self, _version: String, _progress: UpdateProgressCallback) -> UpdateFuture<()> {
+            Box::pin(async {
+                Err(UpdateError::Provider(
+                    "fixture installer refused to replace the application".to_owned(),
+                ))
+            })
+        }
     }
 
     #[test]
@@ -517,5 +587,35 @@ mod tests {
         );
         assert_eq!(status.state, UpdateState::Error);
         assert!(status.error.unwrap().contains("Finish dictation"));
+    }
+
+    #[test]
+    fn offline_check_and_failed_install_are_recoverable() {
+        let offline = UpdateManager::with_provider(
+            Arc::new(FailingProvider { fail_check: true }),
+            Arc::new(TestSink {
+                emissions: Arc::new(Mutex::new(Vec::new())),
+            }),
+            "0.2.0",
+        );
+        let status = tauri::async_runtime::block_on(offline.check_for_updates());
+        assert_eq!(status.state, UpdateState::Error);
+        assert!(!offline.installation_blocks_sessions());
+
+        let failed_install = UpdateManager::with_provider(
+            Arc::new(FailingProvider { fail_check: false }),
+            Arc::new(TestSink {
+                emissions: Arc::new(Mutex::new(Vec::new())),
+            }),
+            "0.2.0",
+        );
+        let available = tauri::async_runtime::block_on(failed_install.check_for_updates());
+        assert_eq!(available.state, UpdateState::Available);
+        let status = tauri::async_runtime::block_on(
+            failed_install.install_update(crate::domain::DictationState::Idle),
+        );
+        assert_eq!(status.state, UpdateState::Error);
+        assert!(status.error.unwrap().contains("refused"));
+        assert!(!failed_install.installation_blocks_sessions());
     }
 }

@@ -4,9 +4,44 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 use tracing::{info, warn};
 
-use crate::domain::{ActivationMode, LanguagePreference, TranscriptionRoute};
+use crate::domain::{ActivationMode, CorrectionEntry, LanguagePreference, TranscriptionRoute};
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 1;
+pub const CURRENT_SCHEMA_VERSION: u32 = 2;
+
+const DEFAULT_CLOUD_COST_PER_MINUTE_USD: f64 = 0.003;
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BarPlacement {
+    FollowActiveWindow,
+    PrimaryDisplay,
+    FixedMonitor,
+}
+
+impl Default for BarPlacement {
+    fn default() -> Self {
+        Self::FollowActiveWindow
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelWarmPolicy {
+    AlwaysWarm,
+    #[serde(rename = "unload_after_5_minutes")]
+    UnloadAfter5Minutes,
+    #[serde(rename = "unload_after_15_minutes")]
+    UnloadAfter15Minutes,
+    #[serde(rename = "unload_after_30_minutes")]
+    UnloadAfter30Minutes,
+    NeverKeepWarm,
+}
+
+impl Default for ModelWarmPolicy {
+    fn default() -> Self {
+        Self::AlwaysWarm
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -31,8 +66,24 @@ pub struct Settings {
     pub auto_paste: bool,
     #[serde(default)]
     pub launch_at_login: bool,
+    #[serde(default)]
+    pub auto_stop_after_silence_ms: Option<u64>,
     #[serde(default = "default_true")]
-    pub keep_model_warm: bool,
+    pub formatting_commands_enabled: bool,
+    #[serde(default = "default_corrections")]
+    pub corrections: Vec<CorrectionEntry>,
+    #[serde(default)]
+    pub bar_placement: BarPlacement,
+    #[serde(default)]
+    pub bar_monitor_id: Option<String>,
+    #[serde(default)]
+    pub bar_monitor_index: Option<u32>,
+    #[serde(default)]
+    pub model_warm_policy: ModelWarmPolicy,
+    #[serde(default)]
+    pub usage_cost_estimates_enabled: bool,
+    #[serde(default = "default_cloud_cost_per_minute_usd")]
+    pub cloud_cost_per_minute_usd: f64,
     #[serde(default = "default_theme")]
     pub theme: String,
     #[serde(default)]
@@ -55,6 +106,18 @@ fn default_theme() -> String {
     "dark".to_owned()
 }
 
+fn default_cloud_cost_per_minute_usd() -> f64 {
+    DEFAULT_CLOUD_COST_PER_MINUTE_USD
+}
+
+fn default_corrections() -> Vec<CorrectionEntry> {
+    vec![
+        CorrectionEntry::new("orion ai systems", "Orion AI Systems"),
+        CorrectionEntry::new("geo core", "GeoCore"),
+        CorrectionEntry::new("war map", "WarMap"),
+    ]
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Self {
@@ -68,7 +131,15 @@ impl Default for Settings {
             max_duration_seconds: default_max_duration(),
             auto_paste: true,
             launch_at_login: false,
-            keep_model_warm: true,
+            auto_stop_after_silence_ms: None,
+            formatting_commands_enabled: true,
+            corrections: default_corrections(),
+            bar_placement: BarPlacement::default(),
+            bar_monitor_id: None,
+            bar_monitor_index: None,
+            model_warm_policy: ModelWarmPolicy::default(),
+            usage_cost_estimates_enabled: false,
+            cloud_cost_per_minute_usd: default_cloud_cost_per_minute_usd(),
             theme: default_theme(),
             onboarding_complete: false,
         }
@@ -85,6 +156,21 @@ impl Settings {
         if self.theme != "system" && self.theme != "dark" {
             self.theme = default_theme();
         }
+        self.auto_stop_after_silence_ms = match self.auto_stop_after_silence_ms {
+            Some(value) if matches!(value, 1_000 | 1_500 | 2_000 | 3_000) => Some(value),
+            _ => None,
+        };
+        self.corrections.retain(|entry| {
+            !entry.source.trim().is_empty() && !entry.replacement.trim().is_empty()
+        });
+        for entry in &mut self.corrections {
+            entry.source = entry.source.trim().to_owned();
+            entry.replacement = entry.replacement.trim().to_owned();
+        }
+        if !self.cloud_cost_per_minute_usd.is_finite() || self.cloud_cost_per_minute_usd < 0.0 {
+            self.cloud_cost_per_minute_usd = default_cloud_cost_per_minute_usd();
+        }
+        self.cloud_cost_per_minute_usd = self.cloud_cost_per_minute_usd.min(1_000.0);
         self
     }
 }
@@ -104,7 +190,9 @@ impl SettingsStore {
             .join("settings.json");
 
         let settings = match fs::read_to_string(&path) {
-            Ok(contents) => match serde_json::from_str::<Settings>(&contents) {
+            Ok(contents) => match serde_json::from_str::<serde_json::Value>(&contents)
+                .and_then(migrate_settings_value)
+            {
                 Ok(settings) => settings.normalized(),
                 Err(error) => {
                     warn!(error = %error, "settings file invalid; using defaults");
@@ -162,6 +250,35 @@ impl SettingsStore {
     }
 }
 
+fn migrate_settings_value(mut value: serde_json::Value) -> Result<Settings, serde_json::Error> {
+    let schema_version = value
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(1);
+    if schema_version < CURRENT_SCHEMA_VERSION as u64 {
+        let legacy_keep_warm = value
+            .get("keepModelWarm")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(true);
+        if let Some(object) = value.as_object_mut() {
+            object.insert(
+                "modelWarmPolicy".to_owned(),
+                serde_json::Value::String(if legacy_keep_warm {
+                    "always_warm".to_owned()
+                } else {
+                    "never_keep_warm".to_owned()
+                }),
+            );
+            object.insert(
+                "schemaVersion".to_owned(),
+                serde_json::Value::from(CURRENT_SCHEMA_VERSION),
+            );
+            object.remove("keepModelWarm");
+        }
+    }
+    serde_json::from_value(value)
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum SettingsError {
     #[error("settings I/O failed: {0}")]
@@ -175,12 +292,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn defaults_match_v1_product_defaults() {
+    fn defaults_match_v2_product_defaults() {
         let settings = Settings::default();
         assert_eq!(settings.hotkey, "Ctrl+Alt+Space");
         assert_eq!(settings.activation_mode, ActivationMode::PushToTalk);
         assert_eq!(settings.route, TranscriptionRoute::LocalFirstCloudFallback);
-        assert!(settings.show_bar && settings.auto_paste && settings.keep_model_warm);
+        assert!(settings.show_bar && settings.auto_paste);
+        assert_eq!(settings.model_warm_policy, ModelWarmPolicy::AlwaysWarm);
+        assert_eq!(settings.corrections.len(), 3);
+        assert!(settings.formatting_commands_enabled);
     }
 
     #[test]
@@ -189,10 +309,49 @@ mod tests {
         settings.max_duration_seconds = 9999;
         settings.hotkey = " ".to_owned();
         settings.theme = "neon".to_owned();
+        settings.auto_stop_after_silence_ms = Some(900);
+        settings.cloud_cost_per_minute_usd = f64::NAN;
         let normalized = settings.normalized();
         assert_eq!(normalized.max_duration_seconds, 600);
         assert_eq!(normalized.hotkey, "Ctrl+Alt+Space");
         assert_eq!(normalized.theme, "dark");
+        assert_eq!(normalized.auto_stop_after_silence_ms, None);
+        assert_eq!(
+            normalized.cloud_cost_per_minute_usd,
+            DEFAULT_CLOUD_COST_PER_MINUTE_USD
+        );
+    }
+
+    #[test]
+    fn v1_keep_model_warm_migrates_to_explicit_policy() {
+        let legacy = serde_json::json!({
+            "schemaVersion": 1,
+            "activationMode": "toggle",
+            "hotkey": "Ctrl+Alt+Space",
+            "keepModelWarm": false,
+            "maxDurationSeconds": 120
+        });
+        let migrated = migrate_settings_value(legacy).unwrap().normalized();
+        assert_eq!(migrated.schema_version, CURRENT_SCHEMA_VERSION);
+        assert_eq!(migrated.activation_mode, ActivationMode::Toggle);
+        assert_eq!(migrated.model_warm_policy, ModelWarmPolicy::NeverKeepWarm);
+        assert_eq!(migrated.corrections.len(), 3);
+    }
+
+    #[test]
+    fn v2_settings_keep_user_corrections_and_policy() {
+        let current = serde_json::json!({
+            "schemaVersion": 2,
+            "modelWarmPolicy": "unload_after_15_minutes",
+            "corrections": [{"source":"Tauri","replacement":"Tauri","enabled":false,"caseSensitive":true}]
+        });
+        let migrated = migrate_settings_value(current).unwrap().normalized();
+        assert_eq!(
+            migrated.model_warm_policy,
+            ModelWarmPolicy::UnloadAfter15Minutes
+        );
+        assert_eq!(migrated.corrections.len(), 1);
+        assert!(!migrated.corrections[0].enabled);
     }
 
     #[test]

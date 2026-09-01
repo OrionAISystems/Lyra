@@ -2,13 +2,19 @@
 
 ## Installed application
 
-The v0.2.0 Windows x64 release is a per-user NSIS installer. It creates the Lyra Start Menu entry and offers the desktop shortcut during setup. It does not require administrator elevation and does not bundle the native speech runtime or the 681 MB model. Existing debug builds remain separate under `src-tauri\target\debug`.
+The v0.3.0 Windows x64 release is a per-user NSIS installer. It creates the Lyra Start Menu entry and offers the desktop shortcut during setup. It does not require administrator elevation and does not bundle the native speech runtime or the 681 MB model. Existing debug builds remain separate under `src-tauri\target\debug`.
 
 The installer uses Tauri's WebView2 download bootstrapper. On a machine without a suitable WebView2 runtime, the installer obtains the standard Microsoft runtime; Lyra itself never changes `PATH`, installs the CUDA Toolkit, or installs CMake/Ninja.
 
 ## Prerequisites
 
 Development requires Node.js, Rust with the MSVC Windows target, and the Tauri prerequisites. The packaged app does not require a machine-wide CUDA Toolkit, CMake, Ninja, FFmpeg, or NeMo-Speech.cpp installation.
+
+## Settings and dictation policy
+
+Settings are persisted as schema v2 under the app configuration directory. Existing v0.2 settings are migrated on first load. The three seeded vocabulary corrections are enabled by default; additions, enablement, and case sensitivity are local settings only.
+
+Push-to-talk on the bar starts on primary-pointer down and stops on pointer up, cancellation, or lost pointer capture. Toggle mode starts and stops on clicks. Silence endpointing is off by default, is available at 1.0, 1.5, 2.0, or 3.0 seconds, and applies only after a short voiced interval has crossed Lyra's fixed conservative RMS threshold. Maximum duration changes are applied to the persistent bar and active capture without restarting Lyra.
 
 ## Runtime and model policy
 
@@ -30,10 +36,12 @@ The first candidate is the official NeMo-Speech.cpp v0.1.0 Windows x64 CUDA arch
 2. Detect the GPU and display the measured VRAM.
 3. Approve and verify the native runtime.
 4. Approve and verify the Parakeet model.
-5. Confirm `Ctrl+Alt+Space` and push-to-talk behavior.
+5. Use Record shortcut to capture a modifier plus one main key and confirm the registration status.
 6. Record a short sample and verify the target application paste.
 
-The dictation bar starts at the bottom center of the Windows primary monitor and remains there while dictating, even when the target application is on another monitor.
+The default bar placement is Follow active window. Lyra places the bar at startup and when each session starts; it does not continuously move while browsing. Primary display and one fixed option per detected display are also available. Fixed monitors are resolved by identity first and ordinal second. If a saved monitor is unavailable, Lyra uses the primary display and shows a non-blocking status in General Settings.
+
+The model resource policy is independent from artifact installation: Always warm, unload after 5/15/30 minutes, or Never keep warm. General Settings shows Loading, Ready, Unloaded, or an error detail.
 
 If any injection step fails, Lyra leaves the transcript on the clipboard and says `Copied — paste manually.` It never presses Enter.
 
@@ -47,9 +55,15 @@ The native runtime is loaded with its app-local `bin` directory as the dependenc
 
 The optional OpenAI credential is entered through the settings flow and stored in Windows Credential Manager. It is not written to the JSON settings file, logs, frontend bundle, or Git.
 
+## Usage statistics
+
+The Usage sidebar menu stores aggregate counters only in `%LOCALAPPDATA%\Lyra\usage.json`: dictation counts, audio duration, result timing, local/cloud totals, failures, paste attempts, and fallback counts. No transcript text or raw audio is written. Cost estimates are hidden until enabled and use the editable local rate, defaulting to `$0.003/minute`. Reset requires confirmation and restores empty counters.
+
 ## Updates
 
-Lyra checks the public signed feed at startup, once per hour while running, and when `Check for updates` is pressed in General Settings. It accepts stable versions only and silently treats offline checks as an unavailable feed. Installing is disabled while a dictation session is listening or processing; Windows launches the passive signed NSIS updater and restarts Lyra after installation.
+Lyra checks the public signed feed at startup, once per hour while running, and when `Check for updates` is pressed in General Settings. It accepts stable versions only and silently treats offline checks as an unavailable feed. The install reservation rejects listening/processing sessions and blocks new sessions as soon as installation begins. Windows launches the passive signed NSIS updater and restarts Lyra after installation.
+
+For local updater testing, run `npm run test:updater-fixture`. The harness generates an ephemeral Tauri signing key, serves a local signed manifest/artifact, exercises offline and corrupt-signature cases, and verifies a failed staged install cannot replace the existing application. It uses [src-tauri/tauri.fixture.conf.json](../src-tauri/tauri.fixture.conf.json); production configuration is not changed.
 
 The release workflow publishes only the NSIS installer, Tauri updater artifact/signature, `latest.json`, and sanitized release notes to [`OrionAISystems/Lyra-Releases`](https://github.com/OrionAISystems/Lyra-Releases). Before tagging a production release, configure the Tauri updater public key in `src-tauri/tauri.conf.json`, the GitHub App credentials below, and the following repository secrets/variables:
 

@@ -53,6 +53,32 @@ pub enum TranscriptionRoute {
     CloudOnly,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CorrectionEntry {
+    pub source: String,
+    pub replacement: String,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub case_sensitive: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl CorrectionEntry {
+    pub fn new(source: impl Into<String>, replacement: impl Into<String>) -> Self {
+        Self {
+            source: source.into(),
+            replacement: replacement.into(),
+            enabled: true,
+            case_sensitive: false,
+        }
+    }
+}
+
 impl Default for TranscriptionRoute {
     fn default() -> Self {
         Self::LocalFirstCloudFallback
@@ -173,6 +199,13 @@ pub struct TranscriptionRequest {
     pub sample_rate: u32,
     pub language: LanguagePreference,
     pub request_id: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CaptureEndpoint {
+    Manual,
+    MaximumDuration,
+    Silence,
 }
 
 impl TranscriptionRequest {
@@ -317,17 +350,147 @@ pub fn post_process(raw: &str, preceding_character: Option<char>) -> String {
     }
 }
 
-pub trait PostProcessor: Send + Sync {
-    fn process(&self, raw: &str, preceding_character: Option<char>) -> String;
+#[derive(Debug, Clone, Copy)]
+pub struct TextProcessingOptions<'a> {
+    pub formatting_commands_enabled: bool,
+    pub corrections: &'a [CorrectionEntry],
 }
 
-#[derive(Debug, Default, Clone, Copy)]
-pub struct ConservativePostProcessor;
-
-impl PostProcessor for ConservativePostProcessor {
-    fn process(&self, raw: &str, preceding_character: Option<char>) -> String {
-        post_process(raw, preceding_character)
+pub fn process_transcription_text(
+    raw: &str,
+    preceding_character: Option<char>,
+    options: TextProcessingOptions<'_>,
+) -> String {
+    let normalized = raw.replace("\r\n", "\n").replace('\r', "\n");
+    let mut text = normalized.trim().to_owned();
+    if text.is_empty() {
+        return text;
     }
+
+    if options.formatting_commands_enabled {
+        let mut formatting = vec![
+            ("new paragraph", "\n\n"),
+            ("new line", "\n"),
+            ("open quote", "\""),
+            ("close quote", "\""),
+            ("comma", ","),
+            ("period", "."),
+        ];
+        formatting.sort_by_key(|(source, _)| std::cmp::Reverse(source.len()));
+        text = replace_phrases(&text, &formatting, true);
+        text = normalize_formatting_spacing(&text);
+    }
+
+    let mut corrections = options
+        .corrections
+        .iter()
+        .filter(|entry| entry.enabled && !entry.source.trim().is_empty())
+        .collect::<Vec<_>>();
+    corrections.sort_by_key(|entry| std::cmp::Reverse(entry.source.chars().count()));
+    for entry in corrections {
+        text = replace_phrase(
+            &text,
+            entry.source.trim(),
+            &entry.replacement,
+            entry.case_sensitive,
+        );
+    }
+
+    post_process(&text, preceding_character)
+}
+
+fn replace_phrases(text: &str, replacements: &[(&str, &str)], case_insensitive: bool) -> String {
+    let mut result = text.to_owned();
+    for (source, replacement) in replacements {
+        result = replace_phrase(&result, source, replacement, !case_insensitive);
+    }
+    result
+}
+
+fn replace_phrase(text: &str, source: &str, replacement: &str, case_sensitive: bool) -> String {
+    let source = source.trim();
+    if source.is_empty() || text.is_empty() || source.len() > text.len() {
+        return text.to_owned();
+    }
+    let mut result = String::with_capacity(text.len());
+    let mut cursor = 0;
+    while cursor < text.len() {
+        let Some((start, end)) = find_phrase(text, cursor, source, case_sensitive) else {
+            result.push_str(&text[cursor..]);
+            break;
+        };
+        result.push_str(&text[cursor..start]);
+        result.push_str(replacement);
+        cursor = end;
+    }
+    result
+}
+
+fn find_phrase(
+    text: &str,
+    cursor: usize,
+    source: &str,
+    case_sensitive: bool,
+) -> Option<(usize, usize)> {
+    for (offset, _) in text[cursor..].char_indices() {
+        let start = cursor + offset;
+        let end = start + source.len();
+        let Some(candidate) = text.get(start..end) else {
+            continue;
+        };
+        if phrase_boundary(text, start, end)
+            && if case_sensitive {
+                candidate == source
+            } else {
+                candidate.eq_ignore_ascii_case(source)
+            }
+        {
+            return Some((start, end));
+        }
+    }
+    None
+}
+
+fn phrase_boundary(text: &str, start: usize, end: usize) -> bool {
+    let before = text[..start].chars().next_back();
+    let after = text[end..].chars().next();
+    before.is_none_or(|character| !character.is_alphanumeric())
+        && after.is_none_or(|character| !character.is_alphanumeric())
+}
+
+fn normalize_formatting_spacing(text: &str) -> String {
+    let mut output = String::with_capacity(text.len());
+    let mut quote_open = false;
+    for character in text.chars() {
+        if character == '\n' {
+            while output.ends_with(' ') || output.ends_with('\t') {
+                output.pop();
+            }
+            output.push('\n');
+        } else if matches!(character, ',' | '.') {
+            while output.ends_with(' ') || output.ends_with('\t') {
+                output.pop();
+            }
+            output.push(character);
+        } else if character == '"' {
+            if quote_open {
+                while output.ends_with(' ') || output.ends_with('\t') {
+                    output.pop();
+                }
+            } else if output.ends_with(' ') || output.ends_with('\t') {
+                // Keep a natural separator before an opening quote.
+            }
+            output.push(character);
+            quote_open = !quote_open;
+        } else if (character == ' ' || character == '\t') && output.ends_with('\n') {
+            // Formatting commands own whitespace around a line break.
+        } else if quote_open && (character == ' ' || character == '\t') && output.ends_with('"') {
+            // Do not leave a space immediately inside an opening quote.
+        } else {
+            output.push(character);
+        }
+    }
+    output
 }
 
 #[cfg(test)]
@@ -392,6 +555,52 @@ mod tests {
         assert_eq!(post_process("  world!  ", Some('!')), "world!");
         assert_eq!(post_process("...", Some('a')), "...");
         assert_eq!(post_process("\r\n", Some('a')), "");
+    }
+
+    #[test]
+    fn formatting_commands_are_whole_phrases_and_deterministic() {
+        let options = TextProcessingOptions {
+            formatting_commands_enabled: true,
+            corrections: &[],
+        };
+        assert_eq!(
+            process_transcription_text("hello comma world period", None, options),
+            "hello, world."
+        );
+        assert_eq!(
+            process_transcription_text("new paragraph next new line item", None, options),
+            "next\nitem"
+        );
+        assert_eq!(
+            process_transcription_text("open quote hello close quote", None, options),
+            "\"hello\""
+        );
+        assert_eq!(
+            process_transcription_text("commawheel", None, options),
+            "commawheel"
+        );
+    }
+
+    #[test]
+    fn corrections_are_longest_first_and_respect_case_setting() {
+        let corrections = vec![
+            CorrectionEntry::new("geo", "Geo"),
+            CorrectionEntry::new("geo core", "GeoCore"),
+            CorrectionEntry {
+                source: "Tauri".to_owned(),
+                replacement: "Tauri SDK".to_owned(),
+                enabled: true,
+                case_sensitive: true,
+            },
+        ];
+        let options = TextProcessingOptions {
+            formatting_commands_enabled: false,
+            corrections: &corrections,
+        };
+        assert_eq!(
+            process_transcription_text("geo core tauri Tauri", None, options),
+            "GeoCore tauri Tauri SDK"
+        );
     }
 
     #[test]

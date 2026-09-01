@@ -1,7 +1,7 @@
 {
   "name": "lyra",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Lightweight local-first Windows dictation for the Orion ecosystem",
   "type": "module",
   "scripts": {
@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:updater-fixture": "node scripts/updater-fixture.mjs",
     "test:watch": "vitest",
     "verify:version": "node scripts/verify-version.mjs",
     "verify:release-config": "node scripts/verify-release-config.mjs",

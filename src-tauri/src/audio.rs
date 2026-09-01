@@ -1,6 +1,6 @@
 use std::{
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
         mpsc::{self, Receiver},
         Arc, Mutex,
     },
@@ -12,7 +12,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde::Serialize;
 use tracing::{debug, warn};
 
-use crate::domain::BackendError;
+use crate::domain::{BackendError, CaptureEndpoint};
 
 pub const MODEL_SAMPLE_RATE: u32 = 16_000;
 
@@ -33,12 +33,33 @@ pub struct CapturedAudio {
     pub sample_rate: u32,
     pub duration_ms: u64,
     pub limit_reached: bool,
+    pub endpoint: CaptureEndpoint,
+}
+
+#[derive(Debug, Clone)]
+pub struct CaptureOptions {
+    pub device_id: Option<String>,
+    pub max_duration_seconds: u32,
+    pub silence_after_ms: Option<u64>,
+}
+
+impl CaptureOptions {
+    pub fn normalized(&self) -> Self {
+        Self {
+            device_id: self.device_id.clone(),
+            max_duration_seconds: self.max_duration_seconds.clamp(1, 600),
+            silence_after_ms: self
+                .silence_after_ms
+                .filter(|value| matches!(value, 1_000 | 1_500 | 2_000 | 3_000)),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct CaptureControl {
     stop: Arc<AtomicBool>,
     cancel: Arc<AtomicBool>,
+    max_duration_ms: Arc<AtomicU64>,
 }
 
 impl CaptureControl {
@@ -49,6 +70,13 @@ impl CaptureControl {
     pub fn cancel(&self) {
         self.cancel.store(true, Ordering::SeqCst);
     }
+
+    pub fn update_max_duration(&self, max_duration_seconds: u32) {
+        self.max_duration_ms.store(
+            u64::from(max_duration_seconds.clamp(1, 600)) * 1_000,
+            Ordering::SeqCst,
+        );
+    }
 }
 
 pub struct ActiveCapture {
@@ -57,17 +85,11 @@ pub struct ActiveCapture {
 }
 
 impl ActiveCapture {
-    pub fn stop(self) -> Result<CapturedAudio, BackendError> {
-        self.control.stop();
-        self.wait()
+    pub fn control(&self) -> CaptureControl {
+        self.control.clone()
     }
 
-    pub fn cancel(self) -> Result<CapturedAudio, BackendError> {
-        self.control.cancel();
-        self.wait()
-    }
-
-    fn wait(self) -> Result<CapturedAudio, BackendError> {
+    pub fn wait(self) -> Result<CapturedAudio, BackendError> {
         self.result.recv().unwrap_or_else(|_| {
             Err(BackendError::StreamFailure(
                 "capture worker stopped unexpectedly".to_owned(),
@@ -80,8 +102,7 @@ pub trait AudioCapture: Send + Sync {
     fn list_devices(&self) -> Result<Vec<AudioDeviceInfo>, BackendError>;
     fn start(
         &self,
-        device_id: Option<String>,
-        max_duration_seconds: u32,
+        options: CaptureOptions,
         on_level: Arc<dyn Fn(f32) + Send + Sync>,
     ) -> Result<ActiveCapture, BackendError>;
 }
@@ -167,11 +188,11 @@ impl AudioCapture for CpalAudioCapture {
 
     fn start(
         &self,
-        device_id: Option<String>,
-        max_duration_seconds: u32,
+        options: CaptureOptions,
         on_level: Arc<dyn Fn(f32) + Send + Sync>,
     ) -> Result<ActiveCapture, BackendError> {
-        let (device, _) = self.find_device(device_id.as_deref())?;
+        let options = options.normalized();
+        let (device, _) = self.find_device(options.device_id.as_deref())?;
         let supported_config = device
             .default_input_config()
             .map_err(|error| BackendError::DeviceFailure(error.to_string()))?;
@@ -183,40 +204,83 @@ impl AudioCapture for CpalAudioCapture {
         let stream_error = Arc::new(Mutex::new(None::<String>));
         let stop = Arc::new(AtomicBool::new(false));
         let cancel = Arc::new(AtomicBool::new(false));
+        let max_duration_ms = Arc::new(AtomicU64::new(
+            u64::from(options.max_duration_seconds) * 1_000,
+        ));
         let control = CaptureControl {
             stop: Arc::clone(&stop),
             cancel: Arc::clone(&cancel),
+            max_duration_ms: Arc::clone(&max_duration_ms),
         };
         let (result_tx, result_rx) = mpsc::channel();
         let samples_for_callback = Arc::clone(&samples);
         let error_for_callback = Arc::clone(&stream_error);
         let level_for_callback = Arc::clone(&on_level);
+        let activity_level = Arc::new(AtomicU32::new(0.0_f32.to_bits()));
+        let last_voiced_ms = Arc::new(AtomicU64::new(0));
+        let capture_clock = Instant::now();
 
         let stream = match sample_format {
-            cpal::SampleFormat::F32 => device.build_input_stream(
-                &config,
-                move |data: &[f32], _| {
-                    append_f32(data, channels, &samples_for_callback, &level_for_callback)
-                },
-                move |error| set_stream_error(&error_for_callback, error.to_string()),
-                None,
-            ),
-            cpal::SampleFormat::I16 => device.build_input_stream(
-                &config,
-                move |data: &[i16], _| {
-                    append_i16(data, channels, &samples_for_callback, &level_for_callback)
-                },
-                move |error| set_stream_error(&error_for_callback, error.to_string()),
-                None,
-            ),
-            cpal::SampleFormat::U16 => device.build_input_stream(
-                &config,
-                move |data: &[u16], _| {
-                    append_u16(data, channels, &samples_for_callback, &level_for_callback)
-                },
-                move |error| set_stream_error(&error_for_callback, error.to_string()),
-                None,
-            ),
+            cpal::SampleFormat::F32 => {
+                let activity = Arc::clone(&activity_level);
+                let voiced = Arc::clone(&last_voiced_ms);
+                device.build_input_stream(
+                    &config,
+                    move |data: &[f32], _| {
+                        append_f32(
+                            data,
+                            channels,
+                            &samples_for_callback,
+                            &level_for_callback,
+                            &activity,
+                            &voiced,
+                            capture_clock,
+                        )
+                    },
+                    move |error| set_stream_error(&error_for_callback, error.to_string()),
+                    None,
+                )
+            }
+            cpal::SampleFormat::I16 => {
+                let activity = Arc::clone(&activity_level);
+                let voiced = Arc::clone(&last_voiced_ms);
+                device.build_input_stream(
+                    &config,
+                    move |data: &[i16], _| {
+                        append_i16(
+                            data,
+                            channels,
+                            &samples_for_callback,
+                            &level_for_callback,
+                            &activity,
+                            &voiced,
+                            capture_clock,
+                        )
+                    },
+                    move |error| set_stream_error(&error_for_callback, error.to_string()),
+                    None,
+                )
+            }
+            cpal::SampleFormat::U16 => {
+                let activity = Arc::clone(&activity_level);
+                let voiced = Arc::clone(&last_voiced_ms);
+                device.build_input_stream(
+                    &config,
+                    move |data: &[u16], _| {
+                        append_u16(
+                            data,
+                            channels,
+                            &samples_for_callback,
+                            &level_for_callback,
+                            &activity,
+                            &voiced,
+                            capture_clock,
+                        )
+                    },
+                    move |error| set_stream_error(&error_for_callback, error.to_string()),
+                    None,
+                )
+            }
             other => {
                 return Err(BackendError::Unsupported(format!(
                     "microphone format {other:?}"
@@ -228,20 +292,37 @@ impl AudioCapture for CpalAudioCapture {
         stream
             .play()
             .map_err(|error| BackendError::StreamFailure(error.to_string()))?;
-        let max_duration = Duration::from_secs(u64::from(max_duration_seconds.clamp(1, 600)));
+        let silence_after_ms = options.silence_after_ms;
+        let activity_level_for_worker = Arc::clone(&activity_level);
+        let last_voiced_for_worker = Arc::clone(&last_voiced_ms);
 
         thread::Builder::new()
             .name("lyra-audio-capture".to_owned())
             .spawn(move || {
                 let started = Instant::now();
                 let mut limit_reached = false;
+                let mut endpoint = CaptureEndpoint::Manual;
+                let mut silence_detector = SilenceDetector::default();
                 loop {
                     if cancel.load(Ordering::SeqCst) || stop.load(Ordering::SeqCst) {
                         break;
                     }
-                    if started.elapsed() >= max_duration {
+                    if started.elapsed().as_millis() as u64
+                        >= max_duration_ms.load(Ordering::SeqCst)
+                    {
                         limit_reached = true;
+                        endpoint = CaptureEndpoint::MaximumDuration;
                         break;
+                    }
+                    if let Some(silence_after_ms) = silence_after_ms {
+                        let level =
+                            f32::from_bits(activity_level_for_worker.load(Ordering::Acquire));
+                        let now_ms = started.elapsed().as_millis() as u64;
+                        let last_voiced = last_voiced_for_worker.load(Ordering::Acquire);
+                        if silence_detector.update(level, now_ms, last_voiced, silence_after_ms) {
+                            endpoint = CaptureEndpoint::Silence;
+                            break;
+                        }
                     }
                     thread::sleep(Duration::from_millis(10));
                 }
@@ -272,6 +353,7 @@ impl AudioCapture for CpalAudioCapture {
                     sample_rate: MODEL_SAMPLE_RATE,
                     duration_ms,
                     limit_reached,
+                    endpoint,
                 }));
             })
             .map_err(|error| BackendError::StreamFailure(error.to_string()))?;
@@ -298,8 +380,20 @@ fn append_f32(
     channels: usize,
     samples: &Mutex<Vec<f32>>,
     on_level: &Arc<dyn Fn(f32) + Send + Sync>,
+    activity_level: &AtomicU32,
+    last_voiced_ms: &AtomicU64,
+    capture_clock: Instant,
 ) {
-    append_converted(data, channels, samples, on_level, |value| value);
+    append_converted(
+        data,
+        channels,
+        samples,
+        on_level,
+        activity_level,
+        last_voiced_ms,
+        capture_clock,
+        |value| value,
+    );
 }
 
 fn append_i16(
@@ -307,10 +401,20 @@ fn append_i16(
     channels: usize,
     samples: &Mutex<Vec<f32>>,
     on_level: &Arc<dyn Fn(f32) + Send + Sync>,
+    activity_level: &AtomicU32,
+    last_voiced_ms: &AtomicU64,
+    capture_clock: Instant,
 ) {
-    append_converted(data, channels, samples, on_level, |value| {
-        f32::from(value) / 32_768.0
-    });
+    append_converted(
+        data,
+        channels,
+        samples,
+        on_level,
+        activity_level,
+        last_voiced_ms,
+        capture_clock,
+        |value| f32::from(value) / 32_768.0,
+    );
 }
 
 fn append_u16(
@@ -318,10 +422,20 @@ fn append_u16(
     channels: usize,
     samples: &Mutex<Vec<f32>>,
     on_level: &Arc<dyn Fn(f32) + Send + Sync>,
+    activity_level: &AtomicU32,
+    last_voiced_ms: &AtomicU64,
+    capture_clock: Instant,
 ) {
-    append_converted(data, channels, samples, on_level, |value| {
-        (f32::from(value) - 32_768.0) / 32_768.0
-    });
+    append_converted(
+        data,
+        channels,
+        samples,
+        on_level,
+        activity_level,
+        last_voiced_ms,
+        capture_clock,
+        |value| (f32::from(value) - 32_768.0) / 32_768.0,
+    );
 }
 
 fn append_converted<T: Copy>(
@@ -329,6 +443,9 @@ fn append_converted<T: Copy>(
     channels: usize,
     samples: &Mutex<Vec<f32>>,
     on_level: &Arc<dyn Fn(f32) + Send + Sync>,
+    activity_level: &AtomicU32,
+    last_voiced_ms: &AtomicU64,
+    capture_clock: Instant,
     convert: impl Fn(T) -> f32,
 ) {
     if let Ok(mut target) = samples.lock() {
@@ -344,8 +461,47 @@ fn append_converted<T: Copy>(
             target.push(mono.clamp(-1.0, 1.0));
         }
         if frame_count > 0 {
-            on_level((sum / frame_count as f32).sqrt().min(1.0));
+            let level = (sum / frame_count as f32).sqrt().min(1.0);
+            activity_level.store(level.to_bits(), Ordering::Release);
+            if level >= SPEECH_RMS_THRESHOLD {
+                last_voiced_ms.store(
+                    capture_clock.elapsed().as_millis() as u64 + 1,
+                    Ordering::Release,
+                );
+            }
+            on_level(level);
         }
+    }
+}
+
+pub const SPEECH_RMS_THRESHOLD: f32 = 0.025;
+pub const MIN_VOICED_MS: u64 = 120;
+
+#[derive(Debug, Default)]
+pub struct SilenceDetector {
+    voiced_since_ms: Option<u64>,
+    speech_armed: bool,
+}
+
+impl SilenceDetector {
+    pub fn update(
+        &mut self,
+        level: f32,
+        now_ms: u64,
+        last_voiced_ms: u64,
+        silence_after_ms: u64,
+    ) -> bool {
+        if level >= SPEECH_RMS_THRESHOLD {
+            self.voiced_since_ms.get_or_insert(now_ms);
+            if now_ms.saturating_sub(self.voiced_since_ms.unwrap_or(now_ms)) >= MIN_VOICED_MS {
+                self.speech_armed = true;
+            }
+            return false;
+        }
+        self.voiced_since_ms = None;
+        self.speech_armed
+            && last_voiced_ms > 0
+            && now_ms.saturating_add(1).saturating_sub(last_voiced_ms) >= silence_after_ms
     }
 }
 
@@ -409,5 +565,41 @@ mod tests {
         assert_eq!(&wav[8..12], b"WAVE");
         assert_eq!(&wav[36..40], b"data");
         assert_eq!(wav.len(), 48);
+    }
+
+    #[test]
+    fn silence_detector_does_not_endpoint_before_voiced_interval() {
+        let mut detector = SilenceDetector::default();
+        assert!(!detector.update(0.0, 1_000, 0, 1_000));
+        assert!(!detector.update(0.1, 1_010, 11, 1_000));
+        assert!(!detector.update(0.1, 1_100, 101, 1_000));
+        assert!(!detector.update(0.1, 1_130, 131, 1_000));
+        assert!(!detector.update(0.0, 1_200, 1_131, 1_000));
+        assert!(detector.update(0.0, 2_200, 1_131, 1_000));
+    }
+
+    #[test]
+    fn capture_options_accept_only_supported_silence_values() {
+        let options = CaptureOptions {
+            device_id: None,
+            max_duration_seconds: 999,
+            silence_after_ms: Some(900),
+        }
+        .normalized();
+        assert_eq!(options.max_duration_seconds, 600);
+        assert_eq!(options.silence_after_ms, None);
+    }
+
+    #[test]
+    fn capture_control_updates_dynamic_duration_atomically() {
+        let control = CaptureControl {
+            stop: Arc::new(AtomicBool::new(false)),
+            cancel: Arc::new(AtomicBool::new(false)),
+            max_duration_ms: Arc::new(AtomicU64::new(120_000)),
+        };
+        control.update_max_duration(300);
+        assert_eq!(control.max_duration_ms.load(Ordering::Acquire), 300_000);
+        control.update_max_duration(60);
+        assert_eq!(control.max_duration_ms.load(Ordering::Acquire), 60_000);
     }
 }

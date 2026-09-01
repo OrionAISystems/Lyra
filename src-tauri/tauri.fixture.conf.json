@@ -1,0 +1,13 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "plugins": {
+    "updater": {
+      "dangerousInsecureTransportProtocol": true,
+      "pubkey": "__LYRA_FIXTURE_PUBLIC_KEY__",
+      "endpoints": ["__LYRA_FIXTURE_ENDPOINT__"],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}

@@ -1,6 +1,6 @@
 # Lyra releases
 
-Lyra keeps source private in [`OrionAISystems/Lyra`](https://github.com/OrionAISystems/Lyra) and publishes release-only files to the public [`OrionAISystems/Lyra-Releases`](https://github.com/OrionAISystems/Lyra-Releases) repository. Installed clients therefore need no GitHub authentication.
+Lyra keeps source private in [`OrionAISystems/Lyra`](https://github.com/OrionAISystems/Lyra) and publishes release-only files to the public [`OrionAISystems/Lyra-Releases`](https://github.com/OrionAISystems/Lyra-Releases) repository. Installed clients therefore need no GitHub authentication. v0.3.0 is the first release whose installed v0.2.0 client is expected to exercise this path end to end.
 
 ## Release contract
 
@@ -10,6 +10,7 @@ Lyra keeps source private in [`OrionAISystems/Lyra`](https://github.com/OrionAIS
 4. GitHub Actions runs frontend checks, Rust checks/tests, an unbundled Tauri validation build, then the NSIS build. Authenticode signing is applied when the optional Windows certificate is configured.
 5. The pinned Tauri Action publishes the installer, updater artifact and signature, `latest.json`, and the release notes to `Lyra-Releases`.
 6. Inspect the public release assets and manifest before treating the release as production-ready.
+7. From an installed v0.2.0 client, check, download, passively install, restart, and verify v0.3.0. Confirm migrated settings, empty/new usage statistics, and the updater gate while dictating.
 
 The public repository must remain release-only. Do not add source code, models, native runtime archives, credentials, CI logs, or private organization documentation there.
 
@@ -30,3 +31,9 @@ Tauri's generated manifest is served from:
 `https://github.com/OrionAISystems/Lyra-Releases/releases/latest/download/latest.json`
 
 The client accepts only stable semantic versions newer than its current version. Notes are sanitized and rendered as text. An unavailable feed does not interrupt dictation or show an operating-system toast.
+
+## Local fixture
+
+`npm run test:updater-fixture` does not contact or mutate `OrionAISystems/Lyra-Releases`. It creates an ephemeral signing key with the Tauri signer, serves a dynamic local endpoint from a temporary HTTP server, verifies the minisign artifact and trusted-comment signatures, corrupts the signature, stops the endpoint for an offline check, and simulates a staged install failure while asserting the existing application bytes are unchanged. `src-tauri/tauri.fixture.conf.json` is a template only; the production endpoint, production public key, passive install mode, and release-only repository remain unchanged.
+
+The manual release evidence, including the real installed v0.2.0 → public v0.3.0 upgrade, is maintained in [ACCEPTANCE-V0.3.md](ACCEPTANCE-V0.3.md).

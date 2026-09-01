@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { AudioDeviceInfo, HotkeyStatus, RuntimeStatus, SessionSnapshot, Settings, SetupArtifact, SetupProgress, TranscriptionResult, UpdateStatus } from "./types";
+import type { AudioDeviceInfo, BarPlacementStatus, DisplayInfo, HotkeyStatus, ModelRuntimeStatus, RuntimeStatus, SessionSnapshot, Settings, SetupArtifact, SetupProgress, TranscriptionResult, UpdateStatus, UsageStats } from "./types";
 
 export const isTauri = "__TAURI_INTERNALS__" in window;
 
@@ -19,6 +19,26 @@ export async function saveSettings(settings: Settings): Promise<Settings | null>
 
 export async function getRuntimeStatus(): Promise<RuntimeStatus | null> {
   return command<RuntimeStatus>("get_runtime_status");
+}
+
+export async function getModelRuntimeStatus(): Promise<ModelRuntimeStatus | null> {
+  return command<ModelRuntimeStatus>("get_model_runtime_status");
+}
+
+export async function listDisplays(): Promise<DisplayInfo[]> {
+  return (await command<DisplayInfo[]>("list_displays")) ?? [];
+}
+
+export async function getBarPlacementStatus(): Promise<BarPlacementStatus | null> {
+  return command<BarPlacementStatus>("get_bar_placement_status");
+}
+
+export async function getUsageStats(): Promise<UsageStats | null> {
+  return command<UsageStats>("get_usage_stats");
+}
+
+export async function resetUsageStats(): Promise<UsageStats | null> {
+  return command<UsageStats>("reset_usage_stats");
 }
 
 export async function getHotkeyStatus(): Promise<HotkeyStatus | null> {
@@ -113,6 +133,10 @@ export async function listenToLyraEvents(handlers: {
   onState: (snapshot: SessionSnapshot) => void;
   onInputLevel: (level: number) => void;
   onRuntimeStatus: (status: RuntimeStatus) => void;
+  onModelRuntimeStatus: (status: ModelRuntimeStatus) => void;
+  onSettings: (settings: Settings) => void;
+  onPlacementStatus: (status: BarPlacementStatus) => void;
+  onUsage: (stats: UsageStats) => void;
   onHotkeyStatus: (status: HotkeyStatus) => void;
   onSetupProgress: (progress: SetupProgress) => void;
   onUpdateStatus: (status: UpdateStatus) => void;
@@ -123,6 +147,10 @@ export async function listenToLyraEvents(handlers: {
     listen<SessionSnapshot>("lyra://state", (event) => handlers.onState(event.payload)),
     listen<number>("lyra://input-level", (event) => handlers.onInputLevel(event.payload)),
     listen<RuntimeStatus>("lyra://runtime-status", (event) => handlers.onRuntimeStatus(event.payload)),
+    listen<ModelRuntimeStatus>("lyra://model-status", (event) => handlers.onModelRuntimeStatus(event.payload)),
+    listen<Settings>("lyra://settings", (event) => handlers.onSettings(event.payload)),
+    listen<BarPlacementStatus>("lyra://placement-status", (event) => handlers.onPlacementStatus(event.payload)),
+    listen<UsageStats>("lyra://usage", (event) => handlers.onUsage(event.payload)),
     listen<HotkeyStatus>("lyra://hotkey-status", (event) => handlers.onHotkeyStatus(event.payload)),
     listen<SetupProgress>("lyra://setup-progress", (event) => handlers.onSetupProgress(event.payload)),
     listen<UpdateStatus>("lyra://update-status", (event) => handlers.onUpdateStatus(event.payload)),

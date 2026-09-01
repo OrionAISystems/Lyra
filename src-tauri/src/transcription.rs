@@ -1,10 +1,11 @@
 use std::{
     sync::{Arc, Mutex},
-    time::Instant,
+    thread,
+    time::{Duration, Instant},
 };
 
 use reqwest::blocking::{multipart, Client};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
 use crate::{
@@ -15,6 +16,7 @@ use crate::{
     },
     native_nemo::NativeNemoRecognizer,
     runtime::RuntimeManager,
+    settings::ModelWarmPolicy,
 };
 
 pub const OPENAI_TRANSCRIPTION_MODEL: &str = "gpt-4o-mini-transcribe";
@@ -27,9 +29,38 @@ pub trait TranscriptionBackend: Send + Sync {
     ) -> Result<TranscriptionResult, BackendError>;
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelLoadState {
+    Loading,
+    Ready,
+    Unloaded,
+    Error,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelRuntimeStatus {
+    pub state: ModelLoadState,
+    pub detail: Option<String>,
+}
+
+impl Default for ModelRuntimeStatus {
+    fn default() -> Self {
+        Self {
+            state: ModelLoadState::Unloaded,
+            detail: None,
+        }
+    }
+}
+
 pub struct LocalNemoBackend {
     runtime: RuntimeManager,
     recognizer: Mutex<Option<NativeNemoRecognizer>>,
+    policy: Mutex<ModelWarmPolicy>,
+    status: Mutex<ModelRuntimeStatus>,
+    last_used: Mutex<Instant>,
+    status_sink: Mutex<Option<Arc<dyn Fn(ModelRuntimeStatus) + Send + Sync>>>,
 }
 
 impl LocalNemoBackend {
@@ -37,21 +68,105 @@ impl LocalNemoBackend {
         Self {
             runtime,
             recognizer: Mutex::new(None),
+            policy: Mutex::new(ModelWarmPolicy::AlwaysWarm),
+            status: Mutex::new(ModelRuntimeStatus::default()),
+            last_used: Mutex::new(Instant::now()),
+            status_sink: Mutex::new(None),
         }
     }
 
-    fn recognizer(
-        &self,
-    ) -> Result<std::sync::MutexGuard<'_, Option<NativeNemoRecognizer>>, BackendError> {
+    pub fn status(&self) -> ModelRuntimeStatus {
+        self.status
+            .lock()
+            .map(|status| status.clone())
+            .unwrap_or_else(|_| ModelRuntimeStatus {
+                state: ModelLoadState::Error,
+                detail: Some("model runtime status lock poisoned".to_owned()),
+            })
+    }
+
+    pub fn reconcile_policy(self: &Arc<Self>, policy: ModelWarmPolicy) {
+        let changed = self
+            .policy
+            .lock()
+            .map(|mut current| {
+                if *current == policy {
+                    false
+                } else {
+                    *current = policy;
+                    true
+                }
+            })
+            .unwrap_or(true);
+        if !changed
+            && matches!(
+                self.status().state,
+                ModelLoadState::Ready | ModelLoadState::Loading
+            )
+        {
+            return;
+        }
+        if policy == ModelWarmPolicy::NeverKeepWarm {
+            self.unload_if_idle();
+        } else if self.runtime.is_ready() {
+            let backend = Arc::clone(self);
+            self.set_status(ModelLoadState::Loading, None);
+            let _ = thread::Builder::new()
+                .name("lyra-model-preload".to_owned())
+                .spawn(move || {
+                    if let Err(error) = backend.ensure_loaded() {
+                        backend.set_status(ModelLoadState::Error, Some(error.to_string()));
+                    }
+                });
+        } else {
+            self.set_status(
+                ModelLoadState::Unloaded,
+                Some("verified runtime and model artifacts are required".to_owned()),
+            );
+        }
+    }
+
+    pub fn start_inactivity_monitor(self: &Arc<Self>) {
+        let backend = Arc::clone(self);
+        let _ = thread::Builder::new()
+            .name("lyra-model-lifecycle".to_owned())
+            .spawn(move || loop {
+                thread::sleep(Duration::from_secs(15));
+                backend.unload_if_idle();
+            });
+    }
+
+    fn set_status(&self, state: ModelLoadState, detail: Option<String>) {
+        let next = ModelRuntimeStatus { state, detail };
+        if let Ok(mut status) = self.status.lock() {
+            *status = next.clone();
+        }
+        if let Ok(sink) = self.status_sink.lock() {
+            if let Some(sink) = sink.as_ref() {
+                sink(next);
+            }
+        }
+    }
+
+    fn policy(&self) -> ModelWarmPolicy {
+        self.policy
+            .lock()
+            .map(|policy| *policy)
+            .unwrap_or(ModelWarmPolicy::NeverKeepWarm)
+    }
+
+    fn ensure_loaded(&self) -> Result<(), BackendError> {
         let status = self.runtime.status();
         if !status.runtime_installed
             || !status.runtime_verified
             || !status.model_installed
             || !status.model_verified
         {
-            return Err(BackendError::MissingRuntimeModel(
+            let error = BackendError::MissingRuntimeModel(
                 "install and verify the local runtime and Parakeet model in setup".to_owned(),
-            ));
+            );
+            self.set_status(ModelLoadState::Unloaded, Some(error.to_string()));
+            return Err(error);
         }
         let mut recognizer = self
             .recognizer
@@ -60,11 +175,17 @@ impl LocalNemoBackend {
         if recognizer.is_none() {
             let variant = status.runtime_variant.as_deref().unwrap_or("cuda");
             let gpu_index = if variant == "cpu" { -1 } else { 0 };
-            let loaded = NativeNemoRecognizer::load(
+            let loaded = match NativeNemoRecognizer::load(
                 &self.runtime.runtime_path(variant),
                 &self.runtime.model_path(),
                 gpu_index,
-            )?;
+            ) {
+                Ok(loaded) => loaded,
+                Err(error) => {
+                    self.set_status(ModelLoadState::Error, Some(error.to_string()));
+                    return Err(error);
+                }
+            };
             let runtime_version = loaded.version().unwrap_or_else(|| "unknown".to_owned());
             info!(
                 backend = self.name(),
@@ -75,7 +196,42 @@ impl LocalNemoBackend {
             );
             *recognizer = Some(loaded);
         }
-        Ok(recognizer)
+        if let Ok(mut last_used) = self.last_used.lock() {
+            *last_used = Instant::now();
+        }
+        self.set_status(ModelLoadState::Ready, None);
+        Ok(())
+    }
+
+    fn unload_if_idle(&self) {
+        let policy = self.policy();
+        let Some(timeout) = model_inactivity_timeout(policy) else {
+            return;
+        };
+        let idle = self
+            .last_used
+            .lock()
+            .map(|last_used| last_used.elapsed())
+            .unwrap_or_default();
+        if idle < timeout {
+            return;
+        }
+        if let Ok(mut recognizer) = self.recognizer.lock() {
+            if recognizer.take().is_some() {
+                info!(?policy, "local recognizer unloaded after inactivity policy");
+            }
+            self.set_status(ModelLoadState::Unloaded, None);
+        }
+    }
+}
+
+pub fn model_inactivity_timeout(policy: ModelWarmPolicy) -> Option<Duration> {
+    match policy {
+        ModelWarmPolicy::AlwaysWarm => None,
+        ModelWarmPolicy::UnloadAfter5Minutes => Some(Duration::from_secs(5 * 60)),
+        ModelWarmPolicy::UnloadAfter15Minutes => Some(Duration::from_secs(15 * 60)),
+        ModelWarmPolicy::UnloadAfter30Minutes => Some(Duration::from_secs(30 * 60)),
+        ModelWarmPolicy::NeverKeepWarm => Some(Duration::ZERO),
     }
 }
 
@@ -89,15 +245,30 @@ impl TranscriptionBackend for LocalNemoBackend {
         request: &TranscriptionRequest,
     ) -> Result<TranscriptionResult, BackendError> {
         let started = Instant::now();
-        let recognizer = self.recognizer()?;
-        let text = recognizer
+        self.ensure_loaded()?;
+        let recognizer = self
+            .recognizer
+            .lock()
+            .map_err(|_| BackendError::Unsupported("local recognizer lock poisoned".to_owned()))?;
+        let text = match recognizer
             .as_ref()
             .ok_or_else(|| {
                 BackendError::MissingRuntimeModel("local recognizer did not initialize".to_owned())
             })?
-            .recognize(request)?;
+            .recognize(request)
+        {
+            Ok(text) => text,
+            Err(error) => {
+                drop(recognizer);
+                self.set_status(ModelLoadState::Error, Some(error.to_string()));
+                if self.policy() == ModelWarmPolicy::NeverKeepWarm {
+                    self.unload_if_idle();
+                }
+                return Err(error);
+            }
+        };
         let transcription_duration_ms = started.elapsed().as_millis() as u64;
-        Ok(TranscriptionResult {
+        let result = TranscriptionResult {
             text,
             backend: self.name().to_owned(),
             model: crate::runtime::MODEL_NAME.to_owned(),
@@ -106,7 +277,12 @@ impl TranscriptionBackend for LocalNemoBackend {
             transcription_duration_ms,
             latency_ms: transcription_duration_ms,
             fallback_reason: None,
-        })
+        };
+        drop(recognizer);
+        if self.policy() == ModelWarmPolicy::NeverKeepWarm {
+            self.unload_if_idle();
+        }
+        Ok(result)
     }
 }
 
@@ -244,6 +420,7 @@ pub struct TranscriptionRouter {
     local: Arc<dyn TranscriptionBackend>,
     cloud: Arc<dyn TranscriptionBackend>,
     credentials: CredentialStore,
+    model_controller: Option<Arc<LocalNemoBackend>>,
 }
 
 impl TranscriptionRouter {
@@ -251,13 +428,18 @@ impl TranscriptionRouter {
         let credentials = CredentialStore::default();
         let cloud = OpenAiTranscriptionBackend::new(credentials.clone())
             .expect("cloud client should initialize");
-        Self::with_backends(
-            Arc::new(LocalNemoBackend::new(runtime)),
-            Arc::new(cloud),
+        let local = Arc::new(LocalNemoBackend::new(runtime));
+        let router = Self {
+            local: local.clone(),
+            cloud: Arc::new(cloud),
             credentials,
-        )
+            model_controller: Some(local.clone()),
+        };
+        local.start_inactivity_monitor();
+        router
     }
 
+    #[cfg(test)]
     pub fn with_backends(
         local: Arc<dyn TranscriptionBackend>,
         cloud: Arc<dyn TranscriptionBackend>,
@@ -267,6 +449,28 @@ impl TranscriptionRouter {
             local,
             cloud,
             credentials,
+            model_controller: None,
+        }
+    }
+
+    pub fn model_status(&self) -> ModelRuntimeStatus {
+        self.model_controller
+            .as_ref()
+            .map(|controller| controller.status())
+            .unwrap_or_default()
+    }
+
+    pub fn set_model_status_sink(&self, sink: Arc<dyn Fn(ModelRuntimeStatus) + Send + Sync>) {
+        if let Some(controller) = &self.model_controller {
+            if let Ok(mut current) = controller.status_sink.lock() {
+                *current = Some(sink);
+            }
+        }
+    }
+
+    pub fn reconcile_model_policy(&self, policy: ModelWarmPolicy) {
+        if let Some(controller) = &self.model_controller {
+            controller.reconcile_policy(policy);
         }
     }
 
@@ -371,6 +575,27 @@ mod tests {
             language: LanguagePreference::Auto,
             request_id: "test".to_owned(),
         }
+    }
+
+    #[test]
+    fn warm_policies_have_explicit_inactivity_contracts() {
+        assert_eq!(model_inactivity_timeout(ModelWarmPolicy::AlwaysWarm), None);
+        assert_eq!(
+            model_inactivity_timeout(ModelWarmPolicy::UnloadAfter5Minutes),
+            Some(Duration::from_secs(300))
+        );
+        assert_eq!(
+            model_inactivity_timeout(ModelWarmPolicy::UnloadAfter15Minutes),
+            Some(Duration::from_secs(900))
+        );
+        assert_eq!(
+            model_inactivity_timeout(ModelWarmPolicy::UnloadAfter30Minutes),
+            Some(Duration::from_secs(1_800))
+        );
+        assert_eq!(
+            model_inactivity_timeout(ModelWarmPolicy::NeverKeepWarm),
+            Some(Duration::ZERO)
+        );
     }
 
     #[test]

@@ -8,6 +8,7 @@ mod settings;
 mod transcription;
 mod tray;
 mod updater;
+mod usage;
 mod windows;
 
 use std::sync::{Arc, Mutex};
@@ -21,6 +22,7 @@ use crate::runtime::RuntimeManager;
 use crate::settings::SettingsStore;
 use crate::transcription::TranscriptionRouter;
 use crate::updater::UpdateManager;
+use crate::usage::UsageStatsStore;
 
 pub fn run() {
     let _ = tracing_subscriber::fmt()
@@ -55,6 +57,7 @@ pub fn run() {
             let audio = Arc::new(CpalAudioCapture::new());
             let router = TranscriptionRouter::new(runtime.clone());
             let updater = UpdateManager::new(app.handle());
+            let usage = UsageStatsStore::new(app.handle());
             let state = AppState::new(
                 settings,
                 runtime,
@@ -62,6 +65,7 @@ pub fn run() {
                 router,
                 updater,
                 app.handle().clone(),
+                usage,
             );
             app.manage(Arc::new(Mutex::new(state)));
             commands::initialize(app.handle())?;
@@ -84,6 +88,11 @@ pub fn run() {
             commands::retry_hotkey,
             commands::save_settings,
             commands::get_runtime_status,
+            commands::get_model_runtime_status,
+            commands::list_displays,
+            commands::get_bar_placement_status,
+            commands::get_usage_stats,
+            commands::reset_usage_stats,
             commands::get_setup_artifacts,
             commands::get_setup_progress,
             commands::start_setup_artifact,
