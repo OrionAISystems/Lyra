@@ -105,7 +105,7 @@ function closeServer() {
 try {
   const privateKeyPath = join(fixtureDirectory, "fixture-key");
   const publicKeyPath = `${privateKeyPath}.pub`;
-  const artifactPath = join(fixtureDirectory, "Lyra_0.3.0_x64-setup.nsis.zip");
+  const artifactPath = join(fixtureDirectory, "Lyra_0.3.1_x64-setup.nsis.zip");
   const templatePath = join(root, "src-tauri", "tauri.fixture.conf.json");
   const generatedConfigPath = join(fixtureDirectory, "tauri.fixture.generated.conf.json");
 
@@ -131,15 +131,15 @@ try {
         const manifestSignature = mode === "invalid-signature" ? corruptSignature(signature) : signature;
         response.writeHead(200, { "content-type": "application/json" });
         response.end(JSON.stringify({
-          version: "0.3.0",
+          version: "0.3.1",
           notes: "Local signed fixture",
           pub_date: "2026-09-01T00:00:00Z",
-          url: `http://127.0.0.1:${server.address().port}/Lyra_0.3.0_x64-setup.nsis.zip`,
+          url: `http://127.0.0.1:${server.address().port}/Lyra_0.3.1_x64-setup.nsis.zip`,
           signature: manifestSignature,
         }));
         return;
       }
-      if (request.url === "/Lyra_0.3.0_x64-setup.nsis.zip") {
+      if (request.url === "/Lyra_0.3.1_x64-setup.nsis.zip") {
         response.writeHead(200, { "content-type": "application/octet-stream" });
         response.end(artifact);
         return;
@@ -158,7 +158,7 @@ try {
   await writeFile(generatedConfigPath, `${JSON.stringify(template, null, 2)}\n`);
 
   const manifest = await fetchJson(endpoint);
-  if (manifest.version !== "0.3.0") throw new Error("valid fixture manifest has the wrong version");
+  if (manifest.version !== "0.3.1") throw new Error("valid fixture manifest has the wrong version");
   const downloaded = Buffer.from(await (await fetch(manifest.url)).arrayBuffer());
   if (!downloaded.equals(artifact)) throw new Error("valid fixture artifact changed during download");
   verifySignedArtifact(downloaded, manifest.signature, publicKey);

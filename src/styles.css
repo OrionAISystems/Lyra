@@ -28,8 +28,8 @@ body.bar-window #root { height: 100%; min-height: 0; }
 button, select { font: inherit; }
 button { color: inherit; border: 0; cursor: pointer; }
 
-.settings-shell { display: grid; grid-template-columns: 236px minmax(0, 1fr); min-width: 320px; min-height: 100vh; background: radial-gradient(circle at 75% -15%, rgba(84, 134, 130, .13), transparent 35%), var(--bg); }
-.sidebar { display: flex; flex-direction: column; padding: 28px 16px 16px; border-right: 1px solid var(--line); background: rgba(18, 22, 23, .7); }
+.settings-shell { display: grid; grid-template-columns: 236px minmax(0, 1fr); width: 100%; height: 100vh; min-width: 320px; min-height: 0; overflow: hidden; background: radial-gradient(circle at 75% -15%, rgba(84, 134, 130, .13), transparent 35%), var(--bg); }
+.sidebar { position: sticky; top: 0; display: flex; flex-direction: column; align-self: start; height: 100vh; min-height: 0; overflow: hidden; padding: 28px 16px 16px; border-right: 1px solid var(--line); background: rgba(18, 22, 23, .7); }
 .brand-lockup { display: flex; align-items: center; gap: 11px; padding: 0 10px 26px; }
 .brand-lockup strong { display: block; font-size: 16px; letter-spacing: -.02em; }
 .brand-lockup div > span { display: block; margin-top: 2px; color: var(--faint); font-size: 10px; letter-spacing: .03em; }
@@ -48,14 +48,14 @@ button { color: inherit; border: 0; cursor: pointer; }
 .sidebar-footer-button { display: flex; align-items: center; gap: 8px; padding: 0; color: var(--muted); background: transparent; font-size: 11px; text-align: left; }
 .sidebar-footer-button:hover { color: var(--accent); }
 
-.settings-content { min-width: 0; }
-.topbar { display: flex; align-items: center; justify-content: space-between; height: 62px; padding: 0 30px; border-bottom: 1px solid var(--line); }
+.settings-content { display: flex; flex-direction: column; height: 100vh; min-width: 0; min-height: 0; overflow: hidden; }
+.topbar { display: flex; flex: 0 0 62px; align-items: center; justify-content: space-between; height: 62px; padding: 0 30px; border-bottom: 1px solid var(--line); }
 .window-title { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; }
 .window-title-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
 .topbar-actions { display: flex; align-items: center; gap: 4px; }
 .icon-button, .window-close { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 6px; color: var(--muted); background: transparent; }
 .icon-button:hover, .window-close:hover { color: var(--text); background: var(--panel-hover); }
-.content-scroll { width: min(760px, 100%); margin: 0 auto; padding: 40px 36px 28px; }
+.content-scroll { flex: 1 1 auto; width: min(760px, 100%); min-height: 0; margin: 0 auto; padding: 40px 36px 28px; overflow-x: hidden; overflow-y: auto; }
 .section-header { margin-bottom: 24px; }
 .eyebrow { display: block; color: var(--accent); font-size: 10px; font-weight: 650; letter-spacing: .11em; line-height: 1.2; text-transform: uppercase; }
 .section-header h1 { margin: 8px 0 7px; font-size: 25px; font-weight: 560; letter-spacing: -.035em; }
@@ -213,14 +213,15 @@ select:focus { border-color: rgba(138,216,206,.7); }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 @media (max-width: 720px) {
-  .settings-shell { grid-template-columns: 1fr; }
-  .sidebar { min-height: auto; padding: 16px; border-right: 0; border-bottom: 1px solid var(--line); }
+  .settings-shell { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); height: 100vh; min-height: 0; overflow: hidden; }
+  .sidebar { position: sticky; height: auto; min-height: 0; overflow: visible; padding: 16px; border-right: 0; border-bottom: 1px solid var(--line); }
   .brand-lockup { padding-bottom: 16px; }
   .sidebar-status, .sidebar-footer { display: none; }
   .settings-nav { display: grid; grid-template-columns: repeat(4, 1fr); }
   .settings-nav button { justify-content: center; padding: 8px 4px; }
   .settings-nav button span, .settings-nav button svg:last-child { display: none; }
-  .content-scroll { padding: 26px 18px; }
+  .settings-content { height: auto; min-height: 0; overflow: hidden; }
+  .content-scroll { width: 100%; padding: 26px 18px; }
   .topbar { padding: 0 18px; }
   .checklist-items, .diagnostics-grid, .usage-grid { grid-template-columns: 1fr; }
   .setting-row { grid-template-columns: 28px minmax(0, 1fr); }

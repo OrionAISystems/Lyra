@@ -9,6 +9,8 @@ Lyra is a single-user desktop process with two user-facing surfaces:
 
 The settings window is intentionally compact rather than dashboard-like. It explains readiness, privacy, routing, and recovery in the places where those choices matter.
 
+The settings shell owns the viewport height. Its sidebar remains pinned as a single viewport column, while the `.content-scroll` pane owns vertical scrolling for long sections such as General and Usage. On narrow windows the same two-row shell keeps navigation visible while the content row scrolls.
+
 ## Runtime data flow
 
 ```text

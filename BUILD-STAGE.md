@@ -1,6 +1,6 @@
 # Lyra build stage
 
-The current implementation target is v0.3.0, the first daily-use hardening release after the v0.2.0 Windows x64 installer baseline.
+The current implementation target is v0.3.1, a focused maintenance release after the v0.3.0 daily-use hardening milestone.
 
 ## Stage 0 — foundation
 
@@ -8,7 +8,7 @@ The current implementation target is v0.3.0, the first daily-use hardening relea
 - [x] Windows-first Tauri/React/Rust project shape.
 - [x] Standalone documentation and artifact exclusion rules.
 - [x] Settings/bar UI direction: charcoal, restrained typography, cool accent, low-motion active signal.
-- [x] App version synchronized to `0.3.0` with release-tag drift validation.
+- [x] App version synchronized to `0.3.1` with release-tag drift validation.
 - [x] Per-user NSIS bundling configuration with WebView2 download bootstrapper behavior.
 - [x] Single-instance protection and one dynamic update item in the tray.
 - [x] Rust-owned updater interface with stable-only checks, scheduling, install guards, and public signed-feed endpoint.
@@ -49,6 +49,11 @@ The current implementation target is v0.3.0, the first daily-use hardening relea
 - [x] Local aggregate usage store with opt-in cost estimates and confirmation-required reset.
 - [x] Automated frontend, Rust, version, release-config, updater-fixture, and whitespace gates.
 - [ ] Manual hardware, cross-application, lifecycle, and installed-updater evidence in [docs/ACCEPTANCE-V0.3.md](docs/ACCEPTANCE-V0.3.md).
+
+## Stage 4 — v0.3.1 maintenance release
+
+- [x] Settings shell keeps the sidebar pinned to the viewport while only the main content pane scrolls.
+- [x] Rendered Playwright validation at 1100x680 and 390x844 confirms only `.content-scroll` scrolls while the sidebar remains pinned.
 
 ## Explicit setup gates
 
