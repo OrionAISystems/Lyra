@@ -12,6 +12,7 @@
     "test": "vitest run",
     "test:updater-fixture": "node scripts/updater-fixture.mjs",
     "test:watch": "vitest",
+    "verify:changelog": "node scripts/changelog.mjs verify",
     "verify:version": "node scripts/verify-version.mjs",
     "verify:release-config": "node scripts/verify-release-config.mjs",
     "tauri": "tauri",

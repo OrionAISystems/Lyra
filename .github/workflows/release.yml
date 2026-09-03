@@ -53,6 +53,9 @@ jobs:
       - name: Verify release version
         run: npm run verify:version
 
+      - name: Verify changelog
+        run: npm run verify:changelog
+
       - name: Verify release configuration
         run: npm run verify:release-config
 
@@ -127,6 +130,50 @@ jobs:
           repositories: Lyra-Releases
           permission-contents: write
 
+      - name: Check out public release repository
+        uses: actions/checkout@v4
+        with:
+          repository: OrionAISystems/Lyra-Releases
+          ref: main
+          token: ${{ steps.release-token.outputs.token }}
+          path: release-repo
+
+      - name: Sync public changelog
+        id: changelog
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          $version = $env:RELEASE_TAG.TrimStart("v")
+          $notes = node scripts/changelog.mjs notes $version
+          $notesExitCode = $LASTEXITCODE
+          if ($notesExitCode -ne 0) {
+            throw "Could not extract changelog notes for $env:RELEASE_TAG."
+          }
+          $notesText = ($notes -join "`n").Trim()
+          if ([string]::IsNullOrWhiteSpace($notesText)) {
+            throw "Changelog notes for $env:RELEASE_TAG are empty."
+          }
+
+          Copy-Item -LiteralPath CHANGELOG.md -Destination release-repo/CHANGELOG.md -Force
+          git -C release-repo config user.name "lyra-release-bot"
+          git -C release-repo config user.email "lyra-release-bot@users.noreply.github.com"
+          git -C release-repo add CHANGELOG.md
+          $pending = git -C release-repo status --short
+          if ([string]::IsNullOrWhiteSpace($pending)) {
+            Write-Host "Public changelog is already current."
+          } else {
+            git -C release-repo commit -m "docs: sync changelog for v$version"
+            git -C release-repo push origin HEAD:main
+          }
+
+          $output = [System.Text.StringBuilder]::new()
+          [void]$output.AppendLine("release_body<<LYRA_RELEASE_BODY")
+          [void]$output.AppendLine($notesText)
+          [void]$output.AppendLine("Full changelog: https://github.com/OrionAISystems/Lyra-Releases/blob/main/CHANGELOG.md")
+          [void]$output.AppendLine("LYRA_RELEASE_BODY")
+          [System.IO.File]::AppendAllText($env:GITHUB_OUTPUT, $output.ToString(), [System.Text.UTF8Encoding]::new($false))
+
       - name: Build and publish release artifacts
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5
         env:
@@ -138,12 +185,7 @@ jobs:
           tauriScript: npm run tauri
           tagName: ${{ github.ref_name }}
           releaseName: Lyra ${{ github.ref_name }}
-          releaseBody: |
-            Windows x64 NSIS installer for Lyra.
-
-            Authenticode signing is enabled when the organization certificate is configured. Tauri updater artifacts remain cryptographically signed.
-
-            Runtime and Parakeet model downloads remain explicit and app-managed after installation.
+          releaseBody: ${{ steps.changelog.outputs.release_body }}
           releaseDraft: false
           prerelease: false
           owner: OrionAISystems

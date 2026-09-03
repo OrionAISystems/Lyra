@@ -36,9 +36,9 @@ AudioCapture -> in-memory PCM -> TranscriptionRouter
                                        v
                                result / recovery events
 
-release tag -> private CI -> NSIS + Tauri-signed updater artifact -> public Lyra-Releases
-                                                               ^
-                                                   signed latest.json polling
+release tag -> private CI -> changelog sync -> NSIS + Tauri-signed updater artifact -> public Lyra-Releases
+                                                                                     ^
+                                                                         signed latest.json polling
 ```
 
 The Rust side owns state transitions and side effects. The frontend renders events and issues intent-level commands; it does not own the recording, injection, update, or recognizer lifecycle. A capture coordinator consumes every endpoint through the same processing path, so manual stop, maximum duration, and silence cannot drift in behavior or metrics.
@@ -87,3 +87,5 @@ The updater reserves installation before the async download begins. The reservat
 The v1 session is utterance-oriented, but `AudioCapture` and `TranscriptionBackend` carry request/session boundaries that can support streaming later. Backend results include model, language metadata when available, duration, latency, and fallback reason so the UI and diagnostics do not need backend-specific knowledge.
 
 The installer deliberately contains only the Lyra application. Runtime and model installation is an explicit bootstrapper flow under `%LOCALAPPDATA%\Lyra`, so application upgrades do not overwrite user-managed recognition artifacts. The local updater fixture lives outside production configuration and uses an ephemeral signing key plus an HTTP endpoint only for tests; production continues to use the committed public key and HTTPS release-only feed.
+
+`CHANGELOG.md` is the canonical source-repository release history. The tagged release workflow validates that its newest section matches the application version, mirrors it to the public release-only repository, and uses that section as the release body shown alongside the updater artifacts.

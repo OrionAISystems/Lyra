@@ -53,5 +53,6 @@ To build the local installer after configuring updater signing, run `npm run tau
 - [BUILD-STAGE.md](BUILD-STAGE.md) records what is complete, what is hardware-gated, and the next vertical slices.
 - [docs/MODELS.md](docs/MODELS.md) records pinned runtime/model sources, checksums, licenses, and storage policy.
 - [docs/RELEASES.md](docs/RELEASES.md) records the tag, signing, cross-repository publication, and update-feed contract.
+- [CHANGELOG.md](CHANGELOG.md) records the canonical per-version changes and is mirrored to the public [Lyra-Releases changelog](https://github.com/OrionAISystems/Lyra-Releases/blob/main/CHANGELOG.md).
 
 The v1 scope is Windows x64, local-first utterance recognition, optional OpenAI transcription fallback, secure clipboard injection, aggregate-only local statistics, and no saved audio/transcript history. Streaming recognition, mobile/macOS/Linux, accounts, and LAN services remain future phases.
