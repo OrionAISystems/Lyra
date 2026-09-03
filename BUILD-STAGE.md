@@ -29,7 +29,7 @@ The current implementation target is v0.3.1, a focused maintenance release after
 
 - [x] General Settings software-update card and startup prompt.
 - [x] Update progress and error events bridged to the settings UI.
-- [x] Release workflow for type checks, frontend tests, Rust checks/tests, unbundled validation, NSIS, updater artifacts, and cross-repository publication.
+- [x] Release workflow for type checks, frontend tests, release-mode Rust checks/tests, cached release compilation, NSIS, updater artifacts, and cross-repository publication.
 - [x] Configure the real Tauri updater public key in `src-tauri/tauri.conf.json`.
 - [x] Add the updater signing key and GitHub App credential to repository/organization secrets; Authenticode signing remains optional until a certificate is available.
 - [x] Run a tagged CI release and inspect the public `latest.json`, installer, signature, and sanitized notes.

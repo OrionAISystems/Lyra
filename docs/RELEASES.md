@@ -6,12 +6,13 @@ Lyra keeps source private in [`OrionAISystems/Lyra`](https://github.com/OrionAIS
 
 1. Update all version files together, add the new top `CHANGELOG.md` section, and run `npm run verify:version` plus `npm run verify:changelog`.
 2. Confirm the committed updater public key in `src-tauri/tauri.conf.json`, then run `npm run verify:release-config`.
-3. Push a protected `vX.Y.Z` tag to the private source repository.
-4. GitHub Actions runs frontend checks, Rust checks/tests, an unbundled Tauri validation build, then the NSIS build. Authenticode signing is applied when the optional Windows certificate is configured.
-5. CI mirrors the canonical changelog to `Lyra-Releases` and uses the current version section as the public release notes.
-6. The pinned Tauri Action publishes the installer, updater artifact and signature, and `latest.json` to `Lyra-Releases`.
-7. Inspect the public changelog, release assets, and manifest before treating the release as production-ready.
-7. From an installed v0.2.0 client, check, download, passively install, restart, and verify v0.3.0. Confirm migrated settings, empty/new usage statistics, and the updater gate while dictating.
+3. Pull requests and pushes to `main` run the frontend checks, release-mode Rust tests, and formatting checks. A trusted push to `main` also performs the unbundled Tauri release build and warms the default-branch Cargo/release-target cache used by tagged releases.
+4. Push a protected `vX.Y.Z` tag to the private source repository after the relevant `main` checks have passed.
+5. The tag workflow restores the Cargo/release-target cache, repeats the release-mode Rust checks, and runs the single authoritative NSIS/updater build. Authenticode signing is applied when the optional Windows certificate is configured.
+6. CI mirrors the canonical changelog to `Lyra-Releases` and uses the current version section as the public release notes.
+7. The pinned Tauri Action publishes the installer, updater artifact and signature, and `latest.json` to `Lyra-Releases`.
+8. Inspect the public changelog, release assets, and manifest before treating the release as production-ready.
+9. From an installed v0.2.0 client, check, download, passively install, restart, and verify v0.3.0. Confirm migrated settings, empty/new usage statistics, and the updater gate while dictating.
 
 The public repository must remain release-only. Its root may contain the public README and changelog, alongside release assets and metadata. Do not add source code, models, native runtime archives, credentials, CI logs, or private organization documentation there.
 

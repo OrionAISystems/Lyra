@@ -1,0 +1,64 @@
+name: Lyra verification
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lyra-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify Windows build
+    runs-on: windows-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Cache Cargo registry, Git dependencies, and release artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target/release
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-release-${{ hashFiles('src-tauri/Cargo.lock', 'src-tauri/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-cargo-release-
+
+      - name: Verify release metadata
+        run: |
+          npm run verify:version
+          npm run verify:changelog
+          npm run verify:release-config
+
+      - name: Build and test frontend
+        run: |
+          npm run build
+          npm test -- --run
+
+      - name: Format and test Rust
+        run: |
+          cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+          cargo test --release --locked --manifest-path src-tauri/Cargo.toml
+
+      - name: Warm the release Tauri build cache
+        if: github.event_name == 'push'
+        run: npm run tauri build -- --no-bundle

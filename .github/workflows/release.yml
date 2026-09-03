@@ -31,6 +31,17 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci --no-audit --no-fund
 
+      - name: Cache Cargo registry, Git dependencies, and release artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target/release
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-release-${{ hashFiles('src-tauri/Cargo.lock', 'src-tauri/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-cargo-release-
+
       - name: Validate updater signing key
         shell: pwsh
         env:
@@ -67,11 +78,7 @@ jobs:
       - name: Format and test Rust
         run: |
           cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
-          cargo check --manifest-path src-tauri/Cargo.toml
-          cargo test --manifest-path src-tauri/Cargo.toml
-
-      - name: Validate an unbundled Tauri build
-        run: npm run tauri build -- --no-bundle
+          cargo test --release --locked --manifest-path src-tauri/Cargo.toml
 
       - name: Import Authenticode certificate when configured
         shell: pwsh
