@@ -891,7 +891,7 @@ function AppearanceSection({ settings, updateSettings }: { settings: Settings; u
   </>;
 }
 
-function DiagnosticsSection({ runtime, session, refresh }: { runtime: RuntimeStatus; session: SessionSnapshot; refresh: () => Promise<void> }) {
+function DiagnosticsSection({ runtime, modelRuntime, session, refresh }: { runtime: RuntimeStatus; modelRuntime: ModelRuntimeStatus; session: SessionSnapshot; refresh: () => Promise<void> }) {
   return <>
     <SectionHeader eyebrow="Observability" title="Diagnostics" description="High-signal health information without raw audio, transcript history, or secrets." />
     <div className="diagnostics-grid">
@@ -900,7 +900,7 @@ function DiagnosticsSection({ runtime, session, refresh }: { runtime: RuntimeSta
       <Diagnostic label="GPU" value={runtime.gpuName ?? "Unavailable"} icon={Gauge} />
       <Diagnostic label="Session" value={`${session.state} · ${formatDuration(session.durationMs)}`} icon={Activity} />
     </div>
-    <div className="settings-card diagnostic-details"><div><span>Runtime path</span><code>{runtime.runtimePath}</code></div><div><span>Model path</span><code>{runtime.modelPath}</code></div><div><span>Last error</span><code>{runtime.lastError ?? "None"}</code></div></div>
+    <div className="settings-card diagnostic-details"><div><span>Runtime path</span><code>{runtime.runtimePath}</code></div><div><span>Model path</span><code>{runtime.modelPath}</code></div><div><span>Recognizer</span><code>{modelRuntime.state}{modelRuntime.detail ? ` · ${modelRuntime.detail}` : ""}</code></div><div><span>Last setup error</span><code>{runtime.lastError ?? "None"}</code></div></div>
     <button className="secondary-button" onClick={() => void refresh()}><RotateCcw size={14} /> Refresh diagnostics</button>
   </>;
 }
@@ -963,7 +963,7 @@ function SettingsApp({ settings, runtime, modelRuntime, placementStatus, display
       case "appearance": return <AppearanceSection settings={settings} updateSettings={updateSettings} />;
       case "vocabulary": return <VocabularySection settings={settings} updateSettings={updateSettings} />;
       case "usage": return <UsageSection usage={usage} settings={settings} updateSettings={updateSettings} resetUsage={resetUsage} />;
-      case "diagnostics": return <DiagnosticsSection runtime={runtime} session={session} refresh={refresh} />;
+      case "diagnostics": return <DiagnosticsSection runtime={runtime} modelRuntime={modelRuntime} session={session} refresh={refresh} />;
     }
   }, [artifacts, cancelSetup, checkUpdates, deferUpdate, devices, hotkeyStatus, installUpdate, lastResult, modelRuntime, placementStatus, displays, refresh, retryHotkey, runtime, section, session, settings, setupProgress, startSetup, updateSettings, updateStatus, usage]);
 

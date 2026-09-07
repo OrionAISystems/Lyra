@@ -56,11 +56,16 @@ impl Default for ModelRuntimeStatus {
 
 pub struct LocalNemoBackend {
     runtime: RuntimeManager,
-    recognizer: Mutex<Option<NativeNemoRecognizer>>,
+    recognizer: Mutex<Option<LoadedRecognizer>>,
     policy: Mutex<ModelWarmPolicy>,
     status: Mutex<ModelRuntimeStatus>,
     last_used: Mutex<Instant>,
     status_sink: Mutex<Option<Arc<dyn Fn(ModelRuntimeStatus) + Send + Sync>>>,
+}
+
+struct LoadedRecognizer {
+    variant: String,
+    recognizer: NativeNemoRecognizer,
 }
 
 impl LocalNemoBackend {
@@ -168,12 +173,27 @@ impl LocalNemoBackend {
             self.set_status(ModelLoadState::Unloaded, Some(error.to_string()));
             return Err(error);
         }
+        let variant = status.runtime_variant.as_deref().unwrap_or("cuda");
+        self.ensure_variant_loaded(variant)
+    }
+
+    fn ensure_variant_loaded(&self, variant: &str) -> Result<(), BackendError> {
+        if !self.runtime.is_variant_ready(variant) {
+            return Err(BackendError::MissingRuntimeModel(format!(
+                "verified {variant} runtime is not available"
+            )));
+        }
         let mut recognizer = self
             .recognizer
             .lock()
             .map_err(|_| BackendError::Unsupported("local recognizer lock poisoned".to_owned()))?;
+        if recognizer
+            .as_ref()
+            .is_some_and(|loaded| loaded.variant != variant)
+        {
+            recognizer.take();
+        }
         if recognizer.is_none() {
-            let variant = status.runtime_variant.as_deref().unwrap_or("cuda");
             let gpu_index = if variant == "cpu" { -1 } else { 0 };
             let loaded = match NativeNemoRecognizer::load(
                 &self.runtime.runtime_path(variant),
@@ -194,13 +214,37 @@ impl LocalNemoBackend {
                 runtime_version,
                 "local recognizer warmed"
             );
-            *recognizer = Some(loaded);
+            *recognizer = Some(LoadedRecognizer {
+                variant: variant.to_owned(),
+                recognizer: loaded,
+            });
         }
         if let Ok(mut last_used) = self.last_used.lock() {
             *last_used = Instant::now();
         }
         self.set_status(ModelLoadState::Ready, None);
         Ok(())
+    }
+
+    fn loaded_variant(&self) -> Option<String> {
+        self.recognizer
+            .lock()
+            .ok()
+            .and_then(|recognizer| recognizer.as_ref().map(|loaded| loaded.variant.clone()))
+    }
+
+    fn recognize_loaded(&self, request: &TranscriptionRequest) -> Result<String, BackendError> {
+        let recognizer = self
+            .recognizer
+            .lock()
+            .map_err(|_| BackendError::Unsupported("local recognizer lock poisoned".to_owned()))?;
+        recognizer
+            .as_ref()
+            .ok_or_else(|| {
+                BackendError::MissingRuntimeModel("local recognizer did not initialize".to_owned())
+            })?
+            .recognizer
+            .recognize(request)
     }
 
     fn unload_if_idle(&self) {
@@ -246,20 +290,63 @@ impl TranscriptionBackend for LocalNemoBackend {
     ) -> Result<TranscriptionResult, BackendError> {
         let started = Instant::now();
         self.ensure_loaded()?;
-        let recognizer = self
-            .recognizer
-            .lock()
-            .map_err(|_| BackendError::Unsupported("local recognizer lock poisoned".to_owned()))?;
-        let text = match recognizer
-            .as_ref()
-            .ok_or_else(|| {
-                BackendError::MissingRuntimeModel("local recognizer did not initialize".to_owned())
-            })?
-            .recognize(request)
-        {
+        let active_variant = self
+            .loaded_variant()
+            .unwrap_or_else(|| "unknown".to_owned());
+        let text = match self.recognize_loaded(request) {
             Ok(text) => text,
+            Err(error) if matches!(&error, BackendError::LocalRecognitionFailure(_)) => {
+                let fallback_variants = self.runtime.verified_fallbacks(&active_variant);
+                if fallback_variants.is_empty() {
+                    self.set_status(ModelLoadState::Error, Some(error.to_string()));
+                    if self.policy() == ModelWarmPolicy::NeverKeepWarm {
+                        self.unload_if_idle();
+                    }
+                    return Err(error);
+                }
+
+                let mut detail = error.to_string();
+                let mut recovered_text = None;
+                for fallback_variant in fallback_variants {
+                    warn!(
+                        from = %active_variant,
+                        to = %fallback_variant,
+                        error = %error,
+                        "local runtime recognition failed; retrying with verified fallback"
+                    );
+                    match self
+                        .ensure_variant_loaded(&fallback_variant)
+                        .and_then(|_| self.recognize_loaded(request))
+                    {
+                        Ok(text) => {
+                            info!(
+                                from = %active_variant,
+                                to = %fallback_variant,
+                                "local recognition recovered with fallback runtime"
+                            );
+                            recovered_text = Some(text);
+                            break;
+                        }
+                        Err(fallback_error) => {
+                            detail.push_str(&format!(
+                                "; {fallback_variant} fallback failed: {fallback_error}"
+                            ));
+                        }
+                    }
+                }
+
+                if let Some(text) = recovered_text {
+                    text
+                } else {
+                    let combined = BackendError::LocalRecognitionFailure(detail);
+                    self.set_status(ModelLoadState::Error, Some(combined.to_string()));
+                    if self.policy() == ModelWarmPolicy::NeverKeepWarm {
+                        self.unload_if_idle();
+                    }
+                    return Err(combined);
+                }
+            }
             Err(error) => {
-                drop(recognizer);
                 self.set_status(ModelLoadState::Error, Some(error.to_string()));
                 if self.policy() == ModelWarmPolicy::NeverKeepWarm {
                     self.unload_if_idle();
@@ -278,7 +365,6 @@ impl TranscriptionBackend for LocalNemoBackend {
             latency_ms: transcription_duration_ms,
             fallback_reason: None,
         };
-        drop(recognizer);
         if self.policy() == ModelWarmPolicy::NeverKeepWarm {
             self.unload_if_idle();
         }
@@ -647,7 +733,7 @@ mod tests {
             Arc::new(StubBackend::failure(
                 "local",
                 local_calls.clone(),
-                BackendError::GpuFailure("test".to_owned()),
+                BackendError::LocalRecognitionFailure("test".to_owned()),
             )),
             Arc::new(StubBackend::success("cloud", cloud_calls.clone())),
             CredentialStore::default(),

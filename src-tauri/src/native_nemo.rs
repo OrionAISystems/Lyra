@@ -7,6 +7,7 @@ use std::{
 };
 
 use libloading::{Library, Symbol};
+use tracing::warn;
 
 use crate::domain::{BackendError, LanguagePreference, TranscriptionRequest};
 
@@ -168,6 +169,21 @@ impl NativeNemoRecognizer {
         if request.audio_samples.is_empty() {
             return Err(BackendError::EmptyRecording);
         }
+        if !(8_000..=96_000).contains(&request.sample_rate) {
+            return Err(BackendError::Unsupported(format!(
+                "captured audio uses unsupported sample rate {} Hz",
+                request.sample_rate
+            )));
+        }
+        if request
+            .audio_samples
+            .iter()
+            .any(|sample| !sample.is_finite())
+        {
+            return Err(BackendError::LocalRecognitionFailure(
+                "captured audio contains a non-finite sample".to_owned(),
+            ));
+        }
         let request_id = CString::new(request.request_id.as_str()).map_err(|_| {
             BackendError::Unsupported("request id contains an invalid character".to_owned())
         })?;
@@ -188,10 +204,24 @@ impl NativeNemoRecognizer {
             )
         };
         if status != STATUS_OK || result.is_null() {
-            return Err(BackendError::GpuFailure(last_error(
-                &self.api,
-                format!("NeMo recognition failed with status {status}"),
-            )));
+            let detail = last_error(&self.api, String::new());
+            let detail = if detail.trim().is_empty() {
+                format!(
+                    "NeMo recognition failed with status {status} for {} samples at {} Hz",
+                    request.audio_samples.len(),
+                    request.sample_rate
+                )
+            } else {
+                detail
+            };
+            warn!(
+                status,
+                sample_count = request.audio_samples.len(),
+                sample_rate = request.sample_rate,
+                error = %detail,
+                "native local recognition failed"
+            );
+            return Err(BackendError::LocalRecognitionFailure(detail));
         }
         let transcript = unsafe { (self.api.result_transcript)(result, 0) };
         let text = if transcript.is_null() {

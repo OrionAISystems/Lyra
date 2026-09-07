@@ -68,7 +68,7 @@ Text processing is deterministic and ordered: normalize line endings, replace wh
 
 The bar is placed at startup and at session start. Follow-active-window resolves the target window's monitor at those points; fixed placement resolves the saved monitor identity first and ordinal second. Missing fixed monitors fall back to primary and emit a non-blocking placement status.
 
-The model artifact state (`RuntimeStatus`) is separate from recognizer state (`ModelRuntimeStatus`). `always_warm` preloads asynchronously when verified artifacts exist. Timed policies unload only after recognizer inactivity, and `never_keep_warm` releases the recognizer after each request; the recognizer lock prevents unload during recognition.
+The model artifact state (`RuntimeStatus`) is separate from recognizer state (`ModelRuntimeStatus`). `always_warm` preloads asynchronously when verified artifacts exist. Timed policies unload only after recognizer inactivity, and `never_keep_warm` releases the recognizer after each request; the recognizer lock prevents unload during recognition. A failed CUDA or Vulkan recognition retries against an already-installed verified fallback runtime before the error reaches cloud routing.
 
 The updater reserves installation before the async download begins. The reservation is made while the app state lock is held by the command, so a new capture cannot slip between the session check and installation. Errors release the reservation; a successful passive install keeps it until restart.
 

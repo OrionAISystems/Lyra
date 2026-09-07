@@ -158,7 +158,7 @@ pub enum BackendError {
     MaximumDuration,
     StreamFailure(String),
     Timeout,
-    GpuFailure(String),
+    LocalRecognitionFailure(String),
     CredentialFailure(String),
     NetworkFailure(String),
     CloudFallbackUnavailable(String),
@@ -178,7 +178,9 @@ impl fmt::Display for BackendError {
             Self::MaximumDuration => write!(f, "maximum dictation duration reached"),
             Self::StreamFailure(message) => write!(f, "audio stream failure: {message}"),
             Self::Timeout => write!(f, "transcription timed out"),
-            Self::GpuFailure(message) => write!(f, "GPU recognition failed: {message}"),
+            Self::LocalRecognitionFailure(message) => {
+                write!(f, "local recognition failed: {message}")
+            }
             Self::CredentialFailure(message) => write!(f, "cloud credential failure: {message}"),
             Self::NetworkFailure(message) => write!(f, "cloud network failure: {message}"),
             Self::CloudFallbackUnavailable(message) => write!(

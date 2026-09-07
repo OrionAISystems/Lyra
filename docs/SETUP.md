@@ -2,7 +2,7 @@
 
 ## Installed application
 
-The v0.3.1 Windows x64 release is a per-user NSIS installer. It creates the Lyra Start Menu entry and offers the desktop shortcut during setup. It does not require administrator elevation and does not bundle the native speech runtime or the 681 MB model. Existing debug builds remain separate under `src-tauri\target\debug`.
+The v0.3.2 Windows x64 release is a per-user NSIS installer. It creates the Lyra Start Menu entry and offers the desktop shortcut during setup. It does not require administrator elevation and does not bundle the native speech runtime or the 681 MB model. Existing debug builds remain separate under `src-tauri\target\debug`.
 
 The installer uses Tauri's WebView2 download bootstrapper. On a machine without a suitable WebView2 runtime, the installer obtains the standard Microsoft runtime; Lyra itself never changes `PATH`, installs the CUDA Toolkit, or installs CMake/Ninja.
 
@@ -28,7 +28,7 @@ The setup flow asks for two independent approvals. It shows the official source,
 
 ## Runtime selection
 
-The first candidate is the official NeMo-Speech.cpp v0.1.0 Windows x64 CUDA archive. If CUDA initialization fails, the user can separately approve the Vulkan archive and then the CPU archive. Lyra does not install a CUDA Toolkit or modify PATH as a recovery action.
+The first candidate is the official NeMo-Speech.cpp v0.1.0 Windows x64 CUDA archive. If a verified CUDA or Vulkan runtime fails during recognition, Lyra retries the request with an already-installed verified fallback (Vulkan first, then CPU). The user can separately approve the Vulkan archive and then the CPU archive; Lyra does not download a fallback, install a CUDA Toolkit, or modify PATH as a recovery action.
 
 ## First launch checklist
 
@@ -49,7 +49,7 @@ If any injection step fails, Lyra leaves the transcript on the clipboard and say
 
 Lyra registers the hotkey and its event handler together during startup. If the hotkey still shows `Pending`, another application owns the global registration; fully restart that application, then use `Retry` in Lyra's readiness checklist. Lyra keeps the tray and dictation bar available while the shortcut is unavailable.
 
-The native runtime is loaded with its app-local `bin` directory as the dependency search location. No machine-wide CUDA Toolkit or PATH entry is required. If a local attempt reports `no audio was captured`, the runtime and model have already loaded and the recording itself was empty.
+The native runtime is loaded with its app-local `bin` directory as the dependency search location. No machine-wide CUDA Toolkit or PATH entry is required. If a local attempt reports `no audio was captured`, the runtime and model have already loaded and the recording itself was empty. If recognition still fails after an installed-runtime retry, open Diagnostics and use the native status detail; it includes the sample count and input rate without recording transcript or audio content.
 
 ## Cloud credential
 

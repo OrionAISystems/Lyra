@@ -278,6 +278,20 @@ impl RuntimeManager {
             && status.model_verified
     }
 
+    pub fn is_variant_ready(&self, variant: &str) -> bool {
+        let runtime_root = self.root.join("runtime").join(RUNTIME_VERSION);
+        inspect_runtime_variant(&runtime_root, variant).is_some_and(|(_, _, _, verified)| verified)
+    }
+
+    pub fn verified_fallbacks(&self, active_variant: &str) -> Vec<String> {
+        ["vulkan", "cpu"]
+            .into_iter()
+            .filter(|variant| *variant != active_variant)
+            .filter(|variant| self.is_variant_ready(variant))
+            .map(ToOwned::to_owned)
+            .collect()
+    }
+
     pub fn setup_artifacts(&self) -> Vec<SetupArtifact> {
         let runtime_cuda = self.artifact_spec(SetupArtifactKind::Runtime(RuntimeVariant::Cuda));
         let runtime_vulkan = self.artifact_spec(SetupArtifactKind::Runtime(RuntimeVariant::Vulkan));
@@ -1166,6 +1180,10 @@ mod tests {
         let status = manager.refresh();
         assert_eq!(status.runtime_variant.as_deref(), Some("vulkan"));
         assert!(status.runtime_verified);
+        assert!(manager.is_variant_ready("cuda"));
+        assert!(manager.is_variant_ready("vulkan"));
+        assert!(!manager.is_variant_ready("cpu"));
+        assert_eq!(manager.verified_fallbacks("cuda"), vec!["vulkan"]);
         fs::remove_dir_all(root).expect("remove runtime fixture");
     }
 }
