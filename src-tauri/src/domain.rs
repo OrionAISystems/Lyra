@@ -425,7 +425,9 @@ fn apply_explicit_self_correction(text: &str) -> String {
         return text.to_owned();
     };
     let replacement = text[cue_end..]
-        .trim_start_matches(|character: char| character.is_whitespace() || matches!(character, ',' | ':' | '-' | '—'))
+        .trim_start_matches(|character: char| {
+            character.is_whitespace() || matches!(character, ',' | ':' | '-' | '—')
+        })
         .trim();
     if replacement.is_empty() {
         return text.to_owned();

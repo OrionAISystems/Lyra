@@ -42,8 +42,10 @@ pub const MODEL_DOWNLOAD_URL: &str = "https://huggingface.co/nvidia/parakeet-tdt
 pub const NEMOTRON_MODEL_NAME: &str = "nemotron-speech-streaming-en-0.6b.q8_0.gguf";
 pub const NEMOTRON_MODEL_REVISION: &str = "ebe59e5a817142986528bbbee5dba8db7b38ed50";
 pub const NEMOTRON_MODEL_SIZE_BYTES: u64 = 699_872_960;
-pub const NEMOTRON_MODEL_SHA256: &str = "d9a01898d2a611c8764e23a1c2f45e70bbd5a425dc4de93692ac951dd603812d";
-pub const NEMOTRON_MODEL_SOURCE_URL: &str = "https://huggingface.co/nvidia/nemotron-speech-streaming-en-0.6b";
+pub const NEMOTRON_MODEL_SHA256: &str =
+    "d9a01898d2a611c8764e23a1c2f45e70bbd5a425dc4de93692ac951dd603812d";
+pub const NEMOTRON_MODEL_SOURCE_URL: &str =
+    "https://huggingface.co/nvidia/nemotron-speech-streaming-en-0.6b";
 pub const NEMOTRON_MODEL_DOWNLOAD_URL: &str = "https://huggingface.co/nvidia/nemotron-speech-streaming-en-0.6b/resolve/ebe59e5a817142986528bbbee5dba8db7b38ed50/nemotron-speech-streaming-en-0.6b.q8_0.gguf?download=true";
 
 const SETUP_PROGRESS_EVENT: &str = "lyra://setup-progress";
@@ -107,7 +109,8 @@ impl SetupArtifactKind {
     fn as_str(self) -> &'static str {
         match self {
             Self::Runtime(_) => "runtime",
-            Self::ModelParakeet | Self::ModelNemotron => "model",
+            Self::ModelParakeet => "model-parakeet",
+            Self::ModelNemotron => "model-nemotron",
         }
     }
 
@@ -516,7 +519,9 @@ impl RuntimeManager {
         emit_progress(self.setup_progress());
         match kind {
             SetupArtifactKind::Runtime(_) => self.install_runtime_archive(&partial_path, &spec)?,
-            SetupArtifactKind::ModelParakeet | SetupArtifactKind::ModelNemotron => self.install_model_file(&partial_path, &spec)?,
+            SetupArtifactKind::ModelParakeet | SetupArtifactKind::ModelNemotron => {
+                self.install_model_file(&partial_path, &spec)?
+            }
         }
         Ok(())
     }
@@ -710,9 +715,25 @@ impl RuntimeManager {
         spec: &ArtifactSpec,
     ) -> Result<(), RuntimeError> {
         let (name, revision, sha256, size_bytes, marker_name) = match spec.kind {
-            SetupArtifactKind::ModelParakeet => (MODEL_NAME, MODEL_REVISION, MODEL_SHA256, MODEL_SIZE_BYTES, "model.json"),
-            SetupArtifactKind::ModelNemotron => (NEMOTRON_MODEL_NAME, NEMOTRON_MODEL_REVISION, NEMOTRON_MODEL_SHA256, NEMOTRON_MODEL_SIZE_BYTES, "nemotron-model.json"),
-            SetupArtifactKind::Runtime(_) => return Err(RuntimeError::InvalidArtifact("runtime passed to model installer".to_owned())),
+            SetupArtifactKind::ModelParakeet => (
+                MODEL_NAME,
+                MODEL_REVISION,
+                MODEL_SHA256,
+                MODEL_SIZE_BYTES,
+                "model.json",
+            ),
+            SetupArtifactKind::ModelNemotron => (
+                NEMOTRON_MODEL_NAME,
+                NEMOTRON_MODEL_REVISION,
+                NEMOTRON_MODEL_SHA256,
+                NEMOTRON_MODEL_SIZE_BYTES,
+                "nemotron-model.json",
+            ),
+            SetupArtifactKind::Runtime(_) => {
+                return Err(RuntimeError::InvalidArtifact(
+                    "runtime passed to model installer".to_owned(),
+                ))
+            }
         };
         if let Some(parent) = spec.destination.parent() {
             fs::create_dir_all(parent)?;
@@ -838,7 +859,13 @@ impl RuntimeManager {
                     && marker.size_bytes == MODEL_SIZE_BYTES
             });
         let nemotron_model_installed = nemotron_model_path.is_file();
-        let nemotron_model_verified = nemotron_model_installed && nemotron_marker.as_ref().is_some_and(|marker| marker.name == NEMOTRON_MODEL_NAME && marker.revision == NEMOTRON_MODEL_REVISION && marker.sha256 == NEMOTRON_MODEL_SHA256 && marker.size_bytes == NEMOTRON_MODEL_SIZE_BYTES);
+        let nemotron_model_verified = nemotron_model_installed
+            && nemotron_marker.as_ref().is_some_and(|marker| {
+                marker.name == NEMOTRON_MODEL_NAME
+                    && marker.revision == NEMOTRON_MODEL_REVISION
+                    && marker.sha256 == NEMOTRON_MODEL_SHA256
+                    && marker.size_bytes == NEMOTRON_MODEL_SIZE_BYTES
+            });
         RuntimeStatus {
             runtime_installed,
             runtime_version: runtime_installed.then(|| RUNTIME_VERSION.to_owned()),
@@ -875,8 +902,22 @@ fn setup_artifact(spec: &ArtifactSpec) -> SetupArtifact {
         destination: spec.destination.to_string_lossy().into_owned(),
         checksum_source: spec.checksum_source.to_owned(),
         expected_sha256: spec.expected_sha256.to_owned(),
-        revision: Some(match spec.kind { SetupArtifactKind::ModelParakeet => MODEL_REVISION, SetupArtifactKind::ModelNemotron => NEMOTRON_MODEL_REVISION, SetupArtifactKind::Runtime(_) => RUNTIME_VERSION }.to_owned()),
-        license: Some(match spec.kind { SetupArtifactKind::ModelParakeet => "CC BY 4.0", SetupArtifactKind::ModelNemotron => "NVIDIA Open Model License", SetupArtifactKind::Runtime(_) => "Apache-2.0" }.to_owned()),
+        revision: Some(
+            match spec.kind {
+                SetupArtifactKind::ModelParakeet => MODEL_REVISION,
+                SetupArtifactKind::ModelNemotron => NEMOTRON_MODEL_REVISION,
+                SetupArtifactKind::Runtime(_) => RUNTIME_VERSION,
+            }
+            .to_owned(),
+        ),
+        license: Some(
+            match spec.kind {
+                SetupArtifactKind::ModelParakeet => "CC BY 4.0",
+                SetupArtifactKind::ModelNemotron => "NVIDIA Open Model License",
+                SetupArtifactKind::Runtime(_) => "Apache-2.0",
+            }
+            .to_owned(),
+        ),
     }
 }
 
@@ -1154,11 +1195,12 @@ mod tests {
     fn setup_artifacts_expose_pinned_checksums() {
         let manager = RuntimeManager::for_tests(PathBuf::from("C:/Lyra"));
         let artifacts = manager.setup_artifacts();
-        assert_eq!(artifacts.len(), 4);
+        assert_eq!(artifacts.len(), 5);
         assert_eq!(artifacts[0].expected_sha256, RUNTIME_SHA256);
         assert_eq!(artifacts[1].expected_sha256, RUNTIME_VULKAN_SHA256);
         assert_eq!(artifacts[2].expected_sha256, RUNTIME_CPU_SHA256);
         assert_eq!(artifacts[3].expected_sha256, MODEL_SHA256);
+        assert_eq!(artifacts[4].expected_sha256, NEMOTRON_MODEL_SHA256);
         assert_eq!(artifacts[0].variant.as_deref(), Some("cuda"));
         assert_eq!(artifacts[3].variant, None);
     }

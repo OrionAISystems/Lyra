@@ -29,3 +29,14 @@ The model supports English and Greek and performs automatic language detection. 
 ## Storage and secrets
 
 Neither artifact is checked into Git. Download archives, extracted DLLs, model files, temporary WAV files, logs, credentials, and local settings are excluded by `.gitignore` or stored through OS-backed secret storage.
+
+## Optional streaming model
+
+- Model: `nemotron-speech-streaming-en-0.6b.q8_0.gguf`
+- Pinned revision: `ebe59e5a817142986528bbbee5dba8db7b38ed50`
+- File size: 699,872,960 bytes
+- SHA-256: `d9a01898d2a611c8764e23a1c2f45e70bbd5a425dc4de93692ac951dd603812d`
+- License: NVIDIA Open Model License
+- Language: English
+
+Nemotron is installed and marked independently from Parakeet. Its streaming ABI is loaded only when the complete optional symbol set is available. Auto/Greek requests stay on Parakeet; a stream failure replays the same in-memory PCM through Parakeet before any explicitly permitted cloud fallback.

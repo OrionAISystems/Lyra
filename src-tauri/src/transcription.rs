@@ -17,7 +17,7 @@ use crate::{
     native_nemo::NativeNemoRecognizer,
     runtime::RuntimeManager,
     settings::ModelWarmPolicy,
-    streaming::StreamingRequest,
+    streaming::{StreamingRequest, StreamingResult},
 };
 
 pub const OPENAI_TRANSCRIPTION_MODEL: &str = "gpt-4o-mini-transcribe";
@@ -598,6 +598,85 @@ impl TranscriptionRouter {
 
     pub fn credentials(&self) -> &CredentialStore {
         &self.credentials
+    }
+
+    /// Runs the optional English streaming model against the retained in-memory
+    /// PCM. The caller owns fallback routing, so a streaming failure can always
+    /// replay the exact same samples through Parakeet before any permitted
+    /// cloud route is considered.
+    pub fn transcribe_nemotron_streaming<F>(
+        &self,
+        request: &TranscriptionRequest,
+        context_phrases: Vec<String>,
+        mut on_result: F,
+    ) -> Result<TranscriptionResult, BackendError>
+    where
+        F: FnMut(&StreamingResult),
+    {
+        if request.language != LanguagePreference::En {
+            return Err(BackendError::Unsupported(
+                "Nemotron streaming is available for explicit English dictation only".to_owned(),
+            ));
+        }
+        let controller = self.model_controller.as_ref().ok_or_else(|| {
+            BackendError::MissingRuntimeModel(
+                "local streaming controller is unavailable".to_owned(),
+            )
+        })?;
+        let status = controller.runtime.status();
+        if !status.nemotron_model_installed || !status.nemotron_model_verified {
+            return Err(BackendError::MissingRuntimeModel(
+                "install and verify the experimental Nemotron model first".to_owned(),
+            ));
+        }
+        let variant = status.runtime_variant.as_deref().unwrap_or("cuda");
+        if !controller.runtime.is_variant_ready(variant) {
+            return Err(BackendError::MissingRuntimeModel(format!(
+                "verified {variant} runtime is not available"
+            )));
+        }
+        let gpu_index = if variant == "cpu" { -1 } else { 0 };
+        let recognizer = NativeNemoRecognizer::load(
+            &controller.runtime.runtime_path(variant),
+            &controller.runtime.nemotron_model_path(),
+            gpu_index,
+        )?;
+        let started = Instant::now();
+        let mut stream = recognizer.start_stream(
+            StreamingRequest::new(&request.request_id, request.language)
+                .with_context_phrases(context_phrases),
+        )?;
+        for chunk in request.audio_samples.chunks(1_600) {
+            stream.push_f32(chunk, request.sample_rate)?;
+            for result in stream.drain()? {
+                on_result(&result);
+            }
+        }
+        stream.finish()?;
+        let mut final_text = None;
+        for result in stream.drain()? {
+            on_result(&result);
+            if let StreamingResult::Final(final_result) = result {
+                final_text.get_or_insert(final_result.text);
+            }
+        }
+        stream.close();
+        let text = final_text.ok_or_else(|| {
+            BackendError::StreamFailure(
+                "Nemotron stream completed without a final result".to_owned(),
+            )
+        })?;
+        let duration = started.elapsed().as_millis() as u64;
+        Ok(TranscriptionResult {
+            text,
+            backend: format!("local_nemotron_streaming_{variant}"),
+            model: crate::runtime::NEMOTRON_MODEL_NAME.to_owned(),
+            language: Some("en".to_owned()),
+            audio_duration_ms: request.duration_ms(),
+            transcription_duration_ms: duration,
+            latency_ms: duration,
+            fallback_reason: None,
+        })
     }
 
     pub fn transcribe(

@@ -999,4 +999,31 @@ mod tests {
         assert_eq!(first.to_str(), Ok("Lyra"));
         assert_eq!(storage.options.interim_results, request.interim_results);
     }
+
+    #[test]
+    #[ignore = "requires the separately installed NeMo runtime and Nemotron model"]
+    fn installed_nemotron_stream_smoke() {
+        let runtime_path = std::env::var_os("LYRA_RUNTIME_PATH")
+            .map(std::path::PathBuf::from)
+            .expect("set LYRA_RUNTIME_PATH to the installed NeMo runtime");
+        let model_path = std::env::var_os("LYRA_NEMOTRON_MODEL_PATH")
+            .map(std::path::PathBuf::from)
+            .expect("set LYRA_NEMOTRON_MODEL_PATH to the installed Nemotron model");
+        let recognizer = super::NativeNemoRecognizer::load(&runtime_path, &model_path, 0)
+            .expect("load installed Nemotron model");
+        assert!(recognizer.streaming_available());
+
+        let request = StreamingRequest::new("installed-smoke", LanguagePreference::En)
+            .with_context_phrases(["Lyra", "Orion"]);
+        let mut stream = recognizer
+            .start_stream(request)
+            .expect("start installed Nemotron stream");
+        let silence = vec![0.0_f32; 16_000];
+        stream
+            .push_f32(&silence, 16_000)
+            .expect("push one second of PCM");
+        stream.finish().expect("finish installed Nemotron stream");
+        let _results = stream.drain().expect("drain installed Nemotron stream");
+        stream.close();
+    }
 }

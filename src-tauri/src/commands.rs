@@ -14,15 +14,17 @@ use uuid::Uuid;
 
 use crate::{
     audio::{AudioCapture, CaptureControl, CaptureOptions, CapturedAudio},
+    benchmark::{self, BenchmarkResult, BenchmarkScore, BENCHMARK_PHRASE},
     clipboard::{ClipboardService, TextInjector},
     domain::{
         ActivationAction, ActivationController, ActivationSource, BackendError, CaptureEndpoint,
         DictationState, DictationStateMachine, SessionEvent, SessionSnapshot, ShortcutEdge,
         TextProcessingOptions, TranscriptionRequest, TranscriptionResult,
     },
-    runtime::{RuntimeManager, RuntimeStatus, SetupArtifact, SetupArtifactKind, SetupProgress},
     personalization::{Personalization, PersonalizationStore},
-    settings::{BarPlacement, Settings, SettingsStore},
+    runtime::{RuntimeManager, RuntimeStatus, SetupArtifact, SetupArtifactKind, SetupProgress},
+    settings::{BarPlacement, LocalEngine, Settings, SettingsStore},
+    streaming::StreamingResult,
     transcription::{ModelRuntimeStatus, TranscriptionRouter},
     tray::TrayController,
     updater::{UpdateManager, UpdateStatus},
@@ -164,7 +166,9 @@ impl AppState {
     }
 
     pub fn emit_personalization(&self) {
-        let _ = self.app.emit("lyra://personalization", self.personalization.get());
+        let _ = self
+            .app
+            .emit("lyra://personalization", self.personalization.get());
     }
 
     pub fn duration_ms(&self) -> u64 {
@@ -330,48 +334,139 @@ fn register_hotkey(
     Ok(())
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TranscriptionPartialEvent {
+    request_id: String,
+    text: String,
+    processed_duration_ms: Option<u64>,
+    backend: String,
+    model: String,
+    finality: bool,
+}
+
 #[derive(Debug, Clone, Copy)]
-enum RecoveryAction { PasteLast, CopyLast, Cancel, HandsFreeToggle, OpenSettings }
+enum RecoveryAction {
+    PasteLast,
+    CopyLast,
+    Cancel,
+    HandsFreeToggle,
+    OpenSettings,
+}
 
 fn recovery_shortcuts(settings: &Settings) -> Vec<(RecoveryAction, String)> {
     [
-        (RecoveryAction::PasteLast, settings.recovery_shortcuts.paste_last.clone()),
-        (RecoveryAction::CopyLast, settings.recovery_shortcuts.copy_last.clone()),
-        (RecoveryAction::Cancel, settings.recovery_shortcuts.cancel.clone()),
-        (RecoveryAction::HandsFreeToggle, settings.recovery_shortcuts.hands_free_toggle.clone()),
-        (RecoveryAction::OpenSettings, settings.recovery_shortcuts.open_settings.clone()),
-    ].into_iter().filter_map(|(action, value)| value.filter(|value| !value.trim().is_empty()).map(|value| (action, value))).collect()
+        (
+            RecoveryAction::PasteLast,
+            settings.recovery_shortcuts.paste_last.clone(),
+        ),
+        (
+            RecoveryAction::CopyLast,
+            settings.recovery_shortcuts.copy_last.clone(),
+        ),
+        (
+            RecoveryAction::Cancel,
+            settings.recovery_shortcuts.cancel.clone(),
+        ),
+        (
+            RecoveryAction::HandsFreeToggle,
+            settings.recovery_shortcuts.hands_free_toggle.clone(),
+        ),
+        (
+            RecoveryAction::OpenSettings,
+            settings.recovery_shortcuts.open_settings.clone(),
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(action, value)| {
+        value
+            .filter(|value| !value.trim().is_empty())
+            .map(|value| (action, value))
+    })
+    .collect()
 }
 
-fn register_recovery_shortcuts(app: &AppHandle, shared: Arc<Mutex<AppState>>) -> Result<(), Box<dyn std::error::Error>> {
-    let settings = shared.lock().map_err(|_| "state lock poisoned")?.settings.get();
+fn register_recovery_shortcuts(
+    app: &AppHandle,
+    shared: Arc<Mutex<AppState>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let settings = shared
+        .lock()
+        .map_err(|_| "state lock poisoned")?
+        .settings
+        .get();
     register_recovery_shortcuts_for(app, shared, &settings)
 }
 
-fn register_recovery_shortcuts_for(app: &AppHandle, shared: Arc<Mutex<AppState>>, settings: &Settings) -> Result<(), Box<dyn std::error::Error>> {
+fn register_recovery_shortcuts_for(
+    app: &AppHandle,
+    shared: Arc<Mutex<AppState>>,
+    settings: &Settings,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut seen = std::collections::HashSet::new();
     seen.insert(canonical_shortcut(parse_shortcut(&settings.hotkey)?));
     for (action, label) in recovery_shortcuts(settings) {
         let shortcut = parse_shortcut(&label)?;
         let canonical = canonical_shortcut(shortcut);
-        if !seen.insert(canonical.clone()) { return Err(format!("shortcut {canonical} is assigned more than once").into()); }
+        if !seen.insert(canonical.clone()) {
+            return Err(format!("shortcut {canonical} is assigned more than once").into());
+        }
         let handler_state = shared.clone();
-        app.global_shortcut().on_shortcut(shortcut, move |app, _, event| {
-            if event.state != ShortcutState::Pressed { return; }
-            match action {
-                RecoveryAction::CopyLast => if let Ok(state) = handler_state.lock() { if let Some(text) = state.last_transcript.as_deref() { let _ = state.injector.copy_text(text); } },
-                RecoveryAction::PasteLast => if let Ok(state) = handler_state.lock() { if let (Some(text), Ok(target)) = (state.last_transcript.as_deref(), capture_foreground_target()) { let profile = state.personalization.get().profile_for(target_executable(target).as_deref()); let _ = state.injector.paste_with_profile(target, text, &profile); } },
-                RecoveryAction::Cancel => { let _ = cancel_session(handler_state.clone()); },
-                RecoveryAction::HandsFreeToggle => { let listening = handler_state.lock().ok().is_some_and(|state| state.session.state() == DictationState::Listening); if listening { let _ = stop_session(handler_state.clone(), ActivationSource::Hotkey); } else { let _ = start_session(handler_state.clone(), ActivationSource::Hotkey); } },
-                RecoveryAction::OpenSettings => { let _ = show_settings_window(app); }
-            }
-        })?;
+        app.global_shortcut()
+            .on_shortcut(shortcut, move |app, _, event| {
+                if event.state != ShortcutState::Pressed {
+                    return;
+                }
+                match action {
+                    RecoveryAction::CopyLast => {
+                        if let Ok(state) = handler_state.lock() {
+                            if let Some(text) = state.last_transcript.as_deref() {
+                                let _ = state.injector.copy_text(text);
+                            }
+                        }
+                    }
+                    RecoveryAction::PasteLast => {
+                        if let Ok(state) = handler_state.lock() {
+                            if let (Some(text), Ok(target)) = (
+                                state.last_transcript.as_deref(),
+                                capture_foreground_target(),
+                            ) {
+                                let profile = state
+                                    .personalization
+                                    .get()
+                                    .profile_for(target_executable(target).as_deref());
+                                let _ = state.injector.paste_with_profile(target, text, &profile);
+                            }
+                        }
+                    }
+                    RecoveryAction::Cancel => {
+                        let _ = cancel_session(handler_state.clone());
+                    }
+                    RecoveryAction::HandsFreeToggle => {
+                        let listening = handler_state.lock().ok().is_some_and(|state| {
+                            state.session.state() == DictationState::Listening
+                        });
+                        if listening {
+                            let _ = stop_session(handler_state.clone(), ActivationSource::Hotkey);
+                        } else {
+                            let _ = start_session(handler_state.clone(), ActivationSource::Hotkey);
+                        }
+                    }
+                    RecoveryAction::OpenSettings => {
+                        let _ = show_settings_window(app);
+                    }
+                }
+            })?;
     }
     Ok(())
 }
 
 fn unregister_recovery_shortcuts(app: &AppHandle, settings: &Settings) {
-    for (_, label) in recovery_shortcuts(settings) { if let Ok(shortcut) = parse_shortcut(&label) { let _ = app.global_shortcut().unregister(shortcut); } }
+    for (_, label) in recovery_shortcuts(settings) {
+        if let Ok(shortcut) = parse_shortcut(&label) {
+            let _ = app.global_shortcut().unregister(shortcut);
+        }
+    }
 }
 
 fn parse_shortcut(value: &str) -> Result<Shortcut, Box<dyn std::error::Error>> {
@@ -557,7 +652,9 @@ pub fn save_settings(
     let recovery_changed = settings.recovery_shortcuts != previous.recovery_shortcuts;
     if recovery_changed {
         unregister_recovery_shortcuts(&state.app, &previous);
-        if let Err(error) = register_recovery_shortcuts_for(&state.app, shared_state.clone(), &settings) {
+        if let Err(error) =
+            register_recovery_shortcuts_for(&state.app, shared_state.clone(), &settings)
+        {
             let _ = register_recovery_shortcuts_for(&state.app, shared_state.clone(), &previous);
             return Err(error.to_string());
         }
@@ -573,7 +670,8 @@ pub fn save_settings(
             }
             if recovery_changed {
                 unregister_recovery_shortcuts(&state.app, &previous);
-                let _ = register_recovery_shortcuts_for(&state.app, shared_state.clone(), &previous);
+                let _ =
+                    register_recovery_shortcuts_for(&state.app, shared_state.clone(), &previous);
             }
             return Err(error.to_string());
         }
@@ -841,6 +939,146 @@ pub fn list_audio_devices(
         .audio
         .clone();
     audio.list_devices().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn get_benchmark_result(
+    state: State<'_, Arc<Mutex<AppState>>>,
+) -> Result<Option<BenchmarkResult>, String> {
+    let app = state
+        .lock()
+        .map_err(|_| "state lock poisoned".to_owned())?
+        .app
+        .clone();
+    Ok(benchmark::load(&app))
+}
+
+#[tauri::command]
+pub fn run_benchmark(state: State<'_, Arc<Mutex<AppState>>>) -> Result<(), String> {
+    let shared = state.inner().clone();
+    let (capture, router, runtime, app, microphone) = {
+        let state = shared
+            .lock()
+            .map_err(|_| "state lock poisoned".to_owned())?;
+        if state.session.state() != DictationState::Idle {
+            return Err("Finish the active dictation before benchmarking".to_owned());
+        }
+        let settings = state.settings.get();
+        let app = state.app.clone();
+        let level_app = app.clone();
+        let capture = state
+            .audio
+            .start(
+                CaptureOptions {
+                    device_id: settings.audio_device_id.clone(),
+                    max_duration_seconds: 12,
+                    silence_after_ms: Some(1_500),
+                    adaptive_audio: true,
+                },
+                Arc::new(move |level| {
+                    let _ = level_app.emit("lyra://benchmark-level", level);
+                }),
+            )
+            .map_err(|error| error.to_string())?;
+        (
+            capture,
+            state.router.clone(),
+            state.runtime.status(),
+            app,
+            settings.audio_device_id,
+        )
+    };
+    let _ = app.emit("lyra://benchmark-state", "recording");
+    thread::Builder::new()
+        .name("lyra-benchmark".to_owned())
+        .spawn(move || {
+            let Ok(captured) = capture.wait() else {
+                let _ = app.emit("lyra://benchmark-state", "error");
+                return;
+            };
+            let _ = app.emit("lyra://benchmark-state", "comparing");
+            let duration = captured.duration_ms.max(1);
+            let request = TranscriptionRequest {
+                audio_samples: captured.samples.clone(),
+                sample_rate: captured.sample_rate,
+                language: crate::domain::LanguagePreference::En,
+                request_id: Uuid::new_v4().to_string(),
+            };
+            let mut scores = Vec::new();
+            match router.transcribe(&request, crate::domain::TranscriptionRoute::LocalOnly) {
+                Ok(result) => scores.push(BenchmarkScore {
+                    engine: "parakeet_tdt".to_owned(),
+                    runtime: runtime.runtime_variant.clone(),
+                    latency_ms: result.latency_ms,
+                    real_time_factor: result.transcription_duration_ms as f64 / duration as f64,
+                    transcript_distance: benchmark::transcript_distance(
+                        BENCHMARK_PHRASE,
+                        &result.text,
+                    ),
+                    partial_count: 0,
+                    succeeded: true,
+                    failure_category: None,
+                }),
+                Err(error) => scores.push(BenchmarkScore {
+                    engine: "parakeet_tdt".to_owned(),
+                    runtime: runtime.runtime_variant.clone(),
+                    latency_ms: 0,
+                    real_time_factor: 0.0,
+                    transcript_distance: 1.0,
+                    partial_count: 0,
+                    succeeded: false,
+                    failure_category: Some(
+                        format!("{:?}", classify_error(&error)).to_ascii_lowercase(),
+                    ),
+                }),
+            }
+            if runtime.nemotron_model_verified {
+                let mut partial_count = 0;
+                match router.transcribe_nemotron_streaming(&request, Vec::new(), |result| {
+                    if !result.is_final() {
+                        partial_count += 1;
+                    }
+                }) {
+                    Ok(result) => scores.push(BenchmarkScore {
+                        engine: "nemotron_streaming_en".to_owned(),
+                        runtime: runtime.runtime_variant.clone(),
+                        latency_ms: result.latency_ms,
+                        real_time_factor: result.transcription_duration_ms as f64 / duration as f64,
+                        transcript_distance: benchmark::transcript_distance(
+                            BENCHMARK_PHRASE,
+                            &result.text,
+                        ),
+                        partial_count,
+                        succeeded: true,
+                        failure_category: None,
+                    }),
+                    Err(error) => scores.push(BenchmarkScore {
+                        engine: "nemotron_streaming_en".to_owned(),
+                        runtime: runtime.runtime_variant.clone(),
+                        latency_ms: 0,
+                        real_time_factor: 0.0,
+                        transcript_distance: 1.0,
+                        partial_count,
+                        succeeded: false,
+                        failure_category: Some(
+                            format!("{:?}", classify_error(&error)).to_ascii_lowercase(),
+                        ),
+                    }),
+                }
+            }
+            let result = BenchmarkResult {
+                timestamp_ms: timestamp_ms(),
+                phrase_word_count: BENCHMARK_PHRASE.split_whitespace().count(),
+                microphone,
+                recommendation: benchmark::recommend(&scores),
+                scores,
+            };
+            let _ = benchmark::save(&app, &result);
+            let _ = app.emit("lyra://benchmark-result", result);
+            let _ = app.emit("lyra://benchmark-state", "complete");
+        })
+        .map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -1184,6 +1422,12 @@ fn complete_capture(state: Arc<Mutex<AppState>>, request_id: String, captured: C
             "capture endpoint reached; processing captured audio"
         );
     }
+    info!(
+        peak_level = captured.peak_level,
+        clipped_samples = captured.clipped_samples,
+        noise_floor = captured.noise_floor,
+        "capture audio diagnostics"
+    );
     process_capture(
         state, request_id, context.0, context.1, context.2, context.3, context.4, captured,
     );
@@ -1217,11 +1461,62 @@ fn process_capture(
         language: settings.language,
         request_id: request_id.clone(),
     };
-    let mut result = match router.transcribe(&request, settings.route) {
-        Ok(result) => result,
-        Err(error) => {
-            finish_error(&state, &request_id, error);
-            return;
+    let mut result = if settings.local_engine == LocalEngine::NemotronStreamingEn
+        && settings.language == crate::domain::LanguagePreference::En
+    {
+        let event_app = app.clone();
+        let active_request = request_id.clone();
+        let state_for_event = state.clone();
+        let context_words = personalization
+            .words
+            .iter()
+            .filter(|word| word.enabled)
+            .map(|word| word.phrase.clone())
+            .collect::<Vec<_>>();
+        match router.transcribe_nemotron_streaming(&request, context_words, move |partial| {
+            let is_current = state_for_event
+                .lock()
+                .ok()
+                .and_then(|state| state.snapshot.request_id.clone())
+                .as_deref()
+                == Some(active_request.as_str());
+            if !is_current {
+                return;
+            }
+            let _ = event_app.emit(
+                "lyra://transcription-partial",
+                TranscriptionPartialEvent {
+                    request_id: active_request.clone(),
+                    text: partial.text().to_owned(),
+                    processed_duration_ms: partial.audio_processed_ms(),
+                    backend: "local_nemotron_streaming".to_owned(),
+                    model: crate::runtime::NEMOTRON_MODEL_NAME.to_owned(),
+                    finality: matches!(partial, StreamingResult::Final(_)),
+                },
+            );
+        }) {
+            Ok(result) => result,
+            Err(error) => {
+                let streaming_failure = error.to_string();
+                match router.transcribe(&request, settings.route) {
+                    Ok(mut result) => {
+                        result.fallback_reason = Some(streaming_failure);
+                        result
+                    }
+                    Err(error) => {
+                        finish_error(&state, &request_id, error);
+                        return;
+                    }
+                }
+            }
+        }
+    } else {
+        match router.transcribe(&request, settings.route) {
+            Ok(result) => result,
+            Err(error) => {
+                finish_error(&state, &request_id, error);
+                return;
+            }
         }
     };
     result.audio_duration_ms = captured_duration_ms;
@@ -1229,7 +1524,8 @@ fn process_capture(
         &result.text,
         None,
         TextProcessingOptions {
-            formatting_commands_enabled: settings.formatting_commands_enabled && profile.formatting_enabled,
+            formatting_commands_enabled: settings.formatting_commands_enabled
+                && profile.formatting_enabled,
             self_correction_enabled: personalization.self_correction_enabled,
             corrections: &personalization.corrections,
             snippets: &personalization.snippets,
@@ -1279,13 +1575,29 @@ fn process_capture(
             target_category: Some(format!("{:?}", profile.category).to_ascii_lowercase()),
             endpoint,
             engine: format!("{:?}", settings.local_engine).to_ascii_lowercase(),
-            runtime: state_guard.runtime.status().runtime_variant.map(|variant| format!("{variant:?}").to_ascii_lowercase()),
+            runtime: state_guard
+                .runtime
+                .status()
+                .runtime_variant
+                .map(|variant| format!("{variant:?}").to_ascii_lowercase()),
             backend: Some(result.backend.clone()),
             fallback_chain: result.fallback_reason.clone().into_iter().collect(),
             latency_ms: Some(result.latency_ms),
-            real_time_factor: (captured_duration_ms > 0).then_some(result.transcription_duration_ms as f64 / captured_duration_ms as f64),
-            paste_outcome: if paste_attempted { if paste_succeeded { "success" } else { "failed_or_clipboard" } } else { "copied" }.to_owned(),
-            failure_category: injection_error.as_ref().map(|_| FailureCategory::PasteInjection),
+            real_time_factor: (captured_duration_ms > 0)
+                .then_some(result.transcription_duration_ms as f64 / captured_duration_ms as f64),
+            paste_outcome: if paste_attempted {
+                if paste_succeeded {
+                    "success"
+                } else {
+                    "failed_or_clipboard"
+                }
+            } else {
+                "copied"
+            }
+            .to_owned(),
+            failure_category: injection_error
+                .as_ref()
+                .map(|_| FailureCategory::PasteInjection),
         });
     }
     let has_injection_error = injection_error.is_some();
@@ -1341,7 +1653,9 @@ fn finish_error(state: &Arc<Mutex<AppState>>, request_id: &str, error: BackendEr
         state.active_capture = None;
         state.target = None;
         state.session_settings = None;
-        state.usage.record_categorized_failure(classify_error(&error));
+        state
+            .usage
+            .record_categorized_failure(classify_error(&error));
         state.emit_usage_from_current_settings();
         state.emit_state();
         true
@@ -1358,10 +1672,16 @@ fn classify_error(error: &BackendError) -> FailureCategory {
         BackendError::EmptyRecording => FailureCategory::NoSpeech,
         BackendError::MissingRuntimeModel(_) => FailureCategory::ModelRuntime,
         BackendError::LocalRecognitionFailure(_) => FailureCategory::Recognition,
-        BackendError::StreamFailure(message) if message.to_ascii_lowercase().contains("queue") => FailureCategory::QueueOverflow,
-        BackendError::StreamFailure(_) | BackendError::DeviceFailure(_) | BackendError::PermissionDenied(_) => FailureCategory::Capture,
+        BackendError::StreamFailure(message) if message.to_ascii_lowercase().contains("queue") => {
+            FailureCategory::QueueOverflow
+        }
+        BackendError::StreamFailure(_)
+        | BackendError::DeviceFailure(_)
+        | BackendError::PermissionDenied(_) => FailureCategory::Capture,
         BackendError::CloudFallbackUnavailable(_) => FailureCategory::Fallback,
-        BackendError::Unsupported(message) if message.to_ascii_lowercase().contains("language") => FailureCategory::UnsupportedLanguage,
+        BackendError::Unsupported(message) if message.to_ascii_lowercase().contains("language") => {
+            FailureCategory::UnsupportedLanguage
+        }
         _ => FailureCategory::Unknown,
     }
 }

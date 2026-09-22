@@ -1,4 +1,5 @@
 mod audio;
+mod benchmark;
 mod clipboard;
 mod commands;
 mod domain;
@@ -20,8 +21,8 @@ use tracing_subscriber::EnvFilter;
 
 use crate::audio::CpalAudioCapture;
 use crate::commands::AppState;
-use crate::runtime::RuntimeManager;
 use crate::personalization::PersonalizationStore;
+use crate::runtime::RuntimeManager;
 use crate::settings::SettingsStore;
 use crate::transcription::TranscriptionRouter;
 use crate::updater::UpdateManager;
@@ -57,7 +58,8 @@ pub fn run() {
         .setup(|app| {
             let settings = SettingsStore::load(app.handle());
             let runtime = RuntimeManager::new(app.handle());
-            let personalization = PersonalizationStore::load(app.handle(), settings.get().corrections);
+            let personalization =
+                PersonalizationStore::load(app.handle(), settings.get().corrections);
             let audio = Arc::new(CpalAudioCapture::new());
             let router = TranscriptionRouter::new(runtime.clone());
             let updater = UpdateManager::new(app.handle());
@@ -110,6 +112,8 @@ pub fn run() {
             commands::defer_update,
             commands::get_session_snapshot,
             commands::list_audio_devices,
+            commands::get_benchmark_result,
+            commands::run_benchmark,
             commands::start_dictation,
             commands::stop_dictation,
             commands::cancel_dictation,

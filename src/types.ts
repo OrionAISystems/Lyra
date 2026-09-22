@@ -1,18 +1,74 @@
 export type ActivationMode = "push_to_talk" | "toggle";
-export type DictationState = "idle" | "listening" | "processing" | "success" | "error";
+export type DictationState =
+  | "idle"
+  | "listening"
+  | "processing"
+  | "success"
+  | "error";
 export type LanguagePreference = "auto" | "en" | "el";
-export type TranscriptionRoute = "local_only" | "local_first_cloud_fallback" | "cloud_only";
-export type BarPlacement = "follow_active_window" | "primary_display" | "fixed_monitor";
-export type ModelWarmPolicy = "always_warm" | "unload_after_5_minutes" | "unload_after_15_minutes" | "unload_after_30_minutes" | "never_keep_warm";
-export type ModelLoadState = "loading" | "ready" | "unloaded" | "error";
-
+export type TranscriptionRoute =
+  | "local_only"
+  | "local_first_cloud_fallback"
+  | "cloud_only";
+export type BarPlacement =
+  | "follow_active_window"
+  | "primary_display"
+  | "fixed_monitor";
+export type ModelWarmPolicy =
+  | "always_warm"
+  | "unload_after_5_minutes"
+  | "unload_after_15_minutes"
+  | "unload_after_30_minutes"
+  | "never_keep_warm";
+export type LocalEngine = "parakeet_tdt" | "nemotron_streaming_en";
+export type Screen =
+  | "home"
+  | "dictation"
+  | "personalization"
+  | "audio"
+  | "insights"
+  | "appearance"
+  | "diagnostics";
 export interface CorrectionEntry {
   source: string;
   replacement: string;
   enabled: boolean;
   caseSensitive: boolean;
 }
-
+export interface WordEntry {
+  phrase: string;
+  enabled: boolean;
+  boost: number;
+}
+export interface SnippetEntry {
+  trigger: string;
+  expansion: string;
+  enabled: boolean;
+  caseSensitive: boolean;
+}
+export interface AppProfile {
+  executable: string;
+  category: "terminal" | "developer" | "chat" | "editor" | "other";
+  injectionStrategy: "ctrl_v" | "shift_insert" | "clipboard_only";
+  chunkLongText: boolean;
+  chunkChars: number;
+  formattingEnabled: boolean;
+}
+export interface Personalization {
+  schemaVersion: number;
+  words: WordEntry[];
+  corrections: CorrectionEntry[];
+  snippets: SnippetEntry[];
+  profiles: AppProfile[];
+  selfCorrectionEnabled: boolean;
+}
+export interface RecoveryShortcuts {
+  pasteLast: string | null;
+  copyLast: string | null;
+  cancel: string | null;
+  handsFreeToggle: string | null;
+  openSettings: string | null;
+}
 export interface Settings {
   schemaVersion: number;
   activationMode: ActivationMode;
@@ -26,17 +82,21 @@ export interface Settings {
   launchAtLogin: boolean;
   autoStopAfterSilenceMs: number | null;
   formattingCommandsEnabled: boolean;
-  corrections: CorrectionEntry[];
+  recoveryShortcuts: RecoveryShortcuts;
   barPlacement: BarPlacement;
   barMonitorId: string | null;
   barMonitorIndex: number | null;
   modelWarmPolicy: ModelWarmPolicy;
   usageCostEstimatesEnabled: boolean;
   cloudCostPerMinuteUsd: number;
-  theme: "system" | "dark";
+  theme: "dark" | "light" | "system";
+  accent: "purple" | "blue" | "teal" | "rose";
+  compactMode: boolean;
+  showTrayIcon: boolean;
+  localEngine: LocalEngine;
+  adaptiveAudioEnabled: boolean;
   onboardingComplete: boolean;
 }
-
 export interface AudioDeviceInfo {
   id: string;
   name: string;
@@ -45,7 +105,6 @@ export interface AudioDeviceInfo {
   channels: number;
   format: string;
 }
-
 export interface RuntimeStatus {
   runtimeInstalled: boolean;
   runtimeVersion: string | null;
@@ -59,16 +118,17 @@ export interface RuntimeStatus {
   modelPath: string;
   modelSizeBytes: number | null;
   modelVerified: boolean;
+  nemotronModelInstalled: boolean;
+  nemotronModelVerified: boolean;
+  nemotronModelPath: string;
   gpuName: string | null;
   gpuVramBytes: number | null;
   lastError: string | null;
 }
-
 export interface ModelRuntimeStatus {
-  state: ModelLoadState;
+  state: "loading" | "ready" | "unloaded" | "error";
   detail: string | null;
 }
-
 export interface DisplayInfo {
   id: string;
   name: string | null;
@@ -84,7 +144,6 @@ export interface DisplayInfo {
   workAreaHeight: number;
   scaleFactor: number;
 }
-
 export interface BarPlacementStatus {
   placement: BarPlacement;
   monitorId: string | null;
@@ -92,9 +151,8 @@ export interface BarPlacementStatus {
   fallback: boolean;
   message: string | null;
 }
-
 export interface SetupArtifact {
-  kind: "runtime" | "model";
+  kind: "runtime" | "model-parakeet" | "model-nemotron";
   variant: string | null;
   name: string;
   source: string;
@@ -105,22 +163,30 @@ export interface SetupArtifact {
   revision: string | null;
   license: string | null;
 }
-
-export type SetupProgressState = "idle" | "downloading" | "verifying" | "installing" | "complete" | "cancelled" | "error";
-
 export interface SetupProgress {
-  kind: "runtime" | "model" | null;
+  kind: string | null;
   variant: string | null;
-  state: SetupProgressState;
+  state:
+    | "idle"
+    | "downloading"
+    | "verifying"
+    | "installing"
+    | "complete"
+    | "cancelled"
+    | "error";
   downloadedBytes: number;
   totalBytes: number;
   error: string | null;
 }
-
-export type UpdateState = "idle" | "checking" | "up_to_date" | "available" | "downloading" | "installing" | "error";
-
 export interface UpdateStatus {
-  state: UpdateState;
+  state:
+    | "idle"
+    | "checking"
+    | "up_to_date"
+    | "available"
+    | "downloading"
+    | "installing"
+    | "error";
   currentVersion: string;
   availableVersion: string | null;
   notes: string | null;
@@ -129,7 +195,6 @@ export interface UpdateStatus {
   lastCheckedAt: string | null;
   error: string | null;
 }
-
 export interface SessionSnapshot {
   state: DictationState;
   durationMs: number;
@@ -140,13 +205,19 @@ export interface SessionSnapshot {
   backend: string | null;
   fallbackReason: string | null;
 }
-
+export interface TranscriptionPartial {
+  requestId: string;
+  text: string;
+  processedDurationMs: number | null;
+  backend: string;
+  model: string;
+  finality: boolean;
+}
 export interface HotkeyStatus {
   hotkey: string;
   registered: boolean;
   error: string | null;
 }
-
 export interface TranscriptionResult {
   text: string;
   backend: string;
@@ -157,7 +228,36 @@ export interface TranscriptionResult {
   latencyMs: number;
   fallbackReason: string | null;
 }
-
+export interface DailyUsage {
+  day: string;
+  started: number;
+  completed: number;
+  failures: number;
+  minutes: number;
+  words: number;
+  pasteAttempts: number;
+  pasteSuccesses: number;
+  cloudFallbacks: number;
+  latencyMs: number;
+  realTimeFactor: number;
+}
+export interface SessionRecord {
+  timestampMs: number;
+  appVersion: string;
+  durationMs: number;
+  wordCount: number;
+  targetExecutable: string | null;
+  targetCategory: string | null;
+  endpoint: string;
+  engine: string;
+  runtime: string | null;
+  backend: string | null;
+  fallbackChain: string[];
+  latencyMs: number | null;
+  realTimeFactor: number | null;
+  pasteOutcome: string;
+  failureCategory: string | null;
+}
 export interface UsageStats {
   dictationsToday: number;
   dictationsAllTime: number;
@@ -178,20 +278,15 @@ export interface UsageStats {
   cloudCostPerMinuteUsd: number;
   estimatedCloudCostUsd: number | null;
   estimatedLocalCostAvoidedUsd: number | null;
+  totalWords: number;
+  estimatedTypingHoursSaved: number;
+  detailedSince: string | null;
+  daily: DailyUsage[];
+  recentSessions: SessionRecord[];
+  failureCounts: Record<string, number>;
 }
-
-export interface OnboardingStatus {
-  microphone: boolean;
-  gpu: boolean;
-  runtime: boolean;
-  model: boolean;
-  hotkey: boolean;
-  recording: boolean;
-  ready: boolean;
-}
-
 export const defaultSettings: Settings = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   activationMode: "push_to_talk",
   hotkey: "Ctrl+Alt+Space",
   showBar: true,
@@ -203,11 +298,13 @@ export const defaultSettings: Settings = {
   launchAtLogin: false,
   autoStopAfterSilenceMs: null,
   formattingCommandsEnabled: true,
-  corrections: [
-    { source: "orion ai systems", replacement: "Orion AI Systems", enabled: true, caseSensitive: false },
-    { source: "geo core", replacement: "GeoCore", enabled: true, caseSensitive: false },
-    { source: "war map", replacement: "WarMap", enabled: true, caseSensitive: false },
-  ],
+  recoveryShortcuts: {
+    pasteLast: null,
+    copyLast: null,
+    cancel: "Escape",
+    handsFreeToggle: null,
+    openSettings: "Ctrl+Alt+Shift+L",
+  },
   barPlacement: "follow_active_window",
   barMonitorId: null,
   barMonitorIndex: null,
@@ -215,5 +312,37 @@ export const defaultSettings: Settings = {
   usageCostEstimatesEnabled: false,
   cloudCostPerMinuteUsd: 0.003,
   theme: "dark",
+  accent: "purple",
+  compactMode: false,
+  showTrayIcon: true,
+  localEngine: "parakeet_tdt",
+  adaptiveAudioEnabled: true,
   onboardingComplete: false,
+};
+export const defaultPersonalization: Personalization = {
+  schemaVersion: 1,
+  words: [],
+  corrections: [
+    {
+      source: "orion ai systems",
+      replacement: "Orion AI Systems",
+      enabled: true,
+      caseSensitive: false,
+    },
+    {
+      source: "geo core",
+      replacement: "GeoCore",
+      enabled: true,
+      caseSensitive: false,
+    },
+    {
+      source: "war map",
+      replacement: "WarMap",
+      enabled: true,
+      caseSensitive: false,
+    },
+  ],
+  snippets: [],
+  profiles: [],
+  selfCorrectionEnabled: true,
 };

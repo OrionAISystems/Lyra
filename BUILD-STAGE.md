@@ -1,6 +1,6 @@
 # Lyra build stage
 
-The current implementation target is v0.3.1, a focused maintenance release after the v0.3.0 daily-use hardening milestone.
+The current implementation target is v0.4.0, the streaming, personalization, reliability, and product-redesign release.
 
 ## Stage 0 — foundation
 
@@ -59,7 +59,18 @@ The current implementation target is v0.3.1, a focused maintenance release after
 
 Runtime and model are separate approvals. The runtime setup reports source, size, destination, variant, checksum, and hardware selection before installation. The model setup reports source, size, destination, license, revision, checksum, and measured available storage before installation.
 
+## Stage 5 — v0.4.0
+
+- [x] Settings schema v3 plus atomic personalization and metadata-only usage migrations.
+- [x] Deterministic backtracking, Words, Corrections, multiline Snippets, and app profiles.
+- [x] Recovery shortcut rollback, tray-access guard, executable categories, and injection strategies.
+- [x] Adaptive noise floor, silence trimming, clipping metadata, and one-recording benchmark.
+- [x] Isolated optional Nemotron streaming model, contextual words, partial events, final-only processing, and Parakeet replay.
+- [x] Seven-screen frameless product redesign with functional theme, density, startup, tray, placement, and updater controls.
+- [x] Automated frontend and Rust gates plus screen-by-screen in-app browser inspection.
+- [ ] Installed-hardware and public updater acceptance recorded in `docs/ACCEPTANCE-V0.4.md` after publication.
+
 ## Future stages
 
-- streaming recognizer and incremental bar text
-- richer diagnostics and benchmark history without transcript retention
+- native multi-final VAD endpointing and simultaneous warm models
+- Nemotron multilingual releases when a validated 3.5-compatible local artifact is available

@@ -507,9 +507,15 @@ impl SilenceDetector {
         silence_after_ms: u64,
     ) -> bool {
         if !self.speech_armed && level < 0.08 {
-            self.noise_floor = if self.noise_floor == 0.0 { level } else { self.noise_floor * 0.92 + level * 0.08 };
+            self.noise_floor = if self.noise_floor == 0.0 {
+                level
+            } else {
+                self.noise_floor * 0.92 + level * 0.08
+            };
         }
-        let threshold = (self.noise_floor * 3.0).clamp(0.012, 0.06).max(SPEECH_RMS_THRESHOLD * 0.65);
+        let threshold = (self.noise_floor * 3.0)
+            .clamp(0.012, 0.06)
+            .max(SPEECH_RMS_THRESHOLD * 0.65);
         if level >= threshold {
             self.voiced_since_ms.get_or_insert(now_ms);
             if now_ms.saturating_sub(self.voiced_since_ms.unwrap_or(now_ms)) >= MIN_VOICED_MS {
@@ -533,24 +539,57 @@ struct AudioAnalysis {
 
 fn analyze_audio(samples: &[f32], sample_rate: u32, adaptive: bool) -> AudioAnalysis {
     if samples.is_empty() {
-        return AudioAnalysis { samples: Vec::new(), peak_level: 0.0, clipped_samples: 0, noise_floor: 0.0 };
+        return AudioAnalysis {
+            samples: Vec::new(),
+            peak_level: 0.0,
+            clipped_samples: 0,
+            noise_floor: 0.0,
+        };
     }
     let calibration_len = samples.len().min((sample_rate / 4) as usize).max(1);
-    let noise_floor = (samples[..calibration_len].iter().map(|sample| sample * sample).sum::<f32>() / calibration_len as f32).sqrt();
-    let peak_level = samples.iter().fold(0.0_f32, |peak, sample| peak.max(sample.abs()));
-    let clipped_samples = samples.iter().filter(|sample| sample.abs() >= 0.985).count() as u64;
+    let noise_floor = (samples[..calibration_len]
+        .iter()
+        .map(|sample| sample * sample)
+        .sum::<f32>()
+        / calibration_len as f32)
+        .sqrt();
+    let peak_level = samples
+        .iter()
+        .fold(0.0_f32, |peak, sample| peak.max(sample.abs()));
+    let clipped_samples = samples
+        .iter()
+        .filter(|sample| sample.abs() >= 0.985)
+        .count() as u64;
     if !adaptive {
-        return AudioAnalysis { samples: samples.to_vec(), peak_level, clipped_samples, noise_floor };
+        return AudioAnalysis {
+            samples: samples.to_vec(),
+            peak_level,
+            clipped_samples,
+            noise_floor,
+        };
     }
     let threshold = (noise_floor * 2.5).clamp(0.006, 0.045);
     let Some(first) = samples.iter().position(|sample| sample.abs() >= threshold) else {
-        return AudioAnalysis { samples: Vec::new(), peak_level, clipped_samples, noise_floor };
+        return AudioAnalysis {
+            samples: Vec::new(),
+            peak_level,
+            clipped_samples,
+            noise_floor,
+        };
     };
-    let last = samples.iter().rposition(|sample| sample.abs() >= threshold).unwrap_or(first);
+    let last = samples
+        .iter()
+        .rposition(|sample| sample.abs() >= threshold)
+        .unwrap_or(first);
     let padding = (sample_rate / 10) as usize;
     let start = first.saturating_sub(padding);
     let end = (last + padding + 1).min(samples.len());
-    AudioAnalysis { samples: samples[start..end].to_vec(), peak_level, clipped_samples, noise_floor }
+    AudioAnalysis {
+        samples: samples[start..end].to_vec(),
+        peak_level,
+        clipped_samples,
+        noise_floor,
+    }
 }
 
 pub fn resample_linear(input: &[f32], source_rate: u32, target_rate: u32) -> Vec<f32> {

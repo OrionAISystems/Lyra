@@ -114,26 +114,28 @@ impl Personalization {
             entry.source = entry.source.trim().to_owned();
             entry.replacement = entry.replacement.trim().to_owned();
         }
-        self.snippets.retain(|entry| {
-            !entry.trigger.trim().is_empty() && !entry.expansion.trim().is_empty()
-        });
+        self.snippets
+            .retain(|entry| !entry.trigger.trim().is_empty() && !entry.expansion.trim().is_empty());
         for entry in &mut self.snippets {
             entry.trigger = entry.trigger.trim().to_owned();
             entry.expansion = entry.expansion.replace("\r\n", "\n").replace('\r', "\n");
         }
-        self.profiles.retain(|profile| !profile.executable.trim().is_empty());
+        self.profiles
+            .retain(|profile| !profile.executable.trim().is_empty());
         for profile in &mut self.profiles {
             profile.executable = profile.executable.trim().to_ascii_lowercase();
             profile.chunk_chars = profile.chunk_chars.clamp(128, 16_384);
         }
-        self.words.sort_by_key(|entry| entry.phrase.to_ascii_lowercase());
+        self.words
+            .sort_by_key(|entry| entry.phrase.to_ascii_lowercase());
         self.words
             .dedup_by(|left, right| left.phrase.eq_ignore_ascii_case(&right.phrase));
         self.snippets
             .sort_by_key(|entry| entry.trigger.to_ascii_lowercase());
         self.snippets
             .dedup_by(|left, right| left.trigger.eq_ignore_ascii_case(&right.trigger));
-        self.profiles.sort_by_key(|profile| profile.executable.clone());
+        self.profiles
+            .sort_by_key(|profile| profile.executable.clone());
         self.profiles
             .dedup_by(|left, right| left.executable.eq_ignore_ascii_case(&right.executable));
         self

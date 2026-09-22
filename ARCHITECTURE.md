@@ -6,6 +6,7 @@ Lyra is a single-user desktop process with two user-facing surfaces:
 
 1. A system tray entry that owns lifecycle, settings access, onboarding, and quit.
 2. A small frameless, transparent dictation bar that stays above the active workspace without taking focus.
+3. A frameless settings shell with Home, Dictation, Personalization, Audio & Engine, Insights, Appearance, and Diagnostics modules.
 
 The settings window is intentionally compact rather than dashboard-like. It explains readiness, privacy, routing, and recovery in the places where those choices matter.
 
@@ -57,6 +58,14 @@ The Rust side owns state transitions and side effects. The frontend renders even
 - `clipboard.rs`: text snapshot, sequence-number guard, and Windows clipboard operations.
 - `windows.rs`: foreground target capture, display enumeration, active/primary/fixed monitor placement, fallback status, non-activating bar behavior, and `SendInput` integration.
 - `commands.rs`: Tauri commands and event emission; this is presentation wiring, not domain policy.
+
+## v0.4 settings and lifecycle contracts
+
+Schema v3 separates growing personalization data into an atomic local store. Processing order is normalize → explicit-cue backtracking → spoken formatting → corrections → snippets. The usage ledger retains 90 daily aggregate buckets and 200 privacy-safe sessions; it never receives raw samples or recognized text. Model artifacts have isolated paths and markers, and the experimental Nemotron path emits request-scoped partial events while only a final result can enter text processing or paste.
+
+Recovery shortcuts are registered as a set with duplicate validation and rollback. Tray hiding requires a valid Open Settings shortcut. Target identity is reduced to an executable basename and built-in category before profile matching; full paths and window titles never cross into persistence.
+
+The benchmark records one phrase, retains its PCM only in memory, replays it through installed eligible engines, and persists numeric scores plus environment metadata. A recommendation is informational until the user explicitly applies it.
 
 ## v0.3 settings and lifecycle contracts
 

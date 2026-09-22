@@ -105,7 +105,10 @@ impl ClipboardService {
     ) -> Result<InjectionOutcome, BackendError> {
         if profile.injection_strategy == InjectionStrategy::ClipboardOnly {
             self.copy_text(text)?;
-            return Ok(InjectionOutcome { restored_previous_text: false, pasted: false });
+            return Ok(InjectionOutcome {
+                restored_previous_text: false,
+                pasted: false,
+            });
         }
         let snapshot = self.snapshot_text()?;
         focus_target(target)?;
@@ -125,9 +128,17 @@ impl ClipboardService {
             thread::sleep(Duration::from_millis(45));
         }
         let restored = if self.current_sequence() == last_sequence {
-            self.restore_if_unchanged(&ClipboardSnapshot { sequence: last_sequence, text: snapshot.text })?
-        } else { false };
-        Ok(InjectionOutcome { restored_previous_text: restored, pasted: true })
+            self.restore_if_unchanged(&ClipboardSnapshot {
+                sequence: last_sequence,
+                text: snapshot.text,
+            })?
+        } else {
+            false
+        };
+        Ok(InjectionOutcome {
+            restored_previous_text: restored,
+            pasted: true,
+        })
     }
 }
 
@@ -144,7 +155,12 @@ impl TextInjector for ClipboardService {
         ClipboardService::paste_into_target(self, target, text)
     }
 
-    fn paste_with_profile(&self, target: TargetContext, text: &str, profile: &AppProfile) -> Result<InjectionOutcome, BackendError> {
+    fn paste_with_profile(
+        &self,
+        target: TargetContext,
+        text: &str,
+        profile: &AppProfile,
+    ) -> Result<InjectionOutcome, BackendError> {
         ClipboardService::paste_with_profile(self, target, text, profile)
     }
 }
@@ -152,7 +168,10 @@ impl TextInjector for ClipboardService {
 fn chunk_text(text: &str, max_chars: usize) -> Vec<String> {
     let max_chars = max_chars.max(1);
     let chars = text.chars().collect::<Vec<_>>();
-    chars.chunks(max_chars).map(|chunk| chunk.iter().collect()).collect()
+    chars
+        .chunks(max_chars)
+        .map(|chunk| chunk.iter().collect())
+        .collect()
 }
 
 #[cfg(windows)]
@@ -330,7 +349,6 @@ mod tests {
         assert!(clipboard.restore_if_unchanged(&snapshot));
         assert_eq!(clipboard.text.as_deref(), Some("before"));
     }
-
 
     #[test]
     fn chunking_preserves_all_unicode_text() {

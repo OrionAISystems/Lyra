@@ -340,10 +340,7 @@ fn migrate_settings_value(mut value: serde_json::Value) -> Result<Settings, serd
                     "never_keep_warm".to_owned()
                 }),
             );
-            object.insert(
-                "schemaVersion".to_owned(),
-                serde_json::Value::from(2),
-            );
+            object.insert("schemaVersion".to_owned(), serde_json::Value::from(2));
             object.remove("keepModelWarm");
         }
     }
