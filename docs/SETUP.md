@@ -2,7 +2,7 @@
 
 ## Installed application
 
-The v0.3.2 Windows x64 release is a per-user NSIS installer. It creates the Lyra Start Menu entry and offers the desktop shortcut during setup. It does not require administrator elevation and does not bundle the native speech runtime or the 681 MB model. Existing debug builds remain separate under `src-tauri\target\debug`.
+The v0.4.3 Windows x64 release is a per-user NSIS installer. It creates the Lyra Start Menu entry and offers the desktop shortcut during setup. It does not require administrator elevation and does not bundle the native speech runtime or the 714 MB (about 681 MiB) Parakeet model. Existing debug builds remain separate under `src-tauri\target\debug`.
 
 The installer uses Tauri's WebView2 download bootstrapper. On a machine without a suitable WebView2 runtime, the installer obtains the standard Microsoft runtime; Lyra itself never changes `PATH`, installs the CUDA Toolkit, or installs CMake/Ninja.
 
@@ -12,7 +12,7 @@ Development requires Node.js, Rust with the MSVC Windows target, and the Tauri p
 
 ## Settings and dictation policy
 
-Settings are persisted as schema v2 under the app configuration directory. Existing v0.2 settings are migrated on first load. The three seeded vocabulary corrections are enabled by default; additions, enablement, and case sensitivity are local settings only.
+Settings are persisted as schema v3 under the app configuration directory. Existing settings migrate on first load; legacy Corrections move into the separate local personalization store, which also holds Words, Snippets, app profiles, and self-correction preferences. These files remain local to the user.
 
 Push-to-talk on the bar starts on primary-pointer down and stops on pointer up, cancellation, or lost pointer capture. Toggle mode starts and stops on clicks. Silence endpointing is off by default, is available at 1.0, 1.5, 2.0, or 3.0 seconds, and applies only after a short voiced interval has crossed Lyra's fixed conservative RMS threshold. Maximum duration changes are applied to the persistent bar and active capture without restarting Lyra.
 
@@ -35,7 +35,7 @@ The first candidate is the official NeMo-Speech.cpp v0.1.0 Windows x64 CUDA arch
 1. Confirm microphone enumeration and choose the Windows default or a specific device.
 2. Detect the GPU and display the measured VRAM.
 3. Approve and verify the native runtime.
-4. Approve and verify the Parakeet model.
+4. Approve and verify the Parakeet model. Separately approve the Nemotron model only if you want to try the experimental English streaming engine.
 5. Use Record shortcut to capture a modifier plus one main key and confirm the registration status.
 6. Record a short sample and verify the target application paste.
 
@@ -57,7 +57,7 @@ The optional OpenAI credential is entered through the settings flow and stored i
 
 ## Usage statistics
 
-The Usage sidebar menu stores aggregate counters only in `%LOCALAPPDATA%\Lyra\usage.json`: dictation counts, audio duration, result timing, local/cloud totals, failures, paste attempts, and fallback counts. No transcript text or raw audio is written. Cost estimates are hidden until enabled and use the editable local rate, defaulting to `$0.003/minute`. Reset requires confirmation and restores empty counters.
+The Usage sidebar stores 90 days of daily aggregates and up to 200 recent metadata-only sessions in `%LOCALAPPDATA%\Lyra\usage.json`. Records include counts and timing, engine/runtime/fallback information, paste outcome, failure category, and a target executable basename/category; they do not include transcript text, raw audio, clipboard content, window titles, full paths, or credentials. Cost estimates are hidden until enabled and use the editable local rate, defaulting to `$0.003/minute`. Reset requires confirmation and restores empty counters.
 
 ## Updates
 

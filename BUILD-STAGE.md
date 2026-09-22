@@ -1,6 +1,6 @@
 # Lyra build stage
 
-The current implementation target is v0.4.3, the focused native-window, compact-bar, dropdown, diagnostics, and benchmark follow-up for the v0.4 product release.
+The current published version is v0.4.3, the focused native-window, compact-bar, dropdown, diagnostics, and benchmark follow-up for the v0.4 product release. Lyra is in a stabilization and dogfooding phase: use the v0.4.x line for issues grounded in daily use, and let v0.5.0 wait until usage identifies the next meaningful product step.
 
 ## Stage 0 — foundation
 
@@ -8,7 +8,7 @@ The current implementation target is v0.4.3, the focused native-window, compact-
 - [x] Windows-first Tauri/React/Rust project shape.
 - [x] Standalone documentation and artifact exclusion rules.
 - [x] Settings/bar UI direction: charcoal, restrained typography, cool accent, low-motion active signal.
-- [x] App version synchronized to `0.3.1` with release-tag drift validation.
+- [x] Application versioning and release-tag drift validation established (the initial synchronized version was `0.3.1`).
 - [x] Per-user NSIS bundling configuration with WebView2 download bootstrapper behavior.
 - [x] Single-instance protection and one dynamic update item in the tray.
 - [x] Rust-owned updater interface with stable-only checks, scheduling, install guards, and public signed-feed endpoint.
@@ -69,6 +69,14 @@ Runtime and model are separate approvals. The runtime setup reports source, size
 - [x] Seven-screen frameless product redesign with functional theme, density, startup, tray, placement, and updater controls.
 - [x] Automated frontend and Rust gates plus screen-by-screen in-app browser inspection.
 - [ ] Installed-hardware and public updater acceptance recorded in `docs/ACCEPTANCE-V0.4.md` after publication.
+
+## Stage 6 — v0.4.x stabilization
+
+- [x] v0.4.1: stabilize shortcut event handling and runtime status reads; improve chart labels and native dropdown contrast.
+- [x] v0.4.2: polish theme and dropdown behavior; add engine-split Insights, advanced usage metrics, configurable typing speed, and silence-only success-rate handling.
+- [x] v0.4.3: repair native window controls and compact bar behavior; polish dropdown and diagnostics states; allow benchmarking from completed or failed idle sessions.
+- [ ] Complete the remaining installed-hardware, cross-application injection, Nemotron spoken partial/final, fallback replay, and updater acceptance in [docs/ACCEPTANCE-V0.4.md](docs/ACCEPTANCE-V0.4.md).
+- [ ] Collect normal-use feedback before committing to a v0.5.0 scope.
 
 ## Future stages
 

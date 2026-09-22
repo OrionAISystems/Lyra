@@ -1,14 +1,16 @@
 # Lyra
 
-Lyra is a Windows-first, tray-first dictation utility for the Orion ecosystem. It keeps the first recognition path local: a global push-to-talk shortcut captures microphone audio, a warm Parakeet recognizer transcribes it, conservative text cleanup runs, and the result is safely pasted into the application that was active before recording began.
+Lyra is a Windows-first, tray-first dictation utility for the Orion ecosystem. A global shortcut or bar gesture captures microphone audio, local Parakeet or optional English Nemotron recognition processes it, and the final text is cleaned up and safely injected into the application that was active before recording began. Optional cloud fallback is explicit and credentials stay in Windows Credential Manager.
 
 The repository is intentionally standalone. Lyra does not depend on Orion's gateway or shared UI package, and runtime/model artifacts are managed outside Git under `%LOCALAPPDATA%\Lyra\`.
 
 ## Current phase
 
-v0.4 is the streaming, personalization, reliability, and product-design release. It adds an optional English Nemotron streaming engine, contextual Words, Corrections, exact multiline Snippets, app-aware paste profiles, adaptive capture diagnostics, recovery shortcuts, a local one-recording benchmark, richer metadata-only Insights, and a seven-screen desktop shell. Parakeet TDT remains the default.
+v0.4.3 is the current published release in the v0.4 streaming, personalization, reliability, and product-design line. It includes an optional English Nemotron streaming engine, contextual Words, Corrections, exact multiline Snippets, app-aware paste profiles, adaptive capture diagnostics, recovery shortcuts, a local one-recording benchmark, richer metadata-only Insights, and a seven-screen desktop shell. Parakeet TDT remains the default.
 
 The v0.3 → v0.4 settings and personalization migrations are automatic and idempotent. Existing microphone, ten-minute duration, startup, placement, correction, and cost preferences are preserved. Runtime and model installation remains separate and explicit; the optional Nemotron model is independently versioned and verified.
+
+The current development phase is stabilization through daily use. v0.4.x patch releases are intended for observed defects, interaction friction, small quality-of-life improvements, acceptance gaps, and documentation. The next major version is deliberately deferred until real usage points to its scope.
 
 ## Stack
 

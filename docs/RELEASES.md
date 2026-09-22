@@ -1,6 +1,6 @@
 # Lyra releases
 
-Lyra keeps source private in [`OrionAISystems/Lyra`](https://github.com/OrionAISystems/Lyra) and publishes release-only files plus the public [`CHANGELOG.md`](https://github.com/OrionAISystems/Lyra-Releases/blob/main/CHANGELOG.md) to the [`OrionAISystems/Lyra-Releases`](https://github.com/OrionAISystems/Lyra-Releases) repository. Installed clients therefore need no GitHub authentication. v0.3.0 was the first release whose installed v0.2.0 client exercised this path end to end; v0.3.1 kept long settings navigation anchored while the main content scrolls; v0.3.2 is the local recognition reliability fix.
+Lyra keeps source private in [`OrionAISystems/Lyra`](https://github.com/OrionAISystems/Lyra) and publishes release-only files plus the public [`CHANGELOG.md`](https://github.com/OrionAISystems/Lyra-Releases/blob/main/CHANGELOG.md) to the [`OrionAISystems/Lyra-Releases`](https://github.com/OrionAISystems/Lyra-Releases) repository. Installed clients therefore need no GitHub authentication. v0.3.0 was the first release whose installed v0.2.0 client exercised this path end to end; v0.3.1 kept long settings navigation anchored while the main content scrolls; v0.3.2 fixed local recognition reliability. The current published release is v0.4.3 (2026-09-22); see [CHANGELOG.md](../CHANGELOG.md) and [ACCEPTANCE-V0.4.md](ACCEPTANCE-V0.4.md) for the v0.4 release history and remaining installed acceptance evidence.
 
 ## Release contract
 
@@ -12,7 +12,7 @@ Lyra keeps source private in [`OrionAISystems/Lyra`](https://github.com/OrionAIS
 6. CI mirrors the canonical changelog to `Lyra-Releases` and uses the current version section as the public release notes.
 7. The pinned Tauri Action publishes the installer, updater artifact and signature, and `latest.json` to `Lyra-Releases`.
 8. Inspect the public changelog, release assets, and manifest before treating the release as production-ready.
-9. From an installed v0.2.0 client, check, download, passively install, restart, and verify v0.3.0. Confirm migrated settings, empty/new usage statistics, and the updater gate while dictating.
+9. Historical acceptance: from an installed v0.2.0 client, check, download, passively install, restart, and verify v0.3.0. Current installed-hardware and v0.3.2-to-v0.4.x updater scenarios are tracked in [ACCEPTANCE-V0.4.md](ACCEPTANCE-V0.4.md); record observed results there before marking them passed.
 
 The public repository must remain release-only. Its root may contain the public README and changelog, alongside release assets and metadata. Do not add source code, models, native runtime archives, credentials, CI logs, or private organization documentation there.
 

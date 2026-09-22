@@ -2,7 +2,7 @@
 
 ## Product shape
 
-Lyra is a single-user desktop process with two user-facing surfaces:
+Lyra is a single-user desktop process with three user-facing surfaces:
 
 1. A system tray entry that owns lifecycle, settings access, onboarding, and quit.
 2. A small frameless, transparent dictation bar that stays above the active workspace without taking focus.
@@ -22,20 +22,23 @@ ActivationSource -> TargetCapture -> DictationSession state machine
                                       |
                                       v
 AudioCapture -> in-memory PCM -> TranscriptionRouter
-                                  |                |
-                       local NeMo backend     optional cloud backend
-                                  \                /
-                                   v              v
-                         formatting commands -> vocabulary corrections
-                                   |
-                                   v
-                                  PostProcessor
-                                       |
-                                       v
-                 ClipboardSnapshot + sequence guard -> SendInput Ctrl+V
-                                       |
-                                       v
-                               result / recovery events
+                                  |               |
+                       local Parakeet       optional Nemotron stream
+                                  |               | request-scoped partials
+                                  +-------+-------+
+                                          |
+                              final result / local retry
+                                          |
+                                  optional cloud fallback
+                                          |
+                                          v
+                   normalize -> backtracking -> formatting -> corrections -> snippets
+                                          |
+                                          v
+                   ClipboardSnapshot + sequence guard -> target-aware injection
+                                          |
+                                          v
+                                  result / recovery events
 
 release tag -> private CI -> changelog sync -> NSIS + Tauri-signed updater artifact -> public Lyra-Releases
                                                                                      ^
@@ -47,13 +50,13 @@ The Rust side owns state transitions and side effects. The frontend renders even
 ## Rust boundaries
 
 - `domain.rs`: serializable product types, state transition rules, deterministic formatting/correction processing, and routing decisions.
-- `settings.rs`: versioned schema v2, legacy migration, normalization, and persistence. Secrets are not settings.
+- `settings.rs`: versioned schema v3, legacy migration, normalization, and persistence. Secrets are not settings.
 - `audio.rs`: device enumeration, format conversion, mono downmix, in-memory capture, RMS speech arming, silence/max/manual endpoints, dynamic duration control, level events, and ephemeral WAV encoding.
 - `transcription.rs`: `TranscriptionBackend` contract, local/cloud implementations, route/fallback policy, and recognizer lifecycle status.
 - `native/nemo.rs`: app-local dynamic loading boundary for the pinned NeMo-Speech.cpp C ABI. No machine-wide SDK or PATH dependency.
 - `runtime.rs`: pinned runtime/model metadata, resumable downloads, checksum verification, safe staged extraction, and explicit setup progress.
 - `updater.rs`: `UpdateProvider` seam, stable-version filtering, signed Tauri updater integration, update state machine, scheduling, passive restart behavior, and the installation reservation gate.
-- `usage.rs`: local aggregate counters and derived metrics. It never receives transcript text or raw samples.
+- `usage.rs`: local aggregate counters, daily history, metadata-only recent sessions, and derived metrics. It never receives transcript text or raw samples.
 - `tray.rs`: the single tray update menu item, kept in sync with updater status.
 - `clipboard.rs`: text snapshot, sequence-number guard, and Windows clipboard operations.
 - `windows.rs`: foreground target capture, display enumeration, active/primary/fixed monitor placement, fallback status, non-activating bar behavior, and `SendInput` integration.
@@ -93,7 +96,7 @@ The updater reserves installation before the async download begins. The reservat
 
 ## Extension points
 
-The v1 session is utterance-oriented, but `AudioCapture` and `TranscriptionBackend` carry request/session boundaries that can support streaming later. Backend results include model, language metadata when available, duration, latency, and fallback reason so the UI and diagnostics do not need backend-specific knowledge.
+Capture and endpointing remain utterance-oriented. The optional Nemotron backend already streams each captured request through the native recognizer and emits request-scoped partials; only its final result enters text processing or paste. Native multi-final VAD/endpointing and simultaneous warm models remain future work. Backend results include model, language metadata when available, duration, latency, and fallback reason so the UI and diagnostics do not need backend-specific knowledge.
 
 The installer deliberately contains only the Lyra application. Runtime and model installation is an explicit bootstrapper flow under `%LOCALAPPDATA%\Lyra`, so application upgrades do not overwrite user-managed recognition artifacts. The local updater fixture lives outside production configuration and uses an ephemeral signing key plus an HTTP endpoint only for tests; production continues to use the committed public key and HTTPS release-only feed.
 

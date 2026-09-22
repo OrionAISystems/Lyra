@@ -40,3 +40,5 @@ Neither artifact is checked into Git. Download archives, extracted DLLs, model f
 - Language: English
 
 Nemotron is installed and marked independently from Parakeet. Its streaming ABI is loaded only when the complete optional symbol set is available. Auto/Greek requests stay on Parakeet; a stream failure replays the same in-memory PCM through Parakeet before any explicitly permitted cloud fallback.
+
+Lyra passes enabled Words through the native speech-context interface for Nemotron. The pinned GGUF currently has no embedded SentencePiece tokenizer, however, so the runtime cannot tokenize those phrases and disables word boosting. Words are persisted and passed to the backend, but this model/runtime combination does not currently apply the recognition-bias benefit.
