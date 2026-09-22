@@ -89,6 +89,7 @@ export interface Settings {
   modelWarmPolicy: ModelWarmPolicy;
   usageCostEstimatesEnabled: boolean;
   cloudCostPerMinuteUsd: number;
+  typingWpm: number;
   theme: "dark" | "light" | "system";
   accent: "purple" | "blue" | "teal" | "rose";
   compactMode: boolean;
@@ -178,6 +179,23 @@ export interface SetupProgress {
   totalBytes: number;
   error: string | null;
 }
+export interface BenchmarkScore {
+  engine: string;
+  runtime: string | null;
+  latencyMs: number;
+  realTimeFactor: number;
+  transcriptDistance: number;
+  partialCount: number;
+  succeeded: boolean;
+  failureCategory: string | null;
+}
+export interface BenchmarkResult {
+  timestampMs: number;
+  phraseWordCount: number;
+  microphone: string | null;
+  scores: BenchmarkScore[];
+  recommendation: string | null;
+}
 export interface UpdateStatus {
   state:
     | "idle"
@@ -230,16 +248,15 @@ export interface TranscriptionResult {
 }
 export interface DailyUsage {
   day: string;
-  started: number;
+  sessions: number;
   completed: number;
-  failures: number;
-  minutes: number;
+  failed: number;
+  durationMs: number;
   words: number;
+  parakeetWords: number;
+  nemotronWords: number;
   pasteAttempts: number;
   pasteSuccesses: number;
-  cloudFallbacks: number;
-  latencyMs: number;
-  realTimeFactor: number;
 }
 export interface SessionRecord {
   timestampMs: number;
@@ -311,6 +328,7 @@ export const defaultSettings: Settings = {
   modelWarmPolicy: "always_warm",
   usageCostEstimatesEnabled: false,
   cloudCostPerMinuteUsd: 0.003,
+  typingWpm: 40,
   theme: "dark",
   accent: "purple",
   compactMode: false,

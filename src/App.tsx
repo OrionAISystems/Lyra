@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Mic, Settings2, X } from "lucide-react";
+import { Mic, SlidersHorizontal, X } from "lucide-react";
 import {
   cancelDictation,
   isTauri,
@@ -45,7 +45,7 @@ function DictationBar() {
         </span>
       </div>
       <button aria-label="Open settings" onClick={() => void showSettings()}>
-        <Settings2 />
+        <SlidersHorizontal />
       </button>
       {active && (
         <button aria-label="Cancel" onClick={() => void cancelDictation()}>

@@ -9,6 +9,7 @@ use crate::domain::{ActivationMode, CorrectionEntry, LanguagePreference, Transcr
 pub const CURRENT_SCHEMA_VERSION: u32 = 3;
 
 const DEFAULT_CLOUD_COST_PER_MINUTE_USD: f64 = 0.003;
+const DEFAULT_TYPING_WPM: u32 = 40;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -121,6 +122,8 @@ pub struct Settings {
     pub usage_cost_estimates_enabled: bool,
     #[serde(default = "default_cloud_cost_per_minute_usd")]
     pub cloud_cost_per_minute_usd: f64,
+    #[serde(default = "default_typing_wpm")]
+    pub typing_wpm: u32,
     #[serde(default = "default_theme")]
     pub theme: String,
     #[serde(default = "default_accent")]
@@ -162,6 +165,9 @@ fn default_open_settings_hotkey() -> Option<String> {
 fn default_cloud_cost_per_minute_usd() -> f64 {
     DEFAULT_CLOUD_COST_PER_MINUTE_USD
 }
+fn default_typing_wpm() -> u32 {
+    DEFAULT_TYPING_WPM
+}
 
 fn default_corrections() -> Vec<CorrectionEntry> {
     vec![
@@ -194,6 +200,7 @@ impl Default for Settings {
             model_warm_policy: ModelWarmPolicy::default(),
             usage_cost_estimates_enabled: false,
             cloud_cost_per_minute_usd: default_cloud_cost_per_minute_usd(),
+            typing_wpm: default_typing_wpm(),
             theme: default_theme(),
             accent: default_accent(),
             compact_mode: false,
@@ -242,6 +249,7 @@ impl Settings {
             self.cloud_cost_per_minute_usd = default_cloud_cost_per_minute_usd();
         }
         self.cloud_cost_per_minute_usd = self.cloud_cost_per_minute_usd.min(1_000.0);
+        self.typing_wpm = self.typing_wpm.clamp(10, 200);
         self
     }
 }

@@ -12,7 +12,7 @@ use tracing::warn;
 
 use crate::domain::TranscriptionResult;
 
-const STATS_SCHEMA_VERSION: u32 = 2;
+const STATS_SCHEMA_VERSION: u32 = 3;
 const DEFAULT_RATE_USD_PER_MINUTE: f64 = 0.003;
 const DAILY_RETENTION: usize = 90;
 const SESSION_RETENTION: usize = 200;
@@ -63,6 +63,10 @@ pub struct DailyUsage {
     pub completed: u64,
     pub failed: u64,
     pub words: u64,
+    #[serde(default)]
+    pub parakeet_words: u64,
+    #[serde(default)]
+    pub nemotron_words: u64,
     pub duration_ms: u64,
     pub paste_attempts: u64,
     pub paste_successes: u64,
@@ -157,6 +161,8 @@ impl UsageCounters {
                 completed: self.completed_results,
                 failed: self.failed_sessions,
                 words: 0,
+                parakeet_words: 0,
+                nemotron_words: 0,
                 duration_ms: self.captured_audio_duration_ms,
                 paste_attempts: self.paste_attempts,
                 paste_successes: self.paste_successes,
@@ -167,6 +173,9 @@ impl UsageCounters {
         for entry in &mut self.daily {
             if !is_iso_day(&entry.day) {
                 entry.day = current_day.clone();
+            }
+            if entry.parakeet_words == 0 && entry.nemotron_words == 0 && entry.words > 0 {
+                entry.parakeet_words = entry.words;
             }
         }
         if self.today_key != current_day {
@@ -182,6 +191,8 @@ impl UsageCounters {
             left.completed += right.completed;
             left.failed += right.failed;
             left.words += right.words;
+            left.parakeet_words += right.parakeet_words;
+            left.nemotron_words += right.nemotron_words;
             left.duration_ms += right.duration_ms;
             left.paste_attempts += right.paste_attempts;
             left.paste_successes += right.paste_successes;
@@ -287,6 +298,11 @@ impl UsageStatsStore {
             let today = c.today_mut();
             today.completed += 1;
             today.words += words;
+            if result.backend.to_ascii_lowercase().contains("nemotron") {
+                today.nemotron_words += words;
+            } else {
+                today.parakeet_words += words;
+            }
             if is_cloud_backend(&result.backend) {
                 c.cloud_result_count += 1;
                 c.cloud_audio_duration_ms += result.audio_duration_ms;
@@ -324,7 +340,7 @@ impl UsageStatsStore {
     pub fn record_session(&self, record: SessionRecord) {
         self.update(|c| c.sessions.push(record));
     }
-    pub fn snapshot(&self, cost_estimates_enabled: bool, rate: f64) -> UsageStats {
+    pub fn snapshot(&self, cost_estimates_enabled: bool, rate: f64, typing_wpm: u32) -> UsageStats {
         let c = self
             .counters
             .lock()
@@ -365,7 +381,9 @@ impl UsageStatsStore {
                 .then_some(c.cloud_audio_duration_ms as f64 / 60_000.0 * rate),
             estimated_local_cost_avoided_usd: cost_estimates_enabled
                 .then_some(c.local_audio_duration_ms as f64 / 60_000.0 * rate),
-            estimated_typing_hours_saved: c.total_words as f64 / 40.0 / 60.0,
+            estimated_typing_hours_saved: c.total_words as f64
+                / typing_wpm.clamp(10, 200) as f64
+                / 60.0,
             detailed_since: c.detailed_since,
             daily: c.daily,
             recent_sessions: sessions,
@@ -379,7 +397,7 @@ impl UsageStatsStore {
         if let Err(error) = self.persist() {
             warn!(error = %error, "could not persist reset usage statistics");
         }
-        self.snapshot(false, DEFAULT_RATE_USD_PER_MINUTE)
+        self.snapshot(false, DEFAULT_RATE_USD_PER_MINUTE, 40)
     }
     fn update(&self, operation: impl FnOnce(&mut UsageCounters)) {
         if let Ok(mut c) = self.counters.lock() {
@@ -499,7 +517,7 @@ mod tests {
         fs::write(&path, r#"{"schemaVersion":1,"todayKey":"2026-09-22","startedDictationsToday":24,"totalStartedDictations":76,"completedResults":71,"failedSessions":5}"#).unwrap();
         let store = UsageStatsStore::for_tests(path.clone());
         store.record_result(&result("local_nemo"));
-        let stats = store.snapshot(false, 0.003);
+        let stats = store.snapshot(false, 0.003, 40);
         assert_eq!(stats.dictations_all_time, 76);
         assert_eq!(stats.total_words, 3);
         assert!(!fs::read_to_string(&path)
@@ -544,7 +562,7 @@ mod tests {
         let path =
             std::env::temp_dir().join(format!("lyra-usage-rate-{}.json", uuid::Uuid::new_v4()));
         let store = UsageStatsStore::for_tests(path.clone());
-        assert_eq!(store.snapshot(false, 0.003).paste_success_rate, 0.0);
+        assert_eq!(store.snapshot(false, 0.003, 40).paste_success_rate, 0.0);
         fs::remove_file(path).ok();
     }
 }

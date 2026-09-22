@@ -1,5 +1,11 @@
+import { useEffect, useState } from "react";
 import { Cpu, Download, Mic, ShieldCheck } from "lucide-react";
-import { runBenchmark, startSetupArtifact } from "../bridge";
+import {
+  getBenchmarkResult,
+  listenToBenchmarkEvents,
+  runBenchmark,
+  startSetupArtifact,
+} from "../bridge";
 import {
   Card,
   Notice,
@@ -15,6 +21,42 @@ export default function AudioEngine({ state }: { state: LyraState }) {
   const busy = ["downloading", "verifying", "installing"].includes(
     state.setup.state,
   );
+  const [benchmarkState, setBenchmarkState] = useState("idle");
+  const [benchmarkError, setBenchmarkError] = useState<string | null>(null);
+  const [benchmarkResult, setBenchmarkResult] =
+    useState<Awaited<ReturnType<typeof getBenchmarkResult>>>(null);
+  useEffect(() => {
+    let dead = false;
+    void getBenchmarkResult().then((result) => {
+      if (!dead && result) setBenchmarkResult(result);
+    });
+    let un: (() => void)[] = [];
+    void listenToBenchmarkEvents({
+      onState: (value) => setBenchmarkState(value),
+      onResult: (value) => {
+        setBenchmarkResult(value);
+        setBenchmarkState("complete");
+      },
+    }).then((items) => {
+      if (dead) items.forEach((item) => item());
+      else un = items;
+    });
+    return () => {
+      dead = true;
+      un.forEach((item) => item());
+    };
+  }, []);
+  const startBenchmark = async () => {
+    setBenchmarkError(null);
+    setBenchmarkState("starting");
+    try {
+      await runBenchmark();
+      setBenchmarkState("recording");
+    } catch (error) {
+      setBenchmarkState("idle");
+      setBenchmarkError(error instanceof Error ? error.message : String(error));
+    }
+  };
   return (
     <Page
       title="Audio & Engine"
@@ -118,10 +160,37 @@ export default function AudioEngine({ state }: { state: LyraState }) {
           title="Benchmark engines"
           description="Read “Lyra turns a clear thought into useful text” once"
         >
-          <button className="primary" onClick={() => void runBenchmark()}>
-            Run benchmark
+          <button
+            className="primary"
+            type="button"
+            disabled={
+              benchmarkState === "recording" ||
+              benchmarkState === "comparing" ||
+              benchmarkState === "starting"
+            }
+            onClick={() => void startBenchmark()}
+          >
+            {benchmarkState === "recording" || benchmarkState === "comparing"
+              ? "Benchmarking…"
+              : "Run benchmark"}
           </button>
         </Row>
+        {(benchmarkError || benchmarkResult) && (
+          <div className="benchmark-status">
+            {benchmarkError && (
+              <span className="inline-error">{benchmarkError}</span>
+            )}
+            {benchmarkResult && !benchmarkError && (
+              <span>
+                Last run:{" "}
+                {benchmarkResult.recommendation
+                  ? `recommendation ${benchmarkResult.recommendation.replaceAll("_", " ")}`
+                  : "no passing recommendation"}
+                .
+              </span>
+            )}
+          </div>
+        )}
       </Card>
       <Notice>
         Audio and recognized text are never saved. Benchmark results contain

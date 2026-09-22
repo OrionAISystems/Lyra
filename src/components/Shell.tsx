@@ -38,23 +38,31 @@ export function Shell({
   const win = isTauri ? getCurrentWindow() : null;
   return (
     <div className="window-shell">
-      <div className="titlebar" data-tauri-drag-region>
-        <div className="traffic">
-          <i />
-          <i />
-          <i />
-        </div>
-        <div className="window-actions">
-          <button aria-label="Minimize" onClick={() => void win?.minimize()}>
+      <div className="titlebar">
+        <div className="titlebar-drag" data-tauri-drag-region />
+        <div
+          className="window-actions"
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          <button
+            type="button"
+            aria-label="Minimize"
+            onClick={() => void win?.minimize()}
+          >
             <Minus />
           </button>
           <button
+            type="button"
             aria-label="Maximize or restore"
             onClick={() => void win?.toggleMaximize()}
           >
             <Square />
           </button>
-          <button aria-label="Close to tray" onClick={() => void win?.hide()}>
+          <button
+            type="button"
+            aria-label="Close to tray"
+            onClick={() => void win?.hide()}
+          >
             <X />
           </button>
         </div>
@@ -84,7 +92,7 @@ export function Shell({
             <i className={ready ? "ready" : ""} />
             {ready ? "Ready locally" : "Setup required"}
           </div>
-          <span>v0.4.1</span>
+          <span>v0.4.2</span>
         </footer>
       </aside>
       <div className="content">{children}</div>

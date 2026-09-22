@@ -17,3 +17,9 @@ Viewport inspected in the Codex in-app browser on 2026-09-22. The browser surfac
 Keyboard-visible native controls, labelled icon buttons, 32–40px minimum interaction targets, a single content scroll owner, and responsive compact navigation were retained. No P0–P2 visual mismatches remain.
 
 final result: passed
+
+## v0.4.2 interaction follow-up
+
+The final release candidate was rendered again after the interaction and theme fixes. The native Windows release binary was launched from `src-tauri/target/release/lyra.exe` and inspected with computer use: the compact dictation bar was visible, the recovery shortcut opened Settings, the shell exposed Windows minimize/maximize/close-to-tray controls, and the footer reported `v0.4.2`. The global shortcut was exercised and no transient terminal or `nvidia-smi` process appeared.
+
+The in-app browser pass opened the Advanced Insights panel, verified the Parakeet/Nemotron legend and split-bar layout, switched Appearance to Light with all inner cards and controls following the theme, expanded a dropdown for readable options, entered the benchmark running state, and clicked Diagnostics Retry. No P0–P2 mismatches were observed in this follow-up.

@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   AudioDeviceInfo,
+  BenchmarkResult,
   BarPlacementStatus,
   DisplayInfo,
   HotkeyStatus,
@@ -78,6 +79,20 @@ export const saveOpenAiCredential = (secret: string) =>
 export const clearOpenAiCredential = () =>
   command<void>("clear_openai_credential");
 export const runBenchmark = () => command<void>("run_benchmark");
+export const getBenchmarkResult = () =>
+  command<BenchmarkResult | null>("get_benchmark_result");
+export async function listenToBenchmarkEvents(h: {
+  onState: (state: string) => void;
+  onResult: (result: BenchmarkResult) => void;
+}): Promise<UnlistenFn[]> {
+  if (!isTauri) return [];
+  return Promise.all([
+    listen("lyra://benchmark-state", (e) => h.onState(e.payload as string)),
+    listen("lyra://benchmark-result", (e) =>
+      h.onResult(e.payload as BenchmarkResult),
+    ),
+  ]);
+}
 export async function listenToLyraEvents(h: {
   onState: (v: SessionSnapshot) => void;
   onInputLevel: (v: number) => void;

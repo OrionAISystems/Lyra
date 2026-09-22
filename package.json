@@ -1,7 +1,7 @@
 {
   "name": "lyra",
   "private": true,
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Lightweight local-first Windows dictation for the Orion ecosystem",
   "type": "module",
   "scripts": {

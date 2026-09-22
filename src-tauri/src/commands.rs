@@ -157,6 +157,7 @@ impl AppState {
         self.emit_usage(self.usage.snapshot(
             settings.usage_cost_estimates_enabled,
             settings.cloud_cost_per_minute_usd,
+            settings.typing_wpm,
         ));
     }
 
@@ -245,6 +246,7 @@ pub fn initialize(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         state.emit_usage(state.usage.snapshot(
             settings.usage_cost_estimates_enabled,
             settings.cloud_cost_per_minute_usd,
+            settings.typing_wpm,
         ));
         state.emit_state();
     }
@@ -775,6 +777,7 @@ pub fn get_usage_stats(state: State<'_, Arc<Mutex<AppState>>>) -> Result<UsageSt
     Ok(state.usage.snapshot(
         settings.usage_cost_estimates_enabled,
         settings.cloud_cost_per_minute_usd,
+        settings.typing_wpm,
     ))
 }
 
@@ -786,6 +789,7 @@ pub fn reset_usage_stats(state: State<'_, Arc<Mutex<AppState>>>) -> Result<Usage
     let stats = state.usage.snapshot(
         settings.usage_cost_estimates_enabled,
         settings.cloud_cost_per_minute_usd,
+        settings.typing_wpm,
     );
     state.emit_usage(stats.clone());
     Ok(stats)

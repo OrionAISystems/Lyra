@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   CheckCircle2,
   Clipboard,
@@ -10,6 +11,8 @@ import { checkForUpdates, installUpdate, retryHotkey } from "../bridge";
 import { Card, Notice, Page, Row } from "../components/Controls";
 import type { LyraState } from "../state/useLyra";
 export default function Diagnostics({ state }: { state: LyraState }) {
+  const [retrying, setRetrying] = useState(false);
+  const [retryMessage, setRetryMessage] = useState<string | null>(null);
   const report = () => {
     const safe = {
       version: state.update.currentVersion,
@@ -26,6 +29,21 @@ export default function Diagnostics({ state }: { state: LyraState }) {
   };
   const checking = state.update.state === "checking";
   const available = state.update.state === "available";
+  const retry = async () => {
+    setRetrying(true);
+    setRetryMessage(null);
+    try {
+      const result = await retryHotkey();
+      setRetryMessage(
+        result?.registered ? "Verified" : (result?.error ?? "Retry failed"),
+      );
+      await state.refresh();
+    } catch (error) {
+      setRetryMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setRetrying(false);
+    }
+  };
   return (
     <Page
       title="Diagnostics"
@@ -100,10 +118,22 @@ export default function Diagnostics({ state }: { state: LyraState }) {
           title="Global shortcuts"
           description={state.hotkey.error ?? state.hotkey.hotkey}
         >
-          <button className="secondary" onClick={() => void retryHotkey()}>
-            <RefreshCw size={14} /> Retry
+          <button
+            className="secondary"
+            type="button"
+            disabled={retrying}
+            onClick={() => void retry()}
+          >
+            <RefreshCw size={14} /> {retrying ? "Retrying…" : "Retry"}
           </button>
         </Row>
+        {retryMessage && (
+          <div
+            className={`shortcut-feedback ${retryMessage === "Verified" ? "ok" : "inline-error"}`}
+          >
+            {retryMessage}
+          </div>
+        )}
       </Card>
       <h2 className="section-title">Recent metadata-only sessions</h2>
       <Card className="session-table">
