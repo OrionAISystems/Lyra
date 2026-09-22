@@ -727,7 +727,10 @@ pub fn save_settings(
 #[tauri::command]
 pub fn get_runtime_status(state: State<'_, Arc<Mutex<AppState>>>) -> Result<RuntimeStatus, String> {
     let state = state.lock().map_err(|_| "state lock poisoned".to_owned())?;
-    let status = state.runtime.refresh();
+    // Runtime discovery is intentionally cached. Re-probing hardware here made
+    // every renderer refresh launch nvidia-smi, and a session state change can
+    // be observed by more than one Lyra window.
+    let status = state.runtime.status();
     state.emit_runtime_status(status.clone());
     Ok(status)
 }

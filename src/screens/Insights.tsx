@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Activity, FileText, Timer, Zap } from "lucide-react";
 import { Card, Page, Select } from "../components/Controls";
+import { formatUsageDay } from "../insights";
 import type { LyraState } from "../state/useLyra";
 export default function Insights({ state }: { state: LyraState }) {
   const [range, setRange] = useState("7");
@@ -51,9 +52,9 @@ export default function Insights({ state }: { state: LyraState }) {
               <div
                 className="bar"
                 style={{ height: `${Math.max(8, (d.words / max) * 100)}%` }}
-                title={`${d.day}: ${d.words} words`}
+                title={`${formatUsageDay(d.day)}: ${d.words} words`}
               />
-              <span>{d.day.slice(-3)}</span>
+              <span>{formatUsageDay(d.day)}</span>
             </div>
           ))}
         </div>

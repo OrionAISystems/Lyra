@@ -1134,12 +1134,17 @@ fn write_json_atomic<T: serde::Serialize>(path: &Path, value: &T) -> Result<(), 
 fn detect_gpu() -> (Option<String>, Option<u64>) {
     #[cfg(windows)]
     {
-        let output = std::process::Command::new("nvidia-smi")
+        use std::os::windows::process::CommandExt;
+
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let mut command = std::process::Command::new("nvidia-smi");
+        command
             .args([
                 "--query-gpu=name,memory.total",
                 "--format=csv,noheader,nounits",
             ])
-            .output();
+            .creation_flags(CREATE_NO_WINDOW);
+        let output = command.output();
         let Ok(output) = output else {
             return (None, None);
         };

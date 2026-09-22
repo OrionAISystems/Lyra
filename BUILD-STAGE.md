@@ -1,6 +1,6 @@
 # Lyra build stage
 
-The current implementation target is v0.4.0, the streaming, personalization, reliability, and product-redesign release.
+The current implementation target is v0.4.1, the focused stability and readability update for the v0.4 product release.
 
 ## Stage 0 — foundation
 

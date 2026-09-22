@@ -317,6 +317,14 @@ aside footer i.ready,
   width: 100%;
   color: var(--text);
 }
+.select option,
+.select optgroup {
+  background: #151b22;
+  color: #f5f7fa;
+}
+.select option:disabled {
+  color: #737d89;
+}
 input,
 textarea {
   background: #171d23;
@@ -733,6 +741,14 @@ blockquote {
   --line: #d5d9df;
   --text: #13171c;
   --muted: #68717c;
+}
+[data-theme="light"] .select option,
+[data-theme="light"] .select optgroup {
+  background: #fff;
+  color: #13171c;
+}
+[data-theme="light"] .select option:disabled {
+  color: #8b939d;
 }
 .bar-window body {
   background: transparent;

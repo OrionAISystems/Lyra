@@ -84,7 +84,7 @@ export function Shell({
             <i className={ready ? "ready" : ""} />
             {ready ? "Ready locally" : "Setup required"}
           </div>
-          <span>v0.4.0</span>
+          <span>v0.4.1</span>
         </footer>
       </aside>
       <div className="content">{children}</div>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../bridge";
 import {
   defaultPersonalization,
@@ -87,6 +87,7 @@ const usage0: UsageStats = {
   failureCounts: {},
 };
 export function useLyra() {
+  const activeRequestId = useRef<string | null>(null);
   const [settings, setSettings] = useState(defaultSettings);
   const [personalization, setPersonalization] = useState(
     defaultPersonalization,
@@ -125,7 +126,7 @@ export function useLyra() {
   const [partial, setPartial] = useState<TranscriptionPartial | null>(null);
   const [update, setUpdate] = useState<UpdateStatus>({
     state: "idle",
-    currentVersion: "0.4.0",
+    currentVersion: "0.4.1",
     availableVersion: null,
     notes: null,
     publishedAt: null,
@@ -166,6 +167,7 @@ export function useLyra() {
     api
       .listenToLyraEvents({
         onState: (v) => {
+          activeRequestId.current = v.requestId;
           setSession(v);
           if (v.state === "idle") setPartial(null);
         },
@@ -182,7 +184,7 @@ export function useLyra() {
         onResult: () => setPartial(null),
         onPartial: (v) =>
           setPartial((current) =>
-            !session.requestId || v.requestId === session.requestId
+            !activeRequestId.current || v.requestId === activeRequestId.current
               ? v
               : current,
           ),
@@ -195,7 +197,7 @@ export function useLyra() {
       dead = true;
       un.forEach((x) => x());
     };
-  }, [refresh, session.requestId]);
+  }, [refresh]);
   useEffect(() => {
     document.documentElement.dataset.theme = settings.theme;
     document.documentElement.dataset.accent = settings.accent;
