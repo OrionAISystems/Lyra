@@ -15,6 +15,7 @@ import type { ReactNode } from "react";
 import { isTauri } from "../bridge";
 import type { Screen } from "../types";
 import lyraIcon from "../assets/lyra-icon.png";
+import packageJson from "../../package.json";
 const nav: [Screen, string, ReactNode][] = [
   ["home", "Home", <Home />],
   ["dictation", "Dictation", <Mic2 />],
@@ -106,7 +107,7 @@ export function Shell({
             <i className={ready ? "ready" : ""} />
             {ready ? "Ready locally" : "Setup required"}
           </div>
-          <span>v0.4.2</span>
+          <span>v{packageJson.version}</span>
         </footer>
       </aside>
       <div className="content">{children}</div>
