@@ -21,14 +21,15 @@ use crate::{
         TextProcessingOptions, TranscriptionRequest, TranscriptionResult,
     },
     runtime::{RuntimeManager, RuntimeStatus, SetupArtifact, SetupArtifactKind, SetupProgress},
+    personalization::{Personalization, PersonalizationStore},
     settings::{BarPlacement, Settings, SettingsStore},
     transcription::{ModelRuntimeStatus, TranscriptionRouter},
     tray::TrayController,
     updater::{UpdateManager, UpdateStatus},
-    usage::{UsageStats, UsageStatsStore},
+    usage::{timestamp_ms, FailureCategory, SessionRecord, UsageStats, UsageStatsStore},
     windows::{
         capture_foreground_target, list_displays as enumerate_displays, place_bar,
-        BarPlacementStatus, DisplayInfo, TargetContext,
+        target_executable, BarPlacementStatus, DisplayInfo, TargetContext,
     },
 };
 
@@ -53,6 +54,7 @@ pub struct AppState {
     pub app: AppHandle,
     pub started_at: Option<Instant>,
     pub usage: UsageStatsStore,
+    pub personalization: PersonalizationStore,
     pub placement_status: Mutex<BarPlacementStatus>,
 }
 
@@ -73,6 +75,7 @@ impl AppState {
         updater: UpdateManager,
         app: AppHandle,
         usage: UsageStatsStore,
+        personalization: PersonalizationStore,
     ) -> Self {
         let settings_value = settings.get();
         let model_status_app = app.clone();
@@ -102,6 +105,7 @@ impl AppState {
             app,
             started_at: None,
             usage,
+            personalization,
             placement_status: Mutex::new(BarPlacementStatus {
                 placement: settings_value.bar_placement,
                 monitor_id: settings_value.bar_monitor_id,
@@ -159,6 +163,10 @@ impl AppState {
         self.emit_usage_from_settings(&settings);
     }
 
+    pub fn emit_personalization(&self) {
+        let _ = self.app.emit("lyra://personalization", self.personalization.get());
+    }
+
     pub fn duration_ms(&self) -> u64 {
         self.started_at
             .map(|started| started.elapsed().as_millis() as u64)
@@ -175,7 +183,10 @@ impl AppState {
 
 pub fn initialize(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let settings = app.state::<Arc<Mutex<AppState>>>().inner().clone();
-    let hotkey_status = try_register_hotkey(app, settings);
+    let hotkey_status = try_register_hotkey(app, settings.clone());
+    if let Err(error) = register_recovery_shortcuts(app, settings) {
+        warn!(error = %error, "one or more recovery shortcuts are unavailable");
+    }
     let tray = create_tray(app)?;
     app.manage(tray);
     let show_bar = app
@@ -317,6 +328,50 @@ fn register_hotkey(
             let _ = app.emit("lyra://shortcut", edge);
         })?;
     Ok(())
+}
+
+#[derive(Debug, Clone, Copy)]
+enum RecoveryAction { PasteLast, CopyLast, Cancel, HandsFreeToggle, OpenSettings }
+
+fn recovery_shortcuts(settings: &Settings) -> Vec<(RecoveryAction, String)> {
+    [
+        (RecoveryAction::PasteLast, settings.recovery_shortcuts.paste_last.clone()),
+        (RecoveryAction::CopyLast, settings.recovery_shortcuts.copy_last.clone()),
+        (RecoveryAction::Cancel, settings.recovery_shortcuts.cancel.clone()),
+        (RecoveryAction::HandsFreeToggle, settings.recovery_shortcuts.hands_free_toggle.clone()),
+        (RecoveryAction::OpenSettings, settings.recovery_shortcuts.open_settings.clone()),
+    ].into_iter().filter_map(|(action, value)| value.filter(|value| !value.trim().is_empty()).map(|value| (action, value))).collect()
+}
+
+fn register_recovery_shortcuts(app: &AppHandle, shared: Arc<Mutex<AppState>>) -> Result<(), Box<dyn std::error::Error>> {
+    let settings = shared.lock().map_err(|_| "state lock poisoned")?.settings.get();
+    register_recovery_shortcuts_for(app, shared, &settings)
+}
+
+fn register_recovery_shortcuts_for(app: &AppHandle, shared: Arc<Mutex<AppState>>, settings: &Settings) -> Result<(), Box<dyn std::error::Error>> {
+    let mut seen = std::collections::HashSet::new();
+    seen.insert(canonical_shortcut(parse_shortcut(&settings.hotkey)?));
+    for (action, label) in recovery_shortcuts(settings) {
+        let shortcut = parse_shortcut(&label)?;
+        let canonical = canonical_shortcut(shortcut);
+        if !seen.insert(canonical.clone()) { return Err(format!("shortcut {canonical} is assigned more than once").into()); }
+        let handler_state = shared.clone();
+        app.global_shortcut().on_shortcut(shortcut, move |app, _, event| {
+            if event.state != ShortcutState::Pressed { return; }
+            match action {
+                RecoveryAction::CopyLast => if let Ok(state) = handler_state.lock() { if let Some(text) = state.last_transcript.as_deref() { let _ = state.injector.copy_text(text); } },
+                RecoveryAction::PasteLast => if let Ok(state) = handler_state.lock() { if let (Some(text), Ok(target)) = (state.last_transcript.as_deref(), capture_foreground_target()) { let profile = state.personalization.get().profile_for(target_executable(target).as_deref()); let _ = state.injector.paste_with_profile(target, text, &profile); } },
+                RecoveryAction::Cancel => { let _ = cancel_session(handler_state.clone()); },
+                RecoveryAction::HandsFreeToggle => { let listening = handler_state.lock().ok().is_some_and(|state| state.session.state() == DictationState::Listening); if listening { let _ = stop_session(handler_state.clone(), ActivationSource::Hotkey); } else { let _ = start_session(handler_state.clone(), ActivationSource::Hotkey); } },
+                RecoveryAction::OpenSettings => { let _ = show_settings_window(app); }
+            }
+        })?;
+    }
+    Ok(())
+}
+
+fn unregister_recovery_shortcuts(app: &AppHandle, settings: &Settings) {
+    for (_, label) in recovery_shortcuts(settings) { if let Ok(shortcut) = parse_shortcut(&label) { let _ = app.global_shortcut().unregister(shortcut); } }
 }
 
 fn parse_shortcut(value: &str) -> Result<Shortcut, Box<dyn std::error::Error>> {
@@ -499,6 +554,14 @@ pub fn save_settings(
     if let Some(candidate) = candidate_shortcut {
         settings.hotkey = canonical_shortcut(candidate);
     }
+    let recovery_changed = settings.recovery_shortcuts != previous.recovery_shortcuts;
+    if recovery_changed {
+        unregister_recovery_shortcuts(&state.app, &previous);
+        if let Err(error) = register_recovery_shortcuts_for(&state.app, shared_state.clone(), &settings) {
+            let _ = register_recovery_shortcuts_for(&state.app, shared_state.clone(), &previous);
+            return Err(error.to_string());
+        }
+    }
     let saved = match state.settings.set(settings) {
         Ok(saved) => saved,
         Err(error) => {
@@ -507,6 +570,10 @@ pub fn save_settings(
                 if let Ok(old) = configured_shortcut(&shared_state) {
                     let _ = register_hotkey(&state.app, shared_state.clone(), old);
                 }
+            }
+            if recovery_changed {
+                unregister_recovery_shortcuts(&state.app, &previous);
+                let _ = register_recovery_shortcuts_for(&state.app, shared_state.clone(), &previous);
             }
             return Err(error.to_string());
         }
@@ -621,6 +688,30 @@ pub fn reset_usage_stats(state: State<'_, Arc<Mutex<AppState>>>) -> Result<Usage
     );
     state.emit_usage(stats.clone());
     Ok(stats)
+}
+
+#[tauri::command]
+pub fn get_personalization(
+    state: State<'_, Arc<Mutex<AppState>>>,
+) -> Result<Personalization, String> {
+    state
+        .lock()
+        .map(|state| state.personalization.get())
+        .map_err(|_| "state lock poisoned".to_owned())
+}
+
+#[tauri::command]
+pub fn save_personalization(
+    personalization: Personalization,
+    state: State<'_, Arc<Mutex<AppState>>>,
+) -> Result<Personalization, String> {
+    let mut state = state.lock().map_err(|_| "state lock poisoned".to_owned())?;
+    let saved = state
+        .personalization
+        .set(personalization)
+        .map_err(|error| error.to_string())?;
+    state.emit_personalization();
+    Ok(saved)
 }
 
 #[tauri::command]
@@ -932,6 +1023,7 @@ fn start_session(state: Arc<Mutex<AppState>>, _source: ActivationSource) -> Resu
                     == crate::domain::ActivationMode::Toggle)
                     .then_some(settings.auto_stop_after_silence_ms)
                     .flatten(),
+                adaptive_audio: settings.adaptive_audio_enabled,
             },
             on_level,
         ) {
@@ -1108,6 +1200,13 @@ fn process_capture(
     captured: CapturedAudio,
 ) {
     let captured_duration_ms = captured.duration_ms;
+    let endpoint = format!("{:?}", captured.endpoint).to_ascii_lowercase();
+    let target_executable_name = target.and_then(target_executable);
+    let personalization = state
+        .lock()
+        .map(|state| state.personalization.get())
+        .unwrap_or_default();
+    let profile = personalization.profile_for(target_executable_name.as_deref());
     if let Ok(state_guard) = state.lock() {
         state_guard.usage.record_capture(captured_duration_ms);
         state_guard.emit_usage_from_settings(&settings);
@@ -1130,8 +1229,10 @@ fn process_capture(
         &result.text,
         None,
         TextProcessingOptions {
-            formatting_commands_enabled: settings.formatting_commands_enabled,
-            corrections: &settings.corrections,
+            formatting_commands_enabled: settings.formatting_commands_enabled && profile.formatting_enabled,
+            self_correction_enabled: personalization.self_correction_enabled,
+            corrections: &personalization.corrections,
+            snippets: &personalization.snippets,
         },
     );
     if result.text.is_empty() {
@@ -1148,8 +1249,8 @@ fn process_capture(
     if settings.auto_paste {
         paste_attempted = true;
         if let Some(target) = target {
-            match injector.paste_into_target(target, &result.text) {
-                Ok(_) => paste_succeeded = true,
+            match injector.paste_with_profile(target, &result.text, &profile) {
+                Ok(outcome) => paste_succeeded = outcome.pasted,
                 Err(error) => injection_error = Some(error),
             }
         } else {
@@ -1167,6 +1268,25 @@ fn process_capture(
             state_guard.usage.record_paste(paste_succeeded);
             state_guard.emit_usage_from_settings(&settings);
         }
+    }
+    if let Ok(state_guard) = state.lock() {
+        state_guard.usage.record_session(SessionRecord {
+            timestamp_ms: timestamp_ms(),
+            app_version: env!("CARGO_PKG_VERSION").to_owned(),
+            duration_ms: captured_duration_ms,
+            word_count: result.text.split_whitespace().count() as u64,
+            target_executable: target_executable_name,
+            target_category: Some(format!("{:?}", profile.category).to_ascii_lowercase()),
+            endpoint,
+            engine: format!("{:?}", settings.local_engine).to_ascii_lowercase(),
+            runtime: state_guard.runtime.status().runtime_variant.map(|variant| format!("{variant:?}").to_ascii_lowercase()),
+            backend: Some(result.backend.clone()),
+            fallback_chain: result.fallback_reason.clone().into_iter().collect(),
+            latency_ms: Some(result.latency_ms),
+            real_time_factor: (captured_duration_ms > 0).then_some(result.transcription_duration_ms as f64 / captured_duration_ms as f64),
+            paste_outcome: if paste_attempted { if paste_succeeded { "success" } else { "failed_or_clipboard" } } else { "copied" }.to_owned(),
+            failure_category: injection_error.as_ref().map(|_| FailureCategory::PasteInjection),
+        });
     }
     let has_injection_error = injection_error.is_some();
     let state_updated = if let Ok(mut state) = state.lock() {
@@ -1221,7 +1341,7 @@ fn finish_error(state: &Arc<Mutex<AppState>>, request_id: &str, error: BackendEr
         state.active_capture = None;
         state.target = None;
         state.session_settings = None;
-        state.usage.record_failure();
+        state.usage.record_categorized_failure(classify_error(&error));
         state.emit_usage_from_current_settings();
         state.emit_state();
         true
@@ -1230,6 +1350,19 @@ fn finish_error(state: &Arc<Mutex<AppState>>, request_id: &str, error: BackendEr
     };
     if state_updated {
         schedule_error_reset(state, request_id);
+    }
+}
+
+fn classify_error(error: &BackendError) -> FailureCategory {
+    match error {
+        BackendError::EmptyRecording => FailureCategory::NoSpeech,
+        BackendError::MissingRuntimeModel(_) => FailureCategory::ModelRuntime,
+        BackendError::LocalRecognitionFailure(_) => FailureCategory::Recognition,
+        BackendError::StreamFailure(message) if message.to_ascii_lowercase().contains("queue") => FailureCategory::QueueOverflow,
+        BackendError::StreamFailure(_) | BackendError::DeviceFailure(_) | BackendError::PermissionDenied(_) => FailureCategory::Capture,
+        BackendError::CloudFallbackUnavailable(_) => FailureCategory::Fallback,
+        BackendError::Unsupported(message) if message.to_ascii_lowercase().contains("language") => FailureCategory::UnsupportedLanguage,
+        _ => FailureCategory::Unknown,
     }
 }
 

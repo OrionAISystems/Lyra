@@ -355,7 +355,9 @@ pub fn post_process(raw: &str, preceding_character: Option<char>) -> String {
 #[derive(Debug, Clone, Copy)]
 pub struct TextProcessingOptions<'a> {
     pub formatting_commands_enabled: bool,
+    pub self_correction_enabled: bool,
     pub corrections: &'a [CorrectionEntry],
+    pub snippets: &'a [crate::personalization::SnippetEntry],
 }
 
 pub fn process_transcription_text(
@@ -367,6 +369,10 @@ pub fn process_transcription_text(
     let mut text = normalized.trim().to_owned();
     if text.is_empty() {
         return text;
+    }
+
+    if options.self_correction_enabled {
+        text = apply_explicit_self_correction(&text);
     }
 
     if options.formatting_commands_enabled {
@@ -398,7 +404,44 @@ pub fn process_transcription_text(
         );
     }
 
+    text = crate::personalization::apply_snippets(&text, options.snippets);
+
     post_process(&text, preceding_character)
+}
+
+fn apply_explicit_self_correction(text: &str) -> String {
+    const CUES: [&str; 4] = ["scratch that", "actually", "i mean", "make that"];
+    let lower = text.to_ascii_lowercase();
+    let Some((cue_start, cue_end)) = CUES
+        .iter()
+        .filter_map(|cue| {
+            lower
+                .rfind(cue)
+                .filter(|start| phrase_boundary(&lower, *start, *start + cue.len()))
+                .map(|start| (start, start + cue.len()))
+        })
+        .max_by_key(|(start, _)| *start)
+    else {
+        return text.to_owned();
+    };
+    let replacement = text[cue_end..]
+        .trim_start_matches(|character: char| character.is_whitespace() || matches!(character, ',' | ':' | '-' | '—'))
+        .trim();
+    if replacement.is_empty() {
+        return text.to_owned();
+    }
+    let prefix = &text[..cue_start];
+    let clause_start = prefix
+        .rfind(['.', '!', '?', '\n'])
+        .map(|index| index + 1)
+        .unwrap_or(0);
+    let mut output = String::with_capacity(text.len());
+    output.push_str(prefix[..clause_start].trim_end());
+    if !output.is_empty() && !output.ends_with([' ', '\n']) {
+        output.push(' ');
+    }
+    output.push_str(replacement);
+    output.trim().to_owned()
 }
 
 fn replace_phrases(text: &str, replacements: &[(&str, &str)], case_insensitive: bool) -> String {
@@ -407,6 +450,15 @@ fn replace_phrases(text: &str, replacements: &[(&str, &str)], case_insensitive: 
         result = replace_phrase(&result, source, replacement, !case_insensitive);
     }
     result
+}
+
+pub(crate) fn replace_phrase_public(
+    text: &str,
+    source: &str,
+    replacement: &str,
+    case_sensitive: bool,
+) -> String {
+    replace_phrase(text, source, replacement, case_sensitive)
 }
 
 fn replace_phrase(text: &str, source: &str, replacement: &str, case_sensitive: bool) -> String {
@@ -563,7 +615,9 @@ mod tests {
     fn formatting_commands_are_whole_phrases_and_deterministic() {
         let options = TextProcessingOptions {
             formatting_commands_enabled: true,
+            self_correction_enabled: true,
             corrections: &[],
+            snippets: &[],
         };
         assert_eq!(
             process_transcription_text("hello comma world period", None, options),
@@ -597,11 +651,31 @@ mod tests {
         ];
         let options = TextProcessingOptions {
             formatting_commands_enabled: false,
+            self_correction_enabled: true,
             corrections: &corrections,
+            snippets: &[],
         };
         assert_eq!(
             process_transcription_text("geo core tauri Tauri", None, options),
             "GeoCore tauri Tauri SDK"
+        );
+    }
+
+    #[test]
+    fn explicit_self_correction_replaces_only_the_current_clause() {
+        let options = TextProcessingOptions {
+            formatting_commands_enabled: false,
+            self_correction_enabled: true,
+            corrections: &[],
+            snippets: &[],
+        };
+        assert_eq!(
+            process_transcription_text(
+                "We agreed yesterday. We should ship Thursday, actually Friday",
+                None,
+                options,
+            ),
+            "We agreed yesterday. Friday"
         );
     }
 

@@ -6,7 +6,7 @@ use tracing::{info, warn};
 
 use crate::domain::{ActivationMode, CorrectionEntry, LanguagePreference, TranscriptionRoute};
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 2;
+pub const CURRENT_SCHEMA_VERSION: u32 = 3;
 
 const DEFAULT_CLOUD_COST_PER_MINUTE_USD: f64 = 0.003;
 
@@ -43,6 +43,41 @@ impl Default for ModelWarmPolicy {
     }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum LocalEngine {
+    #[default]
+    ParakeetTdt,
+    NemotronStreamingEn,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RecoveryShortcuts {
+    #[serde(default)]
+    pub paste_last: Option<String>,
+    #[serde(default)]
+    pub copy_last: Option<String>,
+    #[serde(default)]
+    pub cancel: Option<String>,
+    #[serde(default)]
+    pub hands_free_toggle: Option<String>,
+    #[serde(default = "default_open_settings_hotkey")]
+    pub open_settings: Option<String>,
+}
+
+impl Default for RecoveryShortcuts {
+    fn default() -> Self {
+        Self {
+            paste_last: None,
+            copy_last: None,
+            cancel: None,
+            hands_free_toggle: None,
+            open_settings: default_open_settings_hotkey(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
@@ -70,8 +105,10 @@ pub struct Settings {
     pub auto_stop_after_silence_ms: Option<u64>,
     #[serde(default = "default_true")]
     pub formatting_commands_enabled: bool,
-    #[serde(default = "default_corrections")]
+    #[serde(default = "default_corrections", skip_serializing)]
     pub corrections: Vec<CorrectionEntry>,
+    #[serde(default)]
+    pub recovery_shortcuts: RecoveryShortcuts,
     #[serde(default)]
     pub bar_placement: BarPlacement,
     #[serde(default)]
@@ -86,6 +123,16 @@ pub struct Settings {
     pub cloud_cost_per_minute_usd: f64,
     #[serde(default = "default_theme")]
     pub theme: String,
+    #[serde(default = "default_accent")]
+    pub accent: String,
+    #[serde(default)]
+    pub compact_mode: bool,
+    #[serde(default = "default_true")]
+    pub show_tray_icon: bool,
+    #[serde(default)]
+    pub local_engine: LocalEngine,
+    #[serde(default = "default_true")]
+    pub adaptive_audio_enabled: bool,
     #[serde(default)]
     pub onboarding_complete: bool,
 }
@@ -104,6 +151,12 @@ fn default_max_duration() -> u32 {
 }
 fn default_theme() -> String {
     "dark".to_owned()
+}
+fn default_accent() -> String {
+    "purple".to_owned()
+}
+fn default_open_settings_hotkey() -> Option<String> {
+    Some("Ctrl+Alt+Shift+L".to_owned())
 }
 
 fn default_cloud_cost_per_minute_usd() -> f64 {
@@ -134,6 +187,7 @@ impl Default for Settings {
             auto_stop_after_silence_ms: None,
             formatting_commands_enabled: true,
             corrections: default_corrections(),
+            recovery_shortcuts: RecoveryShortcuts::default(),
             bar_placement: BarPlacement::default(),
             bar_monitor_id: None,
             bar_monitor_index: None,
@@ -141,6 +195,11 @@ impl Default for Settings {
             usage_cost_estimates_enabled: false,
             cloud_cost_per_minute_usd: default_cloud_cost_per_minute_usd(),
             theme: default_theme(),
+            accent: default_accent(),
+            compact_mode: false,
+            show_tray_icon: true,
+            local_engine: LocalEngine::default(),
+            adaptive_audio_enabled: true,
             onboarding_complete: false,
         }
     }
@@ -153,8 +212,20 @@ impl Settings {
         if self.hotkey.trim().is_empty() {
             self.hotkey = default_hotkey();
         }
-        if self.theme != "system" && self.theme != "dark" {
+        if self.theme != "system" && self.theme != "dark" && self.theme != "light" {
             self.theme = default_theme();
+        }
+        if !matches!(self.accent.as_str(), "purple" | "blue" | "teal" | "rose") {
+            self.accent = default_accent();
+        }
+        if !self.show_tray_icon
+            && self
+                .recovery_shortcuts
+                .open_settings
+                .as_deref()
+                .is_none_or(str::is_empty)
+        {
+            self.show_tray_icon = true;
         }
         self.auto_stop_after_silence_ms = match self.auto_stop_after_silence_ms {
             Some(value) if matches!(value, 1_000 | 1_500 | 2_000 | 3_000) => Some(value),
@@ -255,7 +326,7 @@ fn migrate_settings_value(mut value: serde_json::Value) -> Result<Settings, serd
         .get("schemaVersion")
         .and_then(serde_json::Value::as_u64)
         .unwrap_or(1);
-    if schema_version < CURRENT_SCHEMA_VERSION as u64 {
+    if schema_version < 2 {
         let legacy_keep_warm = value
             .get("keepModelWarm")
             .and_then(serde_json::Value::as_bool)
@@ -271,9 +342,17 @@ fn migrate_settings_value(mut value: serde_json::Value) -> Result<Settings, serd
             );
             object.insert(
                 "schemaVersion".to_owned(),
-                serde_json::Value::from(CURRENT_SCHEMA_VERSION),
+                serde_json::Value::from(2),
             );
             object.remove("keepModelWarm");
+        }
+    }
+    if schema_version < CURRENT_SCHEMA_VERSION as u64 {
+        if let Some(object) = value.as_object_mut() {
+            object.insert(
+                "schemaVersion".to_owned(),
+                serde_json::Value::from(CURRENT_SCHEMA_VERSION),
+            );
         }
     }
     serde_json::from_value(value)

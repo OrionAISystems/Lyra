@@ -2,7 +2,10 @@ use std::thread;
 use std::time::Duration;
 
 use crate::domain::BackendError;
-use crate::windows::{focus_target, inject_ctrl_v, TargetContext};
+use crate::{
+    personalization::{AppProfile, InjectionStrategy},
+    windows::{focus_target, inject_ctrl_v, inject_shift_insert, TargetContext},
+};
 
 #[derive(Debug, Clone)]
 pub struct ClipboardSnapshot {
@@ -13,6 +16,7 @@ pub struct ClipboardSnapshot {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InjectionOutcome {
     pub restored_previous_text: bool,
+    pub pasted: bool,
 }
 
 pub trait TextInjector: Send + Sync {
@@ -22,6 +26,15 @@ pub trait TextInjector: Send + Sync {
         target: TargetContext,
         text: &str,
     ) -> Result<InjectionOutcome, BackendError>;
+    fn paste_with_profile(
+        &self,
+        target: TargetContext,
+        text: &str,
+        profile: &AppProfile,
+    ) -> Result<InjectionOutcome, BackendError> {
+        let _ = profile;
+        self.paste_into_target(target, text)
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -80,7 +93,41 @@ impl ClipboardService {
         };
         Ok(InjectionOutcome {
             restored_previous_text: restored,
+            pasted: true,
         })
+    }
+
+    pub fn paste_with_profile(
+        &self,
+        target: TargetContext,
+        text: &str,
+        profile: &AppProfile,
+    ) -> Result<InjectionOutcome, BackendError> {
+        if profile.injection_strategy == InjectionStrategy::ClipboardOnly {
+            self.copy_text(text)?;
+            return Ok(InjectionOutcome { restored_previous_text: false, pasted: false });
+        }
+        let snapshot = self.snapshot_text()?;
+        focus_target(target)?;
+        let chunks = if profile.chunk_long_text && text.chars().count() > profile.chunk_chars {
+            chunk_text(text, profile.chunk_chars)
+        } else {
+            vec![text.to_owned()]
+        };
+        let mut last_sequence = 0;
+        for chunk in chunks {
+            last_sequence = self.set_text(&chunk)?;
+            match profile.injection_strategy {
+                InjectionStrategy::CtrlV => inject_ctrl_v()?,
+                InjectionStrategy::ShiftInsert => inject_shift_insert()?,
+                InjectionStrategy::ClipboardOnly => unreachable!(),
+            }
+            thread::sleep(Duration::from_millis(45));
+        }
+        let restored = if self.current_sequence() == last_sequence {
+            self.restore_if_unchanged(&ClipboardSnapshot { sequence: last_sequence, text: snapshot.text })?
+        } else { false };
+        Ok(InjectionOutcome { restored_previous_text: restored, pasted: true })
     }
 }
 
@@ -96,6 +143,16 @@ impl TextInjector for ClipboardService {
     ) -> Result<InjectionOutcome, BackendError> {
         ClipboardService::paste_into_target(self, target, text)
     }
+
+    fn paste_with_profile(&self, target: TargetContext, text: &str, profile: &AppProfile) -> Result<InjectionOutcome, BackendError> {
+        ClipboardService::paste_with_profile(self, target, text, profile)
+    }
+}
+
+fn chunk_text(text: &str, max_chars: usize) -> Vec<String> {
+    let max_chars = max_chars.max(1);
+    let chars = text.chars().collect::<Vec<_>>();
+    chars.chunks(max_chars).map(|chunk| chunk.iter().collect()).collect()
 }
 
 #[cfg(windows)]
@@ -272,5 +329,11 @@ mod tests {
         clipboard.sequence = snapshot.sequence;
         assert!(clipboard.restore_if_unchanged(&snapshot));
         assert_eq!(clipboard.text.as_deref(), Some("before"));
+    }
+
+
+    #[test]
+    fn chunking_preserves_all_unicode_text() {
+        assert_eq!(chunk_text("abΓδε", 2).concat(), "abΓδε");
     }
 }

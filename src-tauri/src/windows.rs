@@ -5,6 +5,7 @@ use crate::settings::BarPlacement;
 #[derive(Debug, Clone, Copy)]
 pub struct TargetContext {
     pub hwnd: isize,
+    pub process_id: u32,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -109,16 +110,20 @@ mod platform {
 
     use tauri::{PhysicalPosition, WebviewWindow};
     use windows_sys::Win32::{
-        Foundation::{HWND, RECT},
+        Foundation::{CloseHandle, HWND, RECT},
         Graphics::Gdi::{
             GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
         },
         UI::{
             Input::KeyboardAndMouse::{
-                SendInput, INPUT, INPUT_0, KEYBDINPUT, KEYEVENTF_KEYUP, VK_CONTROL, VK_V,
+                SendInput, INPUT, INPUT_0, KEYBDINPUT, KEYEVENTF_KEYUP, VK_CONTROL, VK_INSERT,
+                VK_SHIFT, VK_V,
             },
-            WindowsAndMessaging::{GetForegroundWindow, IsWindow, SetForegroundWindow},
+            WindowsAndMessaging::{
+                GetForegroundWindow, GetWindowThreadProcessId, IsWindow, SetForegroundWindow,
+            },
         },
+        System::Threading::{OpenProcess, QueryFullProcessImageNameW, PROCESS_QUERY_LIMITED_INFORMATION},
     };
 
     use super::BarPlacementStatus;
@@ -132,9 +137,9 @@ mod platform {
                 "Windows did not expose a foreground target".to_owned(),
             ));
         }
-        Ok(TargetContext {
-            hwnd: hwnd as isize,
-        })
+        let mut process_id = 0;
+        unsafe { GetWindowThreadProcessId(hwnd, &mut process_id) };
+        Ok(TargetContext { hwnd: hwnd as isize, process_id })
     }
 
     pub fn target_is_alive(target: TargetContext) -> bool {
@@ -178,6 +183,37 @@ mod platform {
             ));
         }
         Ok(())
+    }
+
+    pub fn inject_shift_insert() -> Result<(), BackendError> {
+        let mut inputs = [
+            keyboard_input(VK_SHIFT as u16, 0),
+            keyboard_input(VK_INSERT as u16, 0),
+            keyboard_input(VK_INSERT as u16, KEYEVENTF_KEYUP),
+            keyboard_input(VK_SHIFT as u16, KEYEVENTF_KEYUP),
+        ];
+        let sent = unsafe { SendInput(inputs.len() as u32, inputs.as_mut_ptr(), size_of::<INPUT>() as i32) };
+        if sent != inputs.len() as u32 {
+            return Err(BackendError::DeviceFailure(
+                "Windows did not accept Shift+Insert; the transcript remains on the clipboard".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn target_executable(target: TargetContext) -> Option<String> {
+        if target.process_id == 0 { return None; }
+        let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, target.process_id) };
+        if process.is_null() { return None; }
+        let mut buffer = vec![0u16; 32_768];
+        let mut length = buffer.len() as u32;
+        let success = unsafe { QueryFullProcessImageNameW(process, 0, buffer.as_mut_ptr(), &mut length) } != 0;
+        unsafe { CloseHandle(process) };
+        if !success { return None; }
+        std::path::Path::new(&String::from_utf16_lossy(&buffer[..length as usize]))
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(|name| name.to_ascii_lowercase())
     }
 
     fn keyboard_input(key: u16, flags: u32) -> INPUT {
@@ -325,6 +361,8 @@ mod platform {
             "Windows input injection is unavailable".to_owned(),
         ))
     }
+    pub fn inject_shift_insert() -> Result<(), BackendError> { inject_ctrl_v() }
+    pub fn target_executable(_target: TargetContext) -> Option<String> { None }
     pub fn place_bar(
         _bar: &tauri::WebviewWindow,
         placement: BarPlacement,
@@ -342,7 +380,7 @@ mod platform {
     }
 }
 
-pub use platform::{capture_foreground_target, focus_target, inject_ctrl_v};
+pub use platform::{capture_foreground_target, focus_target, inject_ctrl_v, inject_shift_insert, target_executable};
 
 #[cfg(test)]
 mod tests {

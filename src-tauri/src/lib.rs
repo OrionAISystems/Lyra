@@ -3,6 +3,7 @@ mod clipboard;
 mod commands;
 mod domain;
 mod native_nemo;
+mod personalization;
 mod runtime;
 mod settings;
 mod transcription;
@@ -19,6 +20,7 @@ use tracing_subscriber::EnvFilter;
 use crate::audio::CpalAudioCapture;
 use crate::commands::AppState;
 use crate::runtime::RuntimeManager;
+use crate::personalization::PersonalizationStore;
 use crate::settings::SettingsStore;
 use crate::transcription::TranscriptionRouter;
 use crate::updater::UpdateManager;
@@ -54,6 +56,7 @@ pub fn run() {
         .setup(|app| {
             let settings = SettingsStore::load(app.handle());
             let runtime = RuntimeManager::new(app.handle());
+            let personalization = PersonalizationStore::load(app.handle(), settings.get().corrections);
             let audio = Arc::new(CpalAudioCapture::new());
             let router = TranscriptionRouter::new(runtime.clone());
             let updater = UpdateManager::new(app.handle());
@@ -66,6 +69,7 @@ pub fn run() {
                 updater,
                 app.handle().clone(),
                 usage,
+                personalization,
             );
             app.manage(Arc::new(Mutex::new(state)));
             commands::initialize(app.handle())?;
@@ -93,6 +97,8 @@ pub fn run() {
             commands::get_bar_placement_status,
             commands::get_usage_stats,
             commands::reset_usage_stats,
+            commands::get_personalization,
+            commands::save_personalization,
             commands::get_setup_artifacts,
             commands::get_setup_progress,
             commands::start_setup_artifact,

@@ -39,6 +39,12 @@ pub const RUNTIME_CPU_ARCHIVE_URL: &str = "https://github.com/NVIDIA/NeMo-Speech
 pub const RUNTIME_CPU_CHECKSUM_URL: &str = "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.1.0/nemo-speech-0.1.0-windows-x86_64-cpu.zip.sha256";
 pub const MODEL_SOURCE_URL: &str = "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3";
 pub const MODEL_DOWNLOAD_URL: &str = "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3/resolve/541d1f99c6b0c3cd0b11a95167540bb8edefd82b/parakeet-tdt-0.6b-v3.q8_0.gguf?download=true";
+pub const NEMOTRON_MODEL_NAME: &str = "nemotron-speech-streaming-en-0.6b.q8_0.gguf";
+pub const NEMOTRON_MODEL_REVISION: &str = "ebe59e5a817142986528bbbee5dba8db7b38ed50";
+pub const NEMOTRON_MODEL_SIZE_BYTES: u64 = 699_872_960;
+pub const NEMOTRON_MODEL_SHA256: &str = "d9a01898d2a611c8764e23a1c2f45e70bbd5a425dc4de93692ac951dd603812d";
+pub const NEMOTRON_MODEL_SOURCE_URL: &str = "https://huggingface.co/nvidia/nemotron-speech-streaming-en-0.6b";
+pub const NEMOTRON_MODEL_DOWNLOAD_URL: &str = "https://huggingface.co/nvidia/nemotron-speech-streaming-en-0.6b/resolve/ebe59e5a817142986528bbbee5dba8db7b38ed50/nemotron-speech-streaming-en-0.6b.q8_0.gguf?download=true";
 
 const SETUP_PROGRESS_EVENT: &str = "lyra://setup-progress";
 const DOWNLOAD_CHUNK_BYTES: usize = 64 * 1024;
@@ -73,7 +79,8 @@ impl RuntimeVariant {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SetupArtifactKind {
     Runtime(RuntimeVariant),
-    Model,
+    ModelParakeet,
+    ModelNemotron,
 }
 
 impl SetupArtifactKind {
@@ -82,7 +89,8 @@ impl SetupArtifactKind {
             "runtime" | "runtime-cuda" => Ok(Self::Runtime(RuntimeVariant::Cuda)),
             "runtime-vulkan" => Ok(Self::Runtime(RuntimeVariant::Vulkan)),
             "runtime-cpu" => Ok(Self::Runtime(RuntimeVariant::Cpu)),
-            "model" => Ok(Self::Model),
+            "model" | "model-parakeet" => Ok(Self::ModelParakeet),
+            "model-nemotron" => Ok(Self::ModelNemotron),
             other => Err(RuntimeError::InvalidArtifact(other.to_owned())),
         }
     }
@@ -99,7 +107,7 @@ impl SetupArtifactKind {
     fn as_str(self) -> &'static str {
         match self {
             Self::Runtime(_) => "runtime",
-            Self::Model => "model",
+            Self::ModelParakeet | Self::ModelNemotron => "model",
         }
     }
 
@@ -110,14 +118,15 @@ impl SetupArtifactKind {
                 RuntimeVariant::Vulkan => "runtime-vulkan",
                 RuntimeVariant::Cpu => "runtime-cpu",
             },
-            Self::Model => "model",
+            Self::ModelParakeet => "model-parakeet",
+            Self::ModelNemotron => "model-nemotron",
         }
     }
 
     fn runtime_variant(self) -> Option<RuntimeVariant> {
         match self {
             Self::Runtime(variant) => Some(variant),
-            Self::Model => None,
+            Self::ModelParakeet | Self::ModelNemotron => None,
         }
     }
 }
@@ -202,6 +211,9 @@ pub struct RuntimeStatus {
     pub model_path: String,
     pub model_size_bytes: Option<u64>,
     pub model_verified: bool,
+    pub nemotron_model_installed: bool,
+    pub nemotron_model_verified: bool,
+    pub nemotron_model_path: String,
     pub gpu_name: Option<String>,
     pub gpu_vram_bytes: Option<u64>,
     pub last_error: Option<String>,
@@ -262,6 +274,10 @@ impl RuntimeManager {
         self.root.join("models").join(MODEL_NAME)
     }
 
+    pub fn nemotron_model_path(&self) -> PathBuf {
+        self.root.join("models").join(NEMOTRON_MODEL_NAME)
+    }
+
     pub fn runtime_path(&self, variant: &str) -> PathBuf {
         self.root
             .join("runtime")
@@ -296,12 +312,14 @@ impl RuntimeManager {
         let runtime_cuda = self.artifact_spec(SetupArtifactKind::Runtime(RuntimeVariant::Cuda));
         let runtime_vulkan = self.artifact_spec(SetupArtifactKind::Runtime(RuntimeVariant::Vulkan));
         let runtime_cpu = self.artifact_spec(SetupArtifactKind::Runtime(RuntimeVariant::Cpu));
-        let model = self.artifact_spec(SetupArtifactKind::Model);
+        let model = self.artifact_spec(SetupArtifactKind::ModelParakeet);
+        let nemotron = self.artifact_spec(SetupArtifactKind::ModelNemotron);
         vec![
             setup_artifact(&runtime_cuda),
             setup_artifact(&runtime_vulkan),
             setup_artifact(&runtime_cpu),
             setup_artifact(&model),
+            setup_artifact(&nemotron),
         ]
     }
 
@@ -447,7 +465,7 @@ impl RuntimeManager {
                 expected_sha256: RUNTIME_CPU_SHA256,
                 destination: self.runtime_path("cpu"),
             },
-            SetupArtifactKind::Model => ArtifactSpec {
+            SetupArtifactKind::ModelParakeet => ArtifactSpec {
                 kind,
                 name: MODEL_NAME,
                 source: MODEL_DOWNLOAD_URL,
@@ -455,6 +473,15 @@ impl RuntimeManager {
                 checksum_source: MODEL_SOURCE_URL,
                 expected_sha256: MODEL_SHA256,
                 destination: self.model_path(),
+            },
+            SetupArtifactKind::ModelNemotron => ArtifactSpec {
+                kind,
+                name: NEMOTRON_MODEL_NAME,
+                source: NEMOTRON_MODEL_DOWNLOAD_URL,
+                size_bytes: NEMOTRON_MODEL_SIZE_BYTES,
+                checksum_source: NEMOTRON_MODEL_SOURCE_URL,
+                expected_sha256: NEMOTRON_MODEL_SHA256,
+                destination: self.nemotron_model_path(),
             },
         }
     }
@@ -489,7 +516,7 @@ impl RuntimeManager {
         emit_progress(self.setup_progress());
         match kind {
             SetupArtifactKind::Runtime(_) => self.install_runtime_archive(&partial_path, &spec)?,
-            SetupArtifactKind::Model => self.install_model_file(&partial_path, &spec)?,
+            SetupArtifactKind::ModelParakeet | SetupArtifactKind::ModelNemotron => self.install_model_file(&partial_path, &spec)?,
         }
         Ok(())
     }
@@ -682,12 +709,17 @@ impl RuntimeManager {
         partial_path: &Path,
         spec: &ArtifactSpec,
     ) -> Result<(), RuntimeError> {
+        let (name, revision, sha256, size_bytes, marker_name) = match spec.kind {
+            SetupArtifactKind::ModelParakeet => (MODEL_NAME, MODEL_REVISION, MODEL_SHA256, MODEL_SIZE_BYTES, "model.json"),
+            SetupArtifactKind::ModelNemotron => (NEMOTRON_MODEL_NAME, NEMOTRON_MODEL_REVISION, NEMOTRON_MODEL_SHA256, NEMOTRON_MODEL_SIZE_BYTES, "nemotron-model.json"),
+            SetupArtifactKind::Runtime(_) => return Err(RuntimeError::InvalidArtifact("runtime passed to model installer".to_owned())),
+        };
         if let Some(parent) = spec.destination.parent() {
             fs::create_dir_all(parent)?;
         }
         let installing_path = spec
             .destination
-            .with_file_name(format!("{MODEL_NAME}.installing"));
+            .with_file_name(format!("{name}.installing"));
         if installing_path.exists() {
             fs::remove_file(&installing_path)?;
         }
@@ -701,12 +733,12 @@ impl RuntimeManager {
                 .destination
                 .parent()
                 .unwrap_or_else(|| Path::new("."))
-                .join("model.json"),
+                .join(marker_name),
             &ModelMarker {
-                name: MODEL_NAME.to_owned(),
-                revision: MODEL_REVISION.to_owned(),
-                sha256: MODEL_SHA256.to_owned(),
-                size_bytes: MODEL_SIZE_BYTES,
+                name: name.to_owned(),
+                revision: revision.to_owned(),
+                sha256: sha256.to_owned(),
+                size_bytes,
             },
         )?;
         info!(path = %spec.destination.display(), "speech model installed");
@@ -794,6 +826,8 @@ impl RuntimeManager {
         let model_path = root.join("models").join(MODEL_NAME);
         let model_marker_path = root.join("models").join("model.json");
         let model_marker = read_model_marker(&model_marker_path);
+        let nemotron_model_path = root.join("models").join(NEMOTRON_MODEL_NAME);
+        let nemotron_marker = read_model_marker(&root.join("models").join("nemotron-model.json"));
         let (gpu_name, gpu_vram_bytes) = detect_gpu();
         let model_installed = model_path.is_file();
         let model_verified = model_installed
@@ -803,6 +837,8 @@ impl RuntimeManager {
                     && marker.sha256 == MODEL_SHA256
                     && marker.size_bytes == MODEL_SIZE_BYTES
             });
+        let nemotron_model_installed = nemotron_model_path.is_file();
+        let nemotron_model_verified = nemotron_model_installed && nemotron_marker.as_ref().is_some_and(|marker| marker.name == NEMOTRON_MODEL_NAME && marker.revision == NEMOTRON_MODEL_REVISION && marker.sha256 == NEMOTRON_MODEL_SHA256 && marker.size_bytes == NEMOTRON_MODEL_SIZE_BYTES);
         RuntimeStatus {
             runtime_installed,
             runtime_version: runtime_installed.then(|| RUNTIME_VERSION.to_owned()),
@@ -816,6 +852,9 @@ impl RuntimeManager {
             model_path: model_path.to_string_lossy().into_owned(),
             model_size_bytes: model_installed.then_some(MODEL_SIZE_BYTES),
             model_verified,
+            nemotron_model_installed,
+            nemotron_model_verified,
+            nemotron_model_path: nemotron_model_path.to_string_lossy().into_owned(),
             gpu_name,
             gpu_vram_bytes,
             last_error: None,
@@ -836,16 +875,8 @@ fn setup_artifact(spec: &ArtifactSpec) -> SetupArtifact {
         destination: spec.destination.to_string_lossy().into_owned(),
         checksum_source: spec.checksum_source.to_owned(),
         expected_sha256: spec.expected_sha256.to_owned(),
-        revision: Some(if spec.kind == SetupArtifactKind::Model {
-            MODEL_REVISION.to_owned()
-        } else {
-            RUNTIME_VERSION.to_owned()
-        }),
-        license: Some(if spec.kind == SetupArtifactKind::Model {
-            "CC BY 4.0".to_owned()
-        } else {
-            "Apache-2.0".to_owned()
-        }),
+        revision: Some(match spec.kind { SetupArtifactKind::ModelParakeet => MODEL_REVISION, SetupArtifactKind::ModelNemotron => NEMOTRON_MODEL_REVISION, SetupArtifactKind::Runtime(_) => RUNTIME_VERSION }.to_owned()),
+        license: Some(match spec.kind { SetupArtifactKind::ModelParakeet => "CC BY 4.0", SetupArtifactKind::ModelNemotron => "NVIDIA Open Model License", SetupArtifactKind::Runtime(_) => "Apache-2.0" }.to_owned()),
     }
 }
 
