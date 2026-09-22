@@ -17,6 +17,7 @@ use crate::{
     native_nemo::NativeNemoRecognizer,
     runtime::RuntimeManager,
     settings::ModelWarmPolicy,
+    streaming::StreamingRequest,
 };
 
 pub const OPENAI_TRANSCRIPTION_MODEL: &str = "gpt-4o-mini-transcribe";
@@ -63,6 +64,7 @@ pub struct LocalNemoBackend {
     status_sink: Mutex<Option<Arc<dyn Fn(ModelRuntimeStatus) + Send + Sync>>>,
 }
 
+#[derive(Clone)]
 struct LoadedRecognizer {
     variant: String,
     recognizer: NativeNemoRecognizer,
@@ -231,6 +233,40 @@ impl LocalNemoBackend {
             .lock()
             .ok()
             .and_then(|recognizer| recognizer.as_ref().map(|loaded| loaded.variant.clone()))
+    }
+
+    /// Start one optional native streaming session without exposing the
+    /// recognizer handle or native lifetime to callers.  The cloned owner in
+    /// `NativeNemoStreamingSession` keeps the loaded recognizer alive until
+    /// the stream is closed, even after this lock is released.
+    pub fn start_stream(
+        &self,
+        request: StreamingRequest,
+    ) -> Result<crate::native_nemo::NativeNemoStreamingSession, BackendError> {
+        self.ensure_loaded()?;
+        let recognizer = self
+            .recognizer
+            .lock()
+            .map_err(|_| BackendError::Unsupported("local recognizer lock poisoned".to_owned()))?
+            .as_ref()
+            .ok_or_else(|| {
+                BackendError::MissingRuntimeModel("local recognizer did not initialize".to_owned())
+            })?
+            .recognizer
+            .clone();
+        recognizer.start_stream(request)
+    }
+
+    pub fn streaming_available(&self) -> bool {
+        self.recognizer
+            .lock()
+            .ok()
+            .and_then(|recognizer| {
+                recognizer
+                    .as_ref()
+                    .map(|loaded| loaded.recognizer.streaming_available())
+            })
+            .unwrap_or(false)
     }
 
     fn recognize_loaded(&self, request: &TranscriptionRequest) -> Result<String, BackendError> {

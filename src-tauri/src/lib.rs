@@ -6,6 +6,7 @@ mod native_nemo;
 mod personalization;
 mod runtime;
 mod settings;
+pub(crate) mod streaming;
 mod transcription;
 mod tray;
 mod updater;
