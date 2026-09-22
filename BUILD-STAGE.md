@@ -1,6 +1,6 @@
 # Lyra build stage
 
-The current implementation target is v0.4.2, the focused interaction, theme, analytics, and release follow-up for the v0.4 product release.
+The current implementation target is v0.4.3, the focused native-window, compact-bar, dropdown, diagnostics, and benchmark follow-up for the v0.4 product release.
 
 ## Stage 0 — foundation
 

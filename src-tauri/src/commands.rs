@@ -967,7 +967,7 @@ pub fn run_benchmark(state: State<'_, Arc<Mutex<AppState>>>) -> Result<(), Strin
         let state = shared
             .lock()
             .map_err(|_| "state lock poisoned".to_owned())?;
-        if state.session.state() != DictationState::Idle {
+        if benchmark_is_blocked(state.session.state()) {
             return Err("Finish the active dictation before benchmarking".to_owned());
         }
         let settings = state.settings.get();
@@ -1086,6 +1086,13 @@ pub fn run_benchmark(state: State<'_, Arc<Mutex<AppState>>>) -> Result<(), Strin
         })
         .map_err(|error| error.to_string())?;
     Ok(())
+}
+
+fn benchmark_is_blocked(state: DictationState) -> bool {
+    matches!(
+        state,
+        DictationState::Listening | DictationState::Processing
+    )
 }
 
 #[tauri::command]
@@ -1719,7 +1726,8 @@ fn schedule_error_reset(state: &Arc<Mutex<AppState>>, request_id: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{canonical_shortcut, parse_shortcut};
+    use super::{benchmark_is_blocked, canonical_shortcut, parse_shortcut};
+    use crate::domain::DictationState;
 
     #[test]
     fn shortcuts_require_a_modifier_and_canonicalize_key_order() {
@@ -1728,5 +1736,14 @@ mod tests {
         assert!(parse_shortcut("Space").is_err());
         assert!(parse_shortcut("Ctrl+Alt").is_err());
         assert!(parse_shortcut("Ctrl+Space+A").is_err());
+    }
+
+    #[test]
+    fn benchmark_only_blocks_an_active_capture_or_processing_request() {
+        assert!(benchmark_is_blocked(DictationState::Listening));
+        assert!(benchmark_is_blocked(DictationState::Processing));
+        assert!(!benchmark_is_blocked(DictationState::Idle));
+        assert!(!benchmark_is_blocked(DictationState::Success));
+        assert!(!benchmark_is_blocked(DictationState::Error));
     }
 }

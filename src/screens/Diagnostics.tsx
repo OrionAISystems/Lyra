@@ -118,16 +118,20 @@ export default function Diagnostics({ state }: { state: LyraState }) {
           title="Global shortcuts"
           description={state.hotkey.error ?? state.hotkey.hotkey}
         >
-          <button
-            className="secondary"
-            type="button"
-            disabled={retrying}
-            onClick={() => void retry()}
-          >
-            <RefreshCw size={14} /> {retrying ? "Retrying…" : "Retry"}
-          </button>
+          {state.hotkey.registered || retryMessage === "Verified" ? (
+            <span className="badge ok shortcut-verified">Verified</span>
+          ) : (
+            <button
+              className="secondary"
+              type="button"
+              disabled={retrying}
+              onClick={() => void retry()}
+            >
+              <RefreshCw size={14} /> {retrying ? "Retrying…" : "Retry"}
+            </button>
+          )}
         </Row>
-        {retryMessage && (
+        {retryMessage && retryMessage !== "Verified" && (
           <div
             className={`shortcut-feedback ${retryMessage === "Verified" ? "ok" : "inline-error"}`}
           >

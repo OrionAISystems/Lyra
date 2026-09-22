@@ -66,16 +66,35 @@ button {
 .titlebar-drag {
   flex: 1;
   height: 100%;
+  cursor: grab;
+  user-select: none;
+}
+.titlebar-drag:active {
+  cursor: grabbing;
 }
 .window-actions {
   display: flex;
   align-self: stretch;
 }
 .window-actions button {
-  width: 42px;
+  width: 44px;
+  height: 34px;
+  padding: 0;
   border: 0;
   background: transparent;
   color: #9ea7b2;
+}
+.window-actions button svg {
+  width: 13px;
+  height: 13px;
+  stroke-width: 1.8;
+}
+.window-actions button:first-child svg {
+  width: 12px;
+}
+.window-actions button:last-child svg {
+  width: 14px;
+  height: 14px;
 }
 .window-actions button:hover {
   background: #1c232b;
@@ -212,7 +231,7 @@ aside footer i.ready,
     rgba(17, 22, 28, 0.94)
   );
   border-radius: 10px;
-  overflow: hidden;
+  overflow: visible;
 }
 .setting-row {
   min-height: 70px;
@@ -291,6 +310,7 @@ aside footer i.ready,
   background: #fff;
 }
 .select {
+  position: relative;
   height: 36px;
   min-width: 145px;
   border: 1px solid #3b4551;
@@ -307,11 +327,16 @@ aside footer i.ready,
     box-shadow 0.15s,
     background 0.15s;
 }
+.select.open {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--glow);
+  z-index: 30;
+}
 .select:hover {
   border-color: #596676;
   background: linear-gradient(180deg, #27313d, var(--control));
 }
-.select select {
+.select-trigger {
   appearance: none;
   background: transparent;
   border: 0;
@@ -319,7 +344,75 @@ aside footer i.ready,
   width: 100%;
   color: var(--text);
   cursor: pointer;
-  padding-right: 8px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  text-align: left;
+}
+.select-trigger span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.select-trigger svg {
+  flex: 0 0 auto;
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+.select.open .select-trigger svg {
+  transform: rotate(180deg);
+  color: var(--accent);
+}
+.select-menu {
+  position: absolute;
+  top: calc(100% + 7px);
+  left: -1px;
+  right: -1px;
+  z-index: 50;
+  display: grid;
+  gap: 3px;
+  min-width: max(100%, 175px);
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid #465363;
+  border-radius: 10px;
+  background: #151b22;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.42);
+}
+.select-option {
+  min-height: 32px;
+  width: 100%;
+  border: 0;
+  border-radius: 7px;
+  padding: 7px 9px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: transparent;
+  color: #dce2ea;
+  text-align: left;
+  font-size: 12px;
+}
+.select-option:hover:not(:disabled),
+.select-option.highlighted:not(:disabled) {
+  background: #27313d;
+  color: #fff;
+}
+.select-option.selected {
+  background: rgba(117, 104, 255, 0.18);
+  color: #fff;
+}
+.select-option.selected svg {
+  color: var(--accent);
+}
+.select-option:disabled {
+  color: #747f8d;
+  cursor: not-allowed;
 }
 .select option,
 .select optgroup {
@@ -919,6 +1012,26 @@ blockquote {
 [data-theme="light"] .select {
   background: linear-gradient(180deg, #fff, #f5f7f9);
 }
+[data-theme="light"] .select-menu {
+  border-color: #c5ccd4;
+  background: #fff;
+  box-shadow: 0 14px 28px rgba(49, 60, 74, 0.18);
+}
+[data-theme="light"] .select-option {
+  color: #27303a;
+}
+[data-theme="light"] .select-option:hover:not(:disabled),
+[data-theme="light"] .select-option.highlighted:not(:disabled) {
+  background: #edf1f5;
+  color: #10151a;
+}
+[data-theme="light"] .select-option.selected {
+  background: #ebe9ff;
+  color: #2e2877;
+}
+[data-theme="light"] .select-option:disabled {
+  color: #9aa3ad;
+}
 [data-theme="light"] .secondary {
   background: linear-gradient(180deg, #fff, #f0f3f6);
   border-color: #c5ccd4;
@@ -960,14 +1073,6 @@ blockquote {
   border-color: #c5ccd4;
   box-shadow: 0 2px 0 #c1c7ce;
   color: #18202a;
-}
-[data-theme="light"] .bar-window .dictation-bar {
-  background: rgba(255, 255, 255, 0.97);
-  border-color: #c5ccd4;
-  color: #13171c;
-}
-[data-theme="light"] .dictation-bar span {
-  color: #68717c;
 }
 [data-theme="light"] .select option,
 [data-theme="light"] .select optgroup {
@@ -1038,6 +1143,26 @@ blockquote {
   [data-theme="system"] .select {
     background: linear-gradient(180deg, #fff, #f5f7f9);
   }
+  [data-theme="system"] .select-menu {
+    border-color: #c5ccd4;
+    background: #fff;
+    box-shadow: 0 14px 28px rgba(49, 60, 74, 0.18);
+  }
+  [data-theme="system"] .select-option {
+    color: #27303a;
+  }
+  [data-theme="system"] .select-option:hover:not(:disabled),
+  [data-theme="system"] .select-option.highlighted:not(:disabled) {
+    background: #edf1f5;
+    color: #10151a;
+  }
+  [data-theme="system"] .select-option.selected {
+    background: #ebe9ff;
+    color: #2e2877;
+  }
+  [data-theme="system"] .select-option:disabled {
+    color: #9aa3ad;
+  }
   [data-theme="system"] .secondary {
     background: linear-gradient(180deg, #fff, #f0f3f6);
     border-color: #c5ccd4;
@@ -1056,14 +1181,6 @@ blockquote {
     background: linear-gradient(145deg, #fff, #f1f3f6);
     border-color: #d5d9df;
   }
-  [data-theme="system"] .bar-window .dictation-bar {
-    background: rgba(255, 255, 255, 0.97);
-    border-color: #c5ccd4;
-    color: #13171c;
-  }
-  [data-theme="system"] .dictation-bar span {
-    color: #68717c;
-  }
 }
 html.bar-window body,
 html.bar-window,
@@ -1074,54 +1191,197 @@ html.bar-window,
   width: 100%;
   height: 100%;
 }
-.bar-window .dictation-bar {
+.bar-shell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   height: 100%;
-  min-width: 190px;
-  border-radius: 22px;
-  background: rgba(16, 20, 26, 0.98);
-  border: 1px solid #353d47;
+  width: 100%;
+  user-select: none;
+}
+.bar-surface {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 41px;
+  height: 19px;
+  padding: 0 9px;
+  border: 1px solid rgba(219, 232, 230, 0.24);
+  border-radius: 999px;
+  color: var(--muted);
+  background: rgba(16, 20, 26, 0.97);
+  box-shadow: 0 5px 22px rgba(0, 0, 0, 0.38);
+  touch-action: none;
+  transition:
+    min-width 0.18s ease,
+    border-color 0.18s ease,
+    background 0.18s ease;
+}
+.bar-surface:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.bar-shell--listening .bar-surface {
+  min-width: 145px;
+  border-color: rgba(117, 104, 255, 0.65);
+  background: rgba(20, 24, 38, 0.98);
+}
+.bar-shell--processing .bar-surface {
+  min-width: 103px;
+}
+.bar-shell--error .bar-surface {
+  border-color: rgba(219, 119, 123, 0.6);
+  color: #ff8188;
+}
+.bar-leading {
+  display: grid;
+  place-items: center;
+  width: 11px;
+  height: 11px;
+}
+.recording-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ea7e83;
+  box-shadow: 0 0 8px rgba(234, 126, 131, 0.8);
+  animation: pulse 1.15s ease-in-out infinite;
+}
+.mini-spinner {
+  width: 9px;
+  height: 9px;
+  border: 1px solid rgba(117, 104, 255, 0.3);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+.bar-idle-mark {
+  width: 20px;
+  height: 1px;
+  border-radius: 2px;
+  background: #5d6875;
+}
+.bar-waveform {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 14px;
+}
+.bar-waveform span {
+  width: 2px;
+  min-height: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+  opacity: 0.85;
+  transition: height 0.1s ease;
+}
+.bar-timer,
+.bar-label {
+  color: var(--muted);
+  font-size: 9px;
+  white-space: nowrap;
+}
+.bar-timer {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.bar-menu {
+  position: absolute;
+  top: calc(50% + 14px);
+  right: 50%;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 135px;
+  padding: 5px;
+  border: 1px solid #3b4551;
+  border-radius: 8px;
+  background: #171c23;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+  transform: translateX(50%);
+}
+.bar-menu button {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 5px 7px;
-  color: #fff;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
-}
-.dictation-bar button {
+  padding: 7px;
+  border-radius: 5px;
   border: 0;
+  color: var(--muted);
   background: transparent;
-  color: #aeb7c2;
-  width: 28px;
-  height: 28px;
-  display: grid;
-  place-items: center;
+  font-size: 10px;
+  text-align: left;
 }
-.dictation-bar svg {
-  width: 16px;
+.bar-menu button:hover {
+  color: var(--text);
+  background: #252e39;
 }
-.dictation-bar .bar-mic {
-  border-radius: 50%;
-  background: var(--accent);
-  color: #fff;
+.bar-menu .bar-menu-danger:hover {
+  color: #ff8188;
 }
-.dictation-bar > div {
-  min-width: 0;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
-.dictation-bar strong {
-  font-size: 11px;
-}
-.dictation-bar span {
-  font-size: 9px;
-  color: #929ba7;
+.bar-runtime-hint {
+  position: absolute;
+  top: calc(50% + 16px);
+  color: rgba(149, 158, 170, 0.65);
+  font-size: 8px;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
-.dictation-bar button:last-child {
-  color: #8f9aa8;
+.bar-recovery {
+  position: absolute;
+  top: 1px;
+  left: 50%;
+  width: max-content;
+  max-width: calc(100% - 8px);
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  color: #ff8188;
+  background: transparent;
+  font-size: 8px;
+  line-height: 10px;
+  text-overflow: ellipsis;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.75);
+  }
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+/* The compact bar stays dark and legible even when settings use a light theme. */
+.bar-window .bar-surface {
+  color: #aeb7c2;
+}
+.bar-window .bar-label,
+.bar-window .bar-timer {
+  color: #929ba7;
+}
+.bar-window .bar-menu {
+  background: #171c23;
+}
+/* Prevent the settings window's document theme from painting an opaque body behind the bar. */
+.bar-window body,
+.bar-window #root {
+  background: transparent;
+}
+/* Keep the old compact hit target while the settings shell remains spacious. */
+.bar-window button {
+  font: inherit;
 }
 [data-density="compact"] .setting-row {
   min-height: 58px;

@@ -39,14 +39,24 @@ export function Shell({
   return (
     <div className="window-shell">
       <div className="titlebar">
-        <div className="titlebar-drag" data-tauri-drag-region />
+        <div
+          className="titlebar-drag"
+          data-tauri-drag-region
+          onMouseDown={(event) => {
+            if (event.button === 0) void win?.startDragging();
+          }}
+          onDoubleClick={() => void win?.toggleMaximize()}
+        />
         <div
           className="window-actions"
           onMouseDown={(event) => event.stopPropagation()}
+          onPointerDown={(event) => event.stopPropagation()}
         >
           <button
             type="button"
             aria-label="Minimize"
+            title="Minimize"
+            onPointerDown={(event) => event.stopPropagation()}
             onClick={() => void win?.minimize()}
           >
             <Minus />
@@ -54,6 +64,8 @@ export function Shell({
           <button
             type="button"
             aria-label="Maximize or restore"
+            title="Maximize or restore"
+            onPointerDown={(event) => event.stopPropagation()}
             onClick={() => void win?.toggleMaximize()}
           >
             <Square />
@@ -61,6 +73,8 @@ export function Shell({
           <button
             type="button"
             aria-label="Close to tray"
+            title="Close to tray"
+            onPointerDown={(event) => event.stopPropagation()}
             onClick={() => void win?.hide()}
           >
             <X />

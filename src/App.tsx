@@ -1,9 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Mic, SlidersHorizontal, X } from "lucide-react";
+import { Mic, Power, Settings2, X } from "lucide-react";
 import {
-  cancelDictation,
+  copyLastTranscript,
+  hideBar,
   isTauri,
+  quitLyra,
   showSettings,
   startDictation,
   stopDictation,
@@ -17,42 +19,201 @@ import Insights from "./screens/Insights";
 import Appearance from "./screens/Appearance";
 import Diagnostics from "./screens/Diagnostics";
 import { useLyra } from "./state/useLyra";
+import { isPrimaryPointerButton, primaryBarGesture } from "./barActivation";
 import type { Screen } from "./types";
 function DictationBar() {
   const state = useLyra();
+  const barRef = useRef<HTMLElement>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [displayDurationMs, setDisplayDurationMs] = useState(0);
+  const pttActive = useRef(false);
+  const pttReleasePending = useRef(false);
+  const pttStart = useRef<Promise<unknown> | null>(null);
+  const displayStartedAt = useRef<{
+    requestId: string | null;
+    startedAt: number;
+  } | null>(null);
   const active = state.session.state === "listening";
+  const processing = state.session.state === "processing";
+  const error = state.session.state === "error";
+  const sessionDurationMs = Math.max(0, state.session.durationMs);
+  const maxDurationSeconds = Math.max(
+    1,
+    Math.floor(state.settings.maxDurationSeconds),
+  );
+  const pushToTalk =
+    primaryBarGesture(state.settings.activationMode) ===
+    "pointer_press_release";
+
+  useEffect(() => {
+    if (!active) {
+      setDisplayDurationMs(sessionDurationMs);
+      displayStartedAt.current = null;
+      return;
+    }
+    if (displayStartedAt.current?.requestId !== state.session.requestId) {
+      displayStartedAt.current = {
+        requestId: state.session.requestId,
+        startedAt: performance.now() - sessionDurationMs,
+      };
+    }
+    const startedAt = displayStartedAt.current.startedAt;
+    const updateDuration = () => {
+      setDisplayDurationMs(
+        Math.min(performance.now() - startedAt, maxDurationSeconds * 1_000),
+      );
+    };
+    updateDuration();
+    const interval = window.setInterval(updateDuration, 250);
+    return () => window.clearInterval(interval);
+  }, [active, maxDurationSeconds, sessionDurationMs, state.session.requestId]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = (event: PointerEvent) => {
+      if (!barRef.current?.contains(event.target as Node)) setMenuOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMenuOpen(false);
+    };
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("keydown", escape);
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("keydown", escape);
+    };
+  }, [menuOpen]);
+
+  const begin = () => {
+    if (processing || pttActive.current) return;
+    pttActive.current = true;
+    const request = startDictation("bar");
+    pttStart.current = request;
+    void request.then(
+      () => {
+        pttStart.current = null;
+      },
+      () => {
+        pttStart.current = null;
+      },
+    );
+  };
+  const end = async () => {
+    if (!pttActive.current || pttReleasePending.current) return;
+    pttActive.current = false;
+    pttReleasePending.current = true;
+    try {
+      await pttStart.current;
+      await stopDictation("bar");
+    } finally {
+      pttReleasePending.current = false;
+    }
+  };
+  const waveform = Array.from({ length: 18 }, (_, index) => (
+    <span
+      key={index}
+      style={{
+        height: `${active ? Math.max(3, 4 + ((index * 7) % 10) * (0.35 + state.session.inputLevel)) : 3}px`,
+      }}
+    />
+  ));
+
   return (
-    <div className={`dictation-bar ${state.session.state}`}>
+    <main
+      ref={barRef}
+      className={`bar-shell bar-shell--${state.session.state}`}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        setMenuOpen(true);
+      }}
+    >
       <button
-        className="bar-mic"
+        className="bar-surface"
         aria-label={active ? "Stop dictation" : "Start dictation"}
-        onClick={() => void (active ? stopDictation() : startDictation())}
+        aria-pressed={active}
+        onClick={
+          pushToTalk
+            ? undefined
+            : () => void (active ? stopDictation("bar") : startDictation("bar"))
+        }
+        onPointerDown={(event) => {
+          if (!pushToTalk || !isPrimaryPointerButton(event.button)) return;
+          event.currentTarget.setPointerCapture(event.pointerId);
+          begin();
+        }}
+        onPointerUp={pushToTalk ? () => void end() : undefined}
+        onPointerCancel={pushToTalk ? () => void end() : undefined}
+        onLostPointerCapture={pushToTalk ? () => void end() : undefined}
       >
-        <Mic />
-      </button>
-      <div>
-        <strong>
-          {active
-            ? "Listening…"
-            : state.session.state === "processing"
-              ? "Processing…"
-              : state.session.state === "error"
-                ? "Needs attention"
-                : "Ready"}
-        </strong>
-        <span>
-          {state.partial?.text || state.session.error || state.settings.hotkey}
+        <span className="bar-leading" aria-hidden="true">
+          {active ? (
+            <span className="recording-dot" />
+          ) : processing ? (
+            <span className="mini-spinner" />
+          ) : error ? (
+            <X size={11} />
+          ) : (
+            <Mic size={11} />
+          )}
         </span>
-      </div>
-      <button aria-label="Open settings" onClick={() => void showSettings()}>
-        <SlidersHorizontal />
+        {active ? (
+          <>
+            <span className="bar-waveform">{waveform}</span>
+            <span className="bar-timer">
+              {Math.floor(displayDurationMs / 1_000)}s/{maxDurationSeconds}s
+            </span>
+          </>
+        ) : processing ? (
+          <span className="bar-label">Transcribing…</span>
+        ) : error ? (
+          <span className="bar-label">Try again</span>
+        ) : (
+          <span className="bar-idle-mark" aria-hidden="true" />
+        )}
       </button>
-      {active && (
-        <button aria-label="Cancel" onClick={() => void cancelDictation()}>
-          <X />
+      {menuOpen && (
+        <div className="bar-menu" role="menu">
+          <button
+            type="button"
+            onClick={() => {
+              setMenuOpen(false);
+              void showSettings();
+            }}
+          >
+            <Settings2 size={13} /> Settings
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setMenuOpen(false);
+              void hideBar();
+            }}
+          >
+            <X size={13} /> Hide bar
+          </button>
+          <button
+            type="button"
+            className="bar-menu-danger"
+            onClick={() => void quitLyra()}
+          >
+            <Power size={13} /> Quit Lyra
+          </button>
+        </div>
+      )}
+      {error && (
+        <button
+          type="button"
+          className="bar-recovery"
+          onClick={() => void copyLastTranscript()}
+          title="Copy the last transcript"
+        >
+          {state.session.error ?? "Clipboard recovery available"}
         </button>
       )}
-    </div>
+      {state.runtime.runtimeInstalled === false && (
+        <span className="bar-runtime-hint">Local runtime not installed</span>
+      )}
+    </main>
   );
 }
 export default function App() {

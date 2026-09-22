@@ -76,17 +76,6 @@ pub fn run() {
             );
             app.manage(Arc::new(Mutex::new(state)));
             commands::initialize(app.handle())?;
-            if app
-                .state::<Arc<Mutex<AppState>>>()
-                .inner()
-                .lock()
-                .map(|state| state.settings.get().onboarding_complete)
-                .unwrap_or(false)
-            {
-                if let Some(settings_window) = app.get_webview_window("settings") {
-                    let _ = settings_window.hide();
-                }
-            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
