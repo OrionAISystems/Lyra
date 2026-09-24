@@ -9,12 +9,13 @@ import {
 } from "lucide-react";
 import { checkForUpdates, installUpdate, retryHotkey } from "../bridge";
 import { Card, Notice, Page, Row } from "../components/Controls";
+import { buildDiagnosticReport } from "../diagnostics";
 import type { LyraState } from "../state/useLyra";
 export default function Diagnostics({ state }: { state: LyraState }) {
   const [retrying, setRetrying] = useState(false);
   const [retryMessage, setRetryMessage] = useState<string | null>(null);
   const report = () => {
-    const safe = {
+    const safe = buildDiagnosticReport({
       version: state.update.currentVersion,
       runtime: state.runtime.runtimeVariant,
       models: {
@@ -23,8 +24,8 @@ export default function Diagnostics({ state }: { state: LyraState }) {
       },
       hotkey: state.hotkey.registered,
       failures: state.usage.failureCounts,
-      sessions: state.usage.recentSessions.slice(0, 20),
-    };
+      sessions: state.usage.recentSessions,
+    });
     void navigator.clipboard.writeText(JSON.stringify(safe, null, 2));
   };
   const checking = state.update.state === "checking";

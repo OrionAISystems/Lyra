@@ -6,7 +6,7 @@ The repository is intentionally standalone. Lyra does not depend on Orion's gate
 
 ## Current phase
 
-v0.4.3 is the current published release in the v0.4 streaming, personalization, reliability, and product-design line. It includes an optional English Nemotron streaming engine, contextual Words, Corrections, exact multiline Snippets, app-aware paste profiles, adaptive capture diagnostics, recovery shortcuts, a local one-recording benchmark, richer metadata-only Insights, and a seven-screen desktop shell. Parakeet TDT remains the default.
+v0.4.4 is the current published release in the v0.4 streaming, personalization, reliability, and product-design line. It includes an optional English Nemotron streaming engine, contextual Words, Corrections, exact multiline Snippets, app-aware paste profiles, adaptive capture diagnostics, recovery shortcuts, a local one-recording benchmark, richer metadata-only Insights, and a seven-screen desktop shell. This security patch hardens streaming lifecycle, clipboard handling, target-aware injection, artifact downloads, diagnostic disclosure, and TLS dependencies. Parakeet TDT remains the default.
 
 The v0.3 → v0.4 settings and personalization migrations are automatic and idempotent. Existing microphone, ten-minute duration, startup, placement, correction, and cost preferences are preserved. Runtime and model installation remains separate and explicit; the optional Nemotron model is independently versioned and verified.
 
@@ -37,7 +37,11 @@ The v0.4 local checks are:
 ```powershell
 npm run typecheck
 npm test
+npm run build
 npm run test:updater-fixture
+npm run verify:version
+npm run verify:changelog
+npm run verify:release-config
 cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
 cargo check --manifest-path src-tauri/Cargo.toml
 cargo test --manifest-path src-tauri/Cargo.toml

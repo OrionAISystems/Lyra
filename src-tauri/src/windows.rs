@@ -8,6 +8,17 @@ pub struct TargetContext {
     pub process_id: u32,
 }
 
+fn target_identity_matches(
+    target: TargetContext,
+    observed_hwnd: isize,
+    observed_process_id: u32,
+) -> bool {
+    target.hwnd != 0
+        && target.process_id != 0
+        && observed_hwnd == target.hwnd
+        && observed_process_id == target.process_id
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BarPlacementStatus {
@@ -128,8 +139,7 @@ mod platform {
         },
     };
 
-    use super::BarPlacementStatus;
-    use super::TargetContext;
+    use super::{target_identity_matches, BarPlacementStatus, TargetContext};
     use crate::{domain::BackendError, settings::BarPlacement};
 
     pub fn capture_foreground_target() -> Result<TargetContext, BackendError> {
@@ -141,14 +151,39 @@ mod platform {
         }
         let mut process_id = 0;
         unsafe { GetWindowThreadProcessId(hwnd, &mut process_id) };
-        Ok(TargetContext {
+        let target = TargetContext {
             hwnd: hwnd as isize,
             process_id,
-        })
+        };
+        if !target_identity_matches(target, hwnd as isize, process_id) {
+            return Err(BackendError::DeviceFailure(
+                "Windows did not expose a valid foreground target process".to_owned(),
+            ));
+        }
+        Ok(target)
     }
 
     pub fn target_is_alive(target: TargetContext) -> bool {
-        unsafe { IsWindow(target.hwnd as HWND) != 0 }
+        let hwnd = target.hwnd as HWND;
+        if hwnd.is_null() || unsafe { IsWindow(hwnd) } == 0 {
+            return false;
+        }
+        let mut process_id = 0;
+        let thread_id = unsafe { GetWindowThreadProcessId(hwnd, &mut process_id) };
+        thread_id != 0 && target_identity_matches(target, hwnd as isize, process_id)
+    }
+
+    fn target_is_foreground(target: TargetContext) -> bool {
+        if !target_is_alive(target) {
+            return false;
+        }
+        let foreground = unsafe { GetForegroundWindow() };
+        if foreground.is_null() || foreground as isize != target.hwnd {
+            return false;
+        }
+        let mut process_id = 0;
+        let thread_id = unsafe { GetWindowThreadProcessId(foreground, &mut process_id) };
+        thread_id != 0 && target_identity_matches(target, foreground as isize, process_id)
     }
 
     pub fn focus_target(target: TargetContext) -> Result<(), BackendError> {
@@ -164,16 +199,26 @@ mod platform {
             ));
         }
         thread::sleep(Duration::from_millis(35));
+        if !target_is_foreground(target) {
+            return Err(BackendError::DeviceFailure(
+                "the original target is no longer in the foreground".to_owned(),
+            ));
+        }
         Ok(())
     }
 
-    pub fn inject_ctrl_v() -> Result<(), BackendError> {
+    pub fn inject_ctrl_v(target: TargetContext) -> Result<(), BackendError> {
         let mut inputs = [
             keyboard_input(VK_CONTROL as u16, 0),
             keyboard_input(VK_V as u16, 0),
             keyboard_input(VK_V as u16, KEYEVENTF_KEYUP),
             keyboard_input(VK_CONTROL as u16, KEYEVENTF_KEYUP),
         ];
+        if !target_is_foreground(target) {
+            return Err(BackendError::DeviceFailure(
+                "the original target lost focus before paste input".to_owned(),
+            ));
+        }
         let sent = unsafe {
             SendInput(
                 inputs.len() as u32,
@@ -190,13 +235,18 @@ mod platform {
         Ok(())
     }
 
-    pub fn inject_shift_insert() -> Result<(), BackendError> {
+    pub fn inject_shift_insert(target: TargetContext) -> Result<(), BackendError> {
         let mut inputs = [
             keyboard_input(VK_SHIFT as u16, 0),
             keyboard_input(VK_INSERT as u16, 0),
             keyboard_input(VK_INSERT as u16, KEYEVENTF_KEYUP),
             keyboard_input(VK_SHIFT as u16, KEYEVENTF_KEYUP),
         ];
+        if !target_is_foreground(target) {
+            return Err(BackendError::DeviceFailure(
+                "the original target lost focus before paste input".to_owned(),
+            ));
+        }
         let sent = unsafe {
             SendInput(
                 inputs.len() as u32,
@@ -377,13 +427,13 @@ mod platform {
             "Windows focus restore is unavailable".to_owned(),
         ))
     }
-    pub fn inject_ctrl_v() -> Result<(), BackendError> {
+    pub fn inject_ctrl_v(_target: TargetContext) -> Result<(), BackendError> {
         Err(BackendError::Unsupported(
             "Windows input injection is unavailable".to_owned(),
         ))
     }
-    pub fn inject_shift_insert() -> Result<(), BackendError> {
-        inject_ctrl_v()
+    pub fn inject_shift_insert(target: TargetContext) -> Result<(), BackendError> {
+        inject_ctrl_v(target)
     }
     pub fn target_executable(_target: TargetContext) -> Option<String> {
         None
@@ -411,7 +461,7 @@ pub use platform::{
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_saved_monitor_index;
+    use super::{resolve_saved_monitor_index, target_identity_matches, TargetContext};
 
     #[test]
     fn monitor_identity_wins_and_ordinal_is_the_fallback() {
@@ -428,5 +478,24 @@ mod tests {
             resolve_saved_monitor_index(&ids, Some("missing"), None),
             None
         );
+    }
+
+    #[test]
+    fn target_guard_rejects_foreground_or_process_mismatch() {
+        let target = TargetContext {
+            hwnd: 0x1234,
+            process_id: 77,
+        };
+        assert!(target_identity_matches(target, 0x1234, 77));
+        assert!(!target_identity_matches(target, 0x5678, 77));
+        assert!(!target_identity_matches(target, 0x1234, 88));
+        assert!(!target_identity_matches(
+            TargetContext {
+                hwnd: 0x1234,
+                process_id: 0,
+            },
+            0x1234,
+            0,
+        ));
     }
 }

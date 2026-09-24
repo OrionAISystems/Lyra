@@ -446,6 +446,17 @@ fn load_counters(path: &Path) -> UsageCounters {
 fn is_cloud_backend(backend: &str) -> bool {
     backend.to_ascii_lowercase().contains("cloud")
 }
+pub fn diagnostic_fallback_chain(fallback_reason: Option<&str>, backend: &str) -> Vec<String> {
+    if fallback_reason.is_none() {
+        return Vec::new();
+    }
+    vec![if is_cloud_backend(backend) {
+        "local_to_cloud"
+    } else {
+        "local_backend_retry"
+    }
+    .to_owned()]
+}
 fn ratio(numerator: f64, denominator: u64) -> f64 {
     if denominator == 0 {
         0.0
@@ -563,6 +574,37 @@ mod tests {
             std::env::temp_dir().join(format!("lyra-usage-rate-{}.json", uuid::Uuid::new_v4()));
         let store = UsageStatsStore::for_tests(path.clone());
         assert_eq!(store.snapshot(false, 0.003, 40).paste_success_rate, 0.0);
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn fallback_details_do_not_persist_paths() {
+        let path =
+            std::env::temp_dir().join(format!("lyra-fallback-{}.json", uuid::Uuid::new_v4()));
+        let store = UsageStatsStore::for_tests(path.clone());
+        let sensitive_detail = r"C:\Users\Met\AppData\Local\Lyra\runtime\nemo_speech_asr_c.dll";
+        let record = SessionRecord {
+            timestamp_ms: 1,
+            app_version: "0.4.4".to_owned(),
+            duration_ms: 1,
+            word_count: 1,
+            target_executable: None,
+            target_category: None,
+            endpoint: "manual".to_owned(),
+            engine: "nemotron".to_owned(),
+            runtime: None,
+            backend: Some("local_parakeet".to_owned()),
+            fallback_chain: diagnostic_fallback_chain(Some(sensitive_detail), "local_parakeet"),
+            latency_ms: Some(1),
+            real_time_factor: Some(1.0),
+            paste_outcome: "copied".to_owned(),
+            failure_category: None,
+        };
+        store.record_session(record);
+
+        let persisted = fs::read_to_string(&path).expect("read persisted usage record");
+        assert!(!persisted.contains("C:\\Users\\Met"));
+        assert!(persisted.contains("local_backend_retry"));
         fs::remove_file(path).ok();
     }
 }

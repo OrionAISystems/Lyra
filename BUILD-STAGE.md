@@ -1,6 +1,6 @@
 # Lyra build stage
 
-The current published version is v0.4.3, the focused native-window, compact-bar, dropdown, diagnostics, and benchmark follow-up for the v0.4 product release. Lyra is in a stabilization and dogfooding phase: use the v0.4.x line for issues grounded in daily use, and let v0.5.0 wait until usage identifies the next meaningful product step.
+The current published version is v0.4.4, a security and reliability patch in the v0.4 streaming, personalization, and daily-use line. Lyra is in a stabilization and dogfooding phase: use the v0.4.x line for issues grounded in daily use, and let v0.5.0 wait until usage identifies the next meaningful product step.
 
 ## Stage 0 — foundation
 
@@ -75,6 +75,7 @@ Runtime and model are separate approvals. The runtime setup reports source, size
 - [x] v0.4.1: stabilize shortcut event handling and runtime status reads; improve chart labels and native dropdown contrast.
 - [x] v0.4.2: polish theme and dropdown behavior; add engine-split Insights, advanced usage metrics, configurable typing speed, and silence-only success-rate handling.
 - [x] v0.4.3: repair native window controls and compact bar behavior; polish dropdown and diagnostics states; allow benchmarking from completed or failed idle sessions.
+- [x] v0.4.4: harden streaming lifecycle, bounded clipboard and artifact handling, foreground-target injection, diagnostic privacy, and TLS dependencies.
 - [ ] Complete the remaining installed-hardware, cross-application injection, Nemotron spoken partial/final, fallback replay, and updater acceptance in [docs/ACCEPTANCE-V0.4.md](docs/ACCEPTANCE-V0.4.md).
 - [ ] Collect normal-use feedback before committing to a v0.5.0 scope.
 

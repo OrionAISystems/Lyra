@@ -1,6 +1,6 @@
 # Lyra v0.4 acceptance
 
-The v0.4.0 release evidence below remains the baseline for the v0.4.x series. v0.4.3 is published; publication does not close the installed-hardware cases that remain pending in this matrix.
+The v0.4.0 release evidence below remains the baseline for the v0.4.x series. v0.4.4 is published; publication does not close the installed-hardware cases that remain pending in this matrix.
 
 ## Automated evidence
 
@@ -8,6 +8,7 @@ The v0.4.0 release evidence below remains the baseline for the v0.4.x series. v0
 - Rust formatting, check, and tests: required before tag.
 - Version, changelog, release configuration, updater fixture, and whitespace validators: required before tag.
 - Migration, retention, privacy serialization, processing order, streaming queue, fallback, and benchmark scoring are covered by focused Rust tests.
+- Security regression tests cover open-session partial drains, bounded clipboard reads, sequence-checked clipboard recovery, foreground-target checks, oversized downloads, and allowlisted diagnostic reports.
 
 ## Rendered product evidence
 
@@ -25,7 +26,7 @@ The v0.4.0 release evidence below remains the baseline for the v0.4.x series. v0
 | Nemotron spoken partial / final paste                 | pending installed build | Verify English-only routing, active-request partials, and one final paste with live microphone speech.           |
 | Nemotron failure → Parakeet replay                    | pending installed build | Reuse the same in-memory PCM.                                                                                    |
 | Notepad, browser, ChatGPT, Codex, VS Code, PowerShell | pending installed build | Include long multiline chunking and recovery.                                                                    |
-| v0.3.2 → latest v0.4.x updater                       | pending installed build | v0.4.3 is published; still verify check, download, install, restart, and the migrated settings on an installed client. |
+| v0.3.2 → latest v0.4.x updater                       | pending installed build | v0.4.4 is published; still verify check, download, install, restart, and the migrated settings on an installed client. |
 
 ## Native dev-bundle smoke — 2026-09-22
 

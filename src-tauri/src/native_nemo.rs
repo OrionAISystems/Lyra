@@ -142,7 +142,10 @@ impl OptionalStreamingSymbols {
 }
 
 struct NativeApi {
+    #[cfg(not(test))]
     _library: Library,
+    #[cfg(test)]
+    _library: Option<Library>,
     create: CreateFn,
     destroy: DestroyFn,
     options_default: OptionsDefaultFn,
@@ -564,14 +567,25 @@ impl NativeNemoStreamingSession {
         }
     }
 
-    /// Pull all currently available results after finish.  `stream_next`
-    /// returns `OK` with a null result when its queue is empty; that is the
-    /// drain boundary.  A generous cap protects the worker from a broken
-    /// runtime that never reaches that boundary.
+    /// Pull all currently available results without changing stream state.
+    /// `stream_next` returns `OK` with a null result when its queue is empty;
+    /// that is the poll boundary. A generous cap protects the worker from a
+    /// broken runtime that never reaches that boundary.
+    pub fn drain_available(&mut self) -> Result<Vec<StreamingResult>, BackendError> {
+        self.drain_results()
+    }
+
+    /// Finish an open stream, then pull all pending results. A generous cap
+    /// protects the worker from a broken runtime that never reaches the
+    /// drain boundary.
     pub fn drain(&mut self) -> Result<Vec<StreamingResult>, BackendError> {
         if self.state == StreamingSessionState::Open {
             self.finish()?;
         }
+        self.drain_results()
+    }
+
+    fn drain_results(&mut self) -> Result<Vec<StreamingResult>, BackendError> {
         let mut results = Vec::new();
         for _ in 0..1_024 {
             match self.next()? {
@@ -735,7 +749,9 @@ fn streaming_failure(api: &NativeApi, status: Status, fallback: &str) -> Backend
 
 fn load_api(path: &Path) -> Result<NativeApi, BackendError> {
     let library = load_library(path).map_err(|error| {
-        BackendError::MissingRuntimeModel(format!("could not load {}: {error:?}", path.display()))
+        BackendError::MissingRuntimeModel(format!(
+            "could not load the NeMo recognition library: {error:?}"
+        ))
     })?;
     unsafe {
         let symbols = OptionalStreamingSymbols {
@@ -767,7 +783,10 @@ fn load_api(path: &Path) -> Result<NativeApi, BackendError> {
             streaming,
             last_error: *symbol(&library, b"nemo_speech_asr_last_error\0")?,
             version: *symbol(&library, b"nemo_speech_asr_version\0")?,
+            #[cfg(not(test))]
             _library: library,
+            #[cfg(test)]
+            _library: Some(library),
         })
     }
 }
@@ -871,11 +890,18 @@ fn find_library(root: &Path) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::{
-        find_library, OptionalStreamingSymbols, RecognitionOptions, Status, StreamingOptionsStorage,
+        find_library, NativeApi, NativeNemoStreamingSession, OptionalStreamingSymbols,
+        RecognitionOptions, RecognizerOwner, Status, StreamingApi, StreamingOptionsStorage,
+        StreamingSessionState,
     };
     use crate::{domain::LanguagePreference, streaming::StreamingRequest};
-    use std::fs;
     use std::ptr;
+    use std::{
+        collections::VecDeque,
+        ffi::CString,
+        fs,
+        sync::{Arc, Mutex},
+    };
 
     unsafe extern "C" fn fake_recognize(
         _recognizer: *mut super::RecognizerOpaque,
@@ -913,6 +939,180 @@ mod tests {
 
     unsafe extern "C" fn fake_is_final(_result: *const super::ResultOpaque) -> bool {
         false
+    }
+
+    struct MockStream {
+        finished: bool,
+        finished_calls: usize,
+        pushes: usize,
+        closed: bool,
+        pending: VecDeque<(String, bool)>,
+    }
+
+    struct MockResult {
+        text: CString,
+        is_final: bool,
+    }
+
+    unsafe extern "C" fn mock_create(
+        _config: *const super::RecognizerConfig,
+        _out: *mut *mut super::RecognizerOpaque,
+    ) -> Status {
+        0
+    }
+
+    unsafe extern "C" fn mock_destroy(_recognizer: *mut super::RecognizerOpaque) {}
+
+    unsafe extern "C" fn mock_options_default() -> RecognitionOptions {
+        RecognitionOptions {
+            size: 0,
+            request_id: ptr::null(),
+            language_code: ptr::null(),
+            interim_results: false,
+            enable_word_time_offsets: false,
+            enable_automatic_punctuation: false,
+            verbatim_transcripts: false,
+            profanity_filter: false,
+            stop_history_eou_ms: 0,
+            speech_contexts: ptr::null(),
+            speech_context_count: 0,
+            max_alternatives: 0,
+            enable_speaker_diarization: false,
+            max_speaker_count: 0,
+        }
+    }
+
+    unsafe extern "C" fn mock_recognize_f32(
+        _recognizer: *mut super::RecognizerOpaque,
+        _options: *const RecognitionOptions,
+        _samples: *const f32,
+        _sample_count: usize,
+        _sample_rate: i32,
+        _out: *mut *mut super::ResultOpaque,
+    ) -> Status {
+        1
+    }
+
+    unsafe extern "C" fn mock_result_transcript(
+        result: *const super::ResultOpaque,
+        _index: usize,
+    ) -> *const super::c_char {
+        (*(result as *const MockResult)).text.as_ptr()
+    }
+
+    unsafe extern "C" fn mock_result_destroy(result: *mut super::ResultOpaque) {
+        drop(Box::from_raw(result as *mut MockResult));
+    }
+
+    unsafe extern "C" fn mock_push(
+        stream: *mut super::StreamOpaque,
+        _samples: *const f32,
+        _sample_count: usize,
+        _sample_rate: i32,
+    ) -> Status {
+        let stream = &mut *(stream as *mut MockStream);
+        if stream.finished {
+            return 1;
+        }
+        stream.pushes += 1;
+        stream
+            .pending
+            .push_back((format!("partial {}", stream.pushes), false));
+        0
+    }
+
+    unsafe extern "C" fn mock_endpoint(_stream: *mut super::StreamOpaque) -> Status {
+        0
+    }
+
+    unsafe extern "C" fn mock_finish(stream: *mut super::StreamOpaque) -> Status {
+        let stream = &mut *(stream as *mut MockStream);
+        stream.finished = true;
+        stream.finished_calls += 1;
+        stream
+            .pending
+            .push_back(("final transcript".to_owned(), true));
+        0
+    }
+
+    unsafe extern "C" fn mock_next(
+        stream: *mut super::StreamOpaque,
+        out: *mut *mut super::ResultOpaque,
+    ) -> Status {
+        let stream = &mut *(stream as *mut MockStream);
+        *out = match stream.pending.pop_front() {
+            Some((text, is_final)) => Box::into_raw(Box::new(MockResult {
+                text: CString::new(text).expect("mock transcript has no NUL"),
+                is_final,
+            })) as *mut super::ResultOpaque,
+            None => ptr::null_mut(),
+        };
+        0
+    }
+
+    unsafe extern "C" fn mock_close(stream: *mut super::StreamOpaque) {
+        (*(stream as *mut MockStream)).closed = true;
+    }
+
+    unsafe extern "C" fn mock_is_final(result: *const super::ResultOpaque) -> bool {
+        (*(result as *const MockResult)).is_final
+    }
+
+    unsafe extern "C" fn mock_last_error() -> *const super::c_char {
+        ptr::null()
+    }
+
+    unsafe extern "C" fn mock_version() -> *const super::c_char {
+        ptr::null()
+    }
+
+    fn mock_session() -> (NativeNemoStreamingSession, *mut MockStream) {
+        let api = NativeApi {
+            _library: None,
+            create: mock_create,
+            destroy: mock_destroy,
+            options_default: mock_options_default,
+            recognize_f32: mock_recognize_f32,
+            result_transcript: mock_result_transcript,
+            result_destroy: mock_result_destroy,
+            streaming: Some(StreamingApi {
+                recognize: fake_recognize,
+                push_f32: mock_push,
+                force_endpoint: mock_endpoint,
+                finish: mock_finish,
+                next: mock_next,
+                close: mock_close,
+                result_is_final: mock_is_final,
+                audio_processed: None,
+            }),
+            last_error: mock_last_error,
+            version: mock_version,
+        };
+        let owner = Arc::new(RecognizerOwner {
+            api: Arc::new(api),
+            handle: ptr::null_mut(),
+            call_lock: Mutex::new(()),
+        });
+        let stream = Box::into_raw(Box::new(MockStream {
+            finished: false,
+            finished_calls: 0,
+            pushes: 0,
+            closed: false,
+            pending: VecDeque::new(),
+        }));
+        let request = StreamingRequest::new("mock-stream", LanguagePreference::En);
+        let options =
+            StreamingOptionsStorage::from_options(unsafe { mock_options_default() }, &request)
+                .expect("build mock options");
+        (
+            NativeNemoStreamingSession {
+                owner,
+                stream: stream as *mut super::StreamOpaque,
+                _options: options,
+                state: StreamingSessionState::Open,
+            },
+            stream,
+        )
     }
 
     fn all_stream_symbols() -> OptionalStreamingSymbols {
@@ -966,6 +1166,37 @@ mod tests {
         let mut missing = all_stream_symbols();
         missing.result_is_final = None;
         assert!(missing.into_api(None).is_none());
+    }
+
+    #[test]
+    fn drain_available_keeps_session_open_until_explicit_finish() {
+        let (mut session, stream) = mock_session();
+        for expected_push in 1..=2 {
+            session
+                .push_f32(&[0.1, 0.2], 16_000)
+                .expect("push audio while stream is open");
+            let partials = session.drain_available().expect("poll partial results");
+            assert_eq!(partials.len(), 1);
+            assert!(matches!(
+                partials[0],
+                crate::streaming::StreamingResult::Partial(_)
+            ));
+            assert_eq!(session.state(), StreamingSessionState::Open);
+            assert_eq!(unsafe { (*stream).pushes }, expected_push);
+            assert_eq!(unsafe { (*stream).finished_calls }, 0);
+        }
+
+        session.finish().expect("finish after all audio chunks");
+        let finals = session.drain().expect("drain final result");
+        assert_eq!(finals.len(), 1);
+        assert!(matches!(
+            finals[0],
+            crate::streaming::StreamingResult::Final(_)
+        ));
+        assert_eq!(unsafe { (*stream).finished_calls }, 1);
+        session.close();
+        let stream = unsafe { Box::from_raw(stream) };
+        assert!(stream.closed);
     }
 
     #[test]

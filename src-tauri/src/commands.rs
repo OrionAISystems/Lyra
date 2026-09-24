@@ -28,7 +28,10 @@ use crate::{
     transcription::{ModelRuntimeStatus, TranscriptionRouter},
     tray::TrayController,
     updater::{UpdateManager, UpdateStatus},
-    usage::{timestamp_ms, FailureCategory, SessionRecord, UsageStats, UsageStatsStore},
+    usage::{
+        diagnostic_fallback_chain, timestamp_ms, FailureCategory, SessionRecord, UsageStats,
+        UsageStatsStore,
+    },
     windows::{
         capture_foreground_target, list_displays as enumerate_displays, place_bar,
         target_executable, BarPlacementStatus, DisplayInfo, TargetContext,
@@ -1595,7 +1598,10 @@ fn process_capture(
                 .runtime_variant
                 .map(|variant| format!("{variant:?}").to_ascii_lowercase()),
             backend: Some(result.backend.clone()),
-            fallback_chain: result.fallback_reason.clone().into_iter().collect(),
+            fallback_chain: diagnostic_fallback_chain(
+                result.fallback_reason.as_deref(),
+                &result.backend,
+            ),
             latency_ms: Some(result.latency_ms),
             real_time_factor: (captured_duration_ms > 0)
                 .then_some(result.transcription_duration_ms as f64 / captured_duration_ms as f64),
@@ -1627,7 +1633,9 @@ fn process_capture(
             state.emit_usage_from_settings(&settings);
             state.session.transition(SessionEvent::Failure).ok();
             state.snapshot.state = DictationState::Error;
-            state.snapshot.error = Some(format!("{}; Copied — paste manually", error));
+            state.snapshot.error = Some(format!(
+                "{error}; The transcript remains available in Lyra for copying"
+            ));
             state.snapshot.transcript = Some(result.text);
             state.snapshot.backend = Some(result.backend);
             state.snapshot.fallback_reason = result.fallback_reason;

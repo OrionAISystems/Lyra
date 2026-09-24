@@ -602,8 +602,21 @@ impl RuntimeManager {
             if read == 0 {
                 break;
             }
-            file.write_all(&buffer[..read])?;
-            downloaded += read as u64;
+            downloaded = match Self::write_bounded_download_chunk(
+                &mut file,
+                &buffer[..read],
+                downloaded,
+                spec.size_bytes,
+                spec.kind.as_str(),
+            ) {
+                Ok(downloaded) => downloaded,
+                Err(error @ RuntimeError::SizeMismatch { .. }) => {
+                    drop(file);
+                    fs::remove_file(partial_path)?;
+                    return Err(error);
+                }
+                Err(error) => return Err(error),
+            };
             if downloaded.saturating_sub(last_reported) >= PROGRESS_UPDATE_BYTES {
                 last_reported = downloaded;
                 self.set_setup_progress(spec.kind, downloaded, total, None);
@@ -622,6 +635,27 @@ impl RuntimeManager {
             });
         }
         Ok(())
+    }
+
+    fn write_bounded_download_chunk<W: Write>(
+        writer: &mut W,
+        chunk: &[u8],
+        downloaded: u64,
+        expected: u64,
+        artifact: &str,
+    ) -> Result<u64, RuntimeError> {
+        let chunk_bytes = u64::try_from(chunk.len()).unwrap_or(u64::MAX);
+        let remaining = expected.saturating_sub(downloaded);
+        if chunk_bytes > remaining {
+            return Err(RuntimeError::SizeMismatch {
+                artifact: artifact.to_owned(),
+                expected,
+                actual: downloaded.checked_add(chunk_bytes).unwrap_or(u64::MAX),
+            });
+        }
+        let next_downloaded = downloaded + chunk_bytes;
+        writer.write_all(chunk)?;
+        Ok(next_downloaded)
     }
 
     fn install_runtime_archive(
@@ -1216,6 +1250,56 @@ mod tests {
         assert!(manager
             .partial_path(SetupArtifactKind::Runtime(RuntimeVariant::Cuda))
             .ends_with("runtime-cuda-0.1.0.partial"));
+    }
+
+    #[test]
+    fn download_body_never_writes_past_artifact_limit() {
+        let mut exact = Vec::new();
+        let downloaded =
+            RuntimeManager::write_bounded_download_chunk(&mut exact, b"ab", 0, 4, "test-artifact")
+                .expect("write first chunk");
+        let downloaded = RuntimeManager::write_bounded_download_chunk(
+            &mut exact,
+            b"cd",
+            downloaded,
+            4,
+            "test-artifact",
+        )
+        .expect("write exact final chunk");
+        assert_eq!(downloaded, 4);
+        assert_eq!(exact, b"abcd");
+
+        let mut oversized = Vec::new();
+        let error = RuntimeManager::write_bounded_download_chunk(
+            &mut oversized,
+            b"abc",
+            0,
+            2,
+            "test-artifact",
+        )
+        .expect_err("reject oversized body chunk");
+        assert!(matches!(
+            error,
+            RuntimeError::SizeMismatch {
+                expected: 2,
+                actual: 3,
+                ..
+            }
+        ));
+        assert!(oversized.is_empty());
+
+        let mut resumed = Vec::new();
+        RuntimeManager::write_bounded_download_chunk(&mut resumed, b"c", 2, 3, "test-artifact")
+            .expect("write resumed byte");
+        assert!(RuntimeManager::write_bounded_download_chunk(
+            &mut resumed,
+            b"d",
+            3,
+            3,
+            "test-artifact",
+        )
+        .is_err());
+        assert_eq!(resumed, b"c");
     }
 
     #[test]

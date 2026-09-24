@@ -35,7 +35,7 @@ AudioCapture -> in-memory PCM -> TranscriptionRouter
                    normalize -> backtracking -> formatting -> corrections -> snippets
                                           |
                                           v
-                   ClipboardSnapshot + sequence guard -> target-aware injection
+                   bounded ClipboardSnapshot + sequence guard -> target-aware injection
                                           |
                                           v
                                   result / recovery events
@@ -52,19 +52,19 @@ The Rust side owns state transitions and side effects. The frontend renders even
 - `domain.rs`: serializable product types, state transition rules, deterministic formatting/correction processing, and routing decisions.
 - `settings.rs`: versioned schema v3, legacy migration, normalization, and persistence. Secrets are not settings.
 - `audio.rs`: device enumeration, format conversion, mono downmix, in-memory capture, RMS speech arming, silence/max/manual endpoints, dynamic duration control, level events, and ephemeral WAV encoding.
-- `transcription.rs`: `TranscriptionBackend` contract, local/cloud implementations, route/fallback policy, and recognizer lifecycle status.
+- `transcription.rs`: `TranscriptionBackend` contract, local/cloud implementations, route/fallback policy, streaming partial drains that preserve the active native session, and recognizer lifecycle status.
 - `native/nemo.rs`: app-local dynamic loading boundary for the pinned NeMo-Speech.cpp C ABI. No machine-wide SDK or PATH dependency.
-- `runtime.rs`: pinned runtime/model metadata, resumable downloads, checksum verification, safe staged extraction, and explicit setup progress.
+- `runtime.rs`: pinned runtime/model metadata, resumable size-bounded downloads, checksum verification, safe staged extraction, and explicit setup progress.
 - `updater.rs`: `UpdateProvider` seam, stable-version filtering, signed Tauri updater integration, update state machine, scheduling, passive restart behavior, and the installation reservation gate.
 - `usage.rs`: local aggregate counters, daily history, metadata-only recent sessions, and derived metrics. It never receives transcript text or raw samples.
 - `tray.rs`: the single tray update menu item, kept in sync with updater status.
-- `clipboard.rs`: text snapshot, sequence-number guard, and Windows clipboard operations.
-- `windows.rs`: foreground target capture, display enumeration, active/primary/fixed monitor placement, fallback status, non-activating bar behavior, and `SendInput` integration.
+- `clipboard.rs`: bounded Windows text snapshots, sequence-number-guarded clipboard recovery, and clipboard operations.
+- `windows.rs`: foreground target capture, display enumeration, active/primary/fixed monitor placement, fallback status, non-activating bar behavior, and `SendInput` integration with an HWND/process/focus recheck before each injection.
 - `commands.rs`: Tauri commands and event emission; this is presentation wiring, not domain policy.
 
 ## v0.4 settings and lifecycle contracts
 
-Schema v3 separates growing personalization data into an atomic local store. Processing order is normalize → explicit-cue backtracking → spoken formatting → corrections → snippets. The usage ledger retains 90 daily aggregate buckets and 200 privacy-safe sessions; it never receives raw samples or recognized text. Model artifacts have isolated paths and markers, and the experimental Nemotron path emits request-scoped partial events while only a final result can enter text processing or paste.
+Schema v3 separates growing personalization data into an atomic local store. Processing order is normalize → explicit-cue backtracking → spoken formatting → corrections → snippets. The usage ledger retains 90 daily aggregate buckets and 200 privacy-safe sessions; it never receives raw samples or recognized text. Model artifacts have isolated paths and markers, and the experimental Nemotron path emits request-scoped partial events while only a final result can enter text processing or paste. Partial-result drains do not finish the native session; the router explicitly finishes and drains after the final audio chunk.
 
 Recovery shortcuts are registered as a set with duplicate validation and rollback. Tray hiding requires a valid Open Settings shortcut. Target identity is reduced to an executable basename and built-in category before profile matching; full paths and window titles never cross into persistence.
 
@@ -90,7 +90,8 @@ The updater reserves installation before the async download begins. The reservat
 - A PCM WAV is created only for a cloud upload and is dropped after the request.
 - Only the last transcript is retained in memory for recovery.
 - `%LOCALAPPDATA%\Lyra\usage.json` contains aggregate counters for dictations, audio duration, result timing, backend counts, failures, paste attempts, and fallbacks. Derived cost estimates are opt-in and use the local configured rate.
-- Logs contain state, backend, timing, and redacted failures; never raw audio, transcript text, API keys, or clipboard content.
+- Logs contain state, backend, timing, and redacted failures; never raw audio, transcript text, API keys, or clipboard content. Persisted fallback details use fixed labels rather than free-form error strings.
+- Copied diagnostic reports are built from an allowlist and omit local filesystem paths, endpoints, executable paths, and free-form errors.
 - Cloud credentials use Windows Credential Manager through the Rust backend.
 - Release artifacts are published separately from source in the public `OrionAISystems/Lyra-Releases` repository. The client only trusts the configured Tauri updater public key and HTTPS manifest endpoint.
 

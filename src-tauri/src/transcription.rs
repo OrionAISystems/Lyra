@@ -648,7 +648,7 @@ impl TranscriptionRouter {
         )?;
         for chunk in request.audio_samples.chunks(1_600) {
             stream.push_f32(chunk, request.sample_rate)?;
-            for result in stream.drain()? {
+            for result in stream.drain_available()? {
                 on_result(&result);
             }
         }
