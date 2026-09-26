@@ -2,11 +2,13 @@ import {
   Activity,
   AudioLines,
   BarChart3,
+  BookOpenText,
   Home,
   Mic2,
   Minus,
   Palette,
   Square,
+  StickyNote,
   UserRoundCog,
   X,
 } from "lucide-react";
@@ -22,6 +24,8 @@ const nav: [Screen, string, ReactNode][] = [
   ["personalization", "Personalization", <UserRoundCog />],
   ["audio", "Audio & Engine", <AudioLines />],
   ["insights", "Insights", <BarChart3 />],
+  ["history", "History", <BookOpenText />],
+  ["scratchpad", "Scratchpad", <StickyNote />],
   ["appearance", "Appearance", <Palette />],
   ["diagnostics", "Diagnostics", <Activity />],
 ];

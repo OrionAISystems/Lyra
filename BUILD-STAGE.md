@@ -1,6 +1,6 @@
 # Lyra build stage
 
-The current published version is v0.4.4, a security and reliability patch in the v0.4 streaming, personalization, and daily-use line. Lyra is in a stabilization and dogfooding phase: use the v0.4.x line for issues grounded in daily use, and let v0.5.0 wait until usage identifies the next meaningful product step.
+The current published version is v0.4.4. The v0.5.0 local development build implements opt-in Transcript History and intentional Scratchpad capture, with separate retention and storage policies. This work is at the local build and hands-on review checkpoint; it has not been tagged or published. Follow [PLAN.md](PLAN.md) and record observed behavior in [docs/ACCEPTANCE-V0.5.md](docs/ACCEPTANCE-V0.5.md) before proceeding to any release action.
 
 ## Stage 0 — foundation
 
@@ -77,7 +77,17 @@ Runtime and model are separate approvals. The runtime setup reports source, size
 - [x] v0.4.3: repair native window controls and compact bar behavior; polish dropdown and diagnostics states; allow benchmarking from completed or failed idle sessions.
 - [x] v0.4.4: harden streaming lifecycle, bounded clipboard and artifact handling, foreground-target injection, diagnostic privacy, and TLS dependencies.
 - [ ] Complete the remaining installed-hardware, cross-application injection, Nemotron spoken partial/final, fallback replay, and updater acceptance in [docs/ACCEPTANCE-V0.4.md](docs/ACCEPTANCE-V0.4.md).
-- [ ] Collect normal-use feedback before committing to a v0.5.0 scope.
+- [x] Product scope set for v0.5.0: independent optional transcript History and intentional Scratchpad.
+
+## Stage 7 — v0.5.0 local review
+
+- [x] Settings schema v4 migrates existing users with Transcript History Off and preserves prior preferences.
+- [x] Independent encrypted History and Scratchpad stores, History retention controls, and explicit clear/delete/promotion actions.
+- [x] Intent-level Scratchpad capture shares recognition and processing, does not auto-paste, and supports its own shortcut and visible control.
+- [x] Daily aggregate Insights retained indefinitely; metadata-only sessions retained by age for one year.
+- [ ] Paginated History and Scratchpad lists, app metadata, paste recovery, and responsive screens verified in the local development build.
+- [x] Automated gates and local build recorded in `docs/ACCEPTANCE-V0.5.md`.
+- [ ] User reviews the local build and acceptance evidence before v0.5.0 release work begins.
 
 ## Future stages
 

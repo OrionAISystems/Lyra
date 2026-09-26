@@ -1,9 +1,12 @@
 import { Clock3, Keyboard, Pilcrow, Radio, Send, Timer } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Card, Page, Row, Select, Toggle } from "../components/Controls";
 import type { LyraState } from "../state/useLyra";
 export default function Dictation({ state }: { state: LyraState }) {
   const s = state.settings,
     u = state.updateSettings;
+  const [scratchpadShortcutDraft, setScratchpadShortcutDraft] = useState(s.scratchpadHotkey);
+  useEffect(() => setScratchpadShortcutDraft(s.scratchpadHotkey), [s.scratchpadHotkey]);
   return (
     <Page
       title="Dictation"
@@ -38,6 +41,23 @@ export default function Dictation({ state }: { state: LyraState }) {
           <input
             value={s.hotkey}
             onChange={(e) => void u({ hotkey: e.target.value })}
+          />
+        </Row>
+        <Row
+          icon={<Keyboard />}
+          title="Scratchpad shortcut"
+          description="Record a thought directly into Scratchpad"
+        >
+          <input
+            aria-label="Scratchpad shortcut"
+            aria-describedby="scratchpad-shortcut-status"
+            value={scratchpadShortcutDraft}
+            onChange={(e) => setScratchpadShortcutDraft(e.target.value)}
+            onBlur={() => {
+              const value = scratchpadShortcutDraft.trim();
+              if (!value) setScratchpadShortcutDraft(s.scratchpadHotkey);
+              else if (value !== s.scratchpadHotkey) void u({ scratchpadHotkey: value });
+            }}
           />
         </Row>
         <Row
@@ -132,6 +152,15 @@ export default function Dictation({ state }: { state: LyraState }) {
       {state.hotkey.error && (
         <p className="inline-error">{state.hotkey.error}</p>
       )}
+      {state.scratchpadHotkey.error && (
+        <p id="scratchpad-shortcut-status" className="inline-error">Scratchpad shortcut: {state.scratchpadHotkey.error}</p>
+      )}
+      {!state.scratchpadHotkey.error && (
+        <p id="scratchpad-shortcut-status" className="inline-hint">
+          Scratchpad shortcut {state.scratchpadHotkey.registered ? "is ready" : "is not registered"} · {state.scratchpadHotkey.hotkey}
+        </p>
+      )}
+      {state.settingsError && <p className="inline-error">{state.settingsError}</p>}
     </Page>
   );
 }

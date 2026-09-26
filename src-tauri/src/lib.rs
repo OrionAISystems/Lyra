@@ -6,6 +6,7 @@ mod domain;
 mod native_nemo;
 mod personalization;
 mod runtime;
+mod saved_items;
 mod settings;
 pub(crate) mod streaming;
 mod transcription;
@@ -23,6 +24,7 @@ use crate::audio::CpalAudioCapture;
 use crate::commands::AppState;
 use crate::personalization::PersonalizationStore;
 use crate::runtime::RuntimeManager;
+use crate::saved_items::SavedItemStore;
 use crate::settings::SettingsStore;
 use crate::transcription::TranscriptionRouter;
 use crate::updater::UpdateManager;
@@ -64,6 +66,7 @@ pub fn run() {
             let router = TranscriptionRouter::new(runtime.clone());
             let updater = UpdateManager::new(app.handle());
             let usage = UsageStatsStore::new(app.handle());
+            let saved_items = SavedItemStore::new(saved_items::local_root(app.handle()));
             let state = AppState::new(
                 settings,
                 runtime,
@@ -73,6 +76,7 @@ pub fn run() {
                 app.handle().clone(),
                 usage,
                 personalization,
+                saved_items,
             );
             app.manage(Arc::new(Mutex::new(state)));
             commands::initialize(app.handle())?;
@@ -81,6 +85,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_settings,
             commands::get_hotkey_status,
+            commands::get_scratchpad_hotkey_status,
             commands::retry_hotkey,
             commands::save_settings,
             commands::get_runtime_status,
@@ -107,6 +112,19 @@ pub fn run() {
             commands::stop_dictation,
             commands::cancel_dictation,
             commands::copy_last_transcript,
+            commands::list_history,
+            commands::get_history_item,
+            commands::delete_history_item,
+            commands::clear_history,
+            commands::promote_history_item,
+            commands::list_scratchpad,
+            commands::get_scratchpad_item,
+            commands::delete_scratchpad_item,
+            commands::set_scratchpad_pinned,
+            commands::copy_saved_item,
+            commands::paste_saved_item,
+            commands::start_scratchpad,
+            commands::stop_scratchpad,
             commands::has_openai_credential,
             commands::save_openai_credential,
             commands::clear_openai_credential,

@@ -9,6 +9,7 @@ import {
   showSettings,
   startDictation,
   stopDictation,
+  stopScratchpad,
 } from "./bridge";
 import { Shell } from "./components/Shell";
 import Home from "./screens/Home";
@@ -16,6 +17,8 @@ import Dictation from "./screens/Dictation";
 import Personalization from "./screens/Personalization";
 import AudioEngine from "./screens/AudioEngine";
 import Insights from "./screens/Insights";
+import History from "./screens/History";
+import Scratchpad from "./screens/Scratchpad";
 import Appearance from "./screens/Appearance";
 import Diagnostics from "./screens/Diagnostics";
 import { useLyra } from "./state/useLyra";
@@ -44,6 +47,10 @@ function DictationBar() {
   const pushToTalk =
     primaryBarGesture(state.settings.activationMode) ===
     "pointer_press_release";
+  const stopActiveSession = () =>
+    state.session.destination === "scratchpad"
+      ? stopScratchpad()
+      : stopDictation("bar");
 
   useEffect(() => {
     if (!active) {
@@ -104,7 +111,7 @@ function DictationBar() {
     pttReleasePending.current = true;
     try {
       await pttStart.current;
-      await stopDictation("bar");
+      await stopActiveSession();
     } finally {
       pttReleasePending.current = false;
     }
@@ -129,12 +136,16 @@ function DictationBar() {
     >
       <button
         className="bar-surface"
-        aria-label={active ? "Stop dictation" : "Start dictation"}
+        aria-label={active
+          ? state.session.destination === "scratchpad"
+            ? "Stop Scratchpad recording"
+            : "Stop dictation"
+          : "Start dictation"}
         aria-pressed={active}
         onClick={
           pushToTalk
             ? undefined
-            : () => void (active ? stopDictation("bar") : startDictation("bar"))
+            : () => void (active ? stopActiveSession() : startDictation("bar"))
         }
         onPointerDown={(event) => {
           if (!pushToTalk || !isPrimaryPointerButton(event.button)) return;
@@ -159,12 +170,17 @@ function DictationBar() {
         {active ? (
           <>
             <span className="bar-waveform">{waveform}</span>
+            {state.session.destination === "scratchpad" && (
+              <span className="bar-destination">Scratchpad</span>
+            )}
             <span className="bar-timer">
               {Math.floor(displayDurationMs / 1_000)}s/{maxDurationSeconds}s
             </span>
           </>
         ) : processing ? (
-          <span className="bar-label">Transcribing…</span>
+          <span className="bar-label">
+            {state.session.destination === "scratchpad" ? "Saving thought…" : "Transcribing…"}
+          </span>
         ) : error ? (
           <span className="bar-label">Try again</span>
         ) : (
@@ -224,6 +240,9 @@ export default function App() {
   );
   const [bar, setBar] = useState(false);
   useEffect(() => {
+    if (state.scratchpadOpenId) setScreen("scratchpad");
+  }, [state.scratchpadOpenId]);
+  useEffect(() => {
     const isBar = isTauri && getCurrentWindow().label === "bar";
     setBar(isBar);
     document.documentElement.classList.toggle("bar-window", isBar);
@@ -235,6 +254,8 @@ export default function App() {
     personalization: <Personalization state={state} />,
     audio: <AudioEngine state={state} />,
     insights: <Insights state={state} />,
+    history: <History state={state} />,
+    scratchpad: <Scratchpad state={state} />,
     appearance: <Appearance state={state} />,
     diagnostics: <Diagnostics state={state} />,
   };

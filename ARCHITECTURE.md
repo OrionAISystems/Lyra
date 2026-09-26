@@ -6,7 +6,7 @@ Lyra is a single-user desktop process with three user-facing surfaces:
 
 1. A system tray entry that owns lifecycle, settings access, onboarding, and quit.
 2. A small frameless, transparent dictation bar that stays above the active workspace without taking focus.
-3. A frameless settings shell with Home, Dictation, Personalization, Audio & Engine, Insights, Appearance, and Diagnostics modules.
+3. A frameless settings shell with Home, Dictation, History, Scratchpad, Personalization, Audio & Engine, Insights, Appearance, and Diagnostics modules.
 
 The settings window is intentionally compact rather than dashboard-like. It explains readiness, privacy, routing, and recovery in the places where those choices matter.
 
@@ -35,10 +35,15 @@ AudioCapture -> in-memory PCM -> TranscriptionRouter
                    normalize -> backtracking -> formatting -> corrections -> snippets
                                           |
                                           v
-                   bounded ClipboardSnapshot + sequence guard -> target-aware injection
-                                          |
-                                          v
-                                  result / recovery events
+                                request destination
+                                   /          \
+                                  /            \
+                         Dictation          Scratchpad
+                         /       \              |
+             optional encrypted  safe paste    encrypted local
+               History copy      or copy       Scratchpad entry
+                         \          |             /
+                           result / recovery events
 
 release tag -> private CI -> changelog sync -> NSIS + Tauri-signed updater artifact -> public Lyra-Releases
                                                                                      ^
@@ -50,21 +55,22 @@ The Rust side owns state transitions and side effects. The frontend renders even
 ## Rust boundaries
 
 - `domain.rs`: serializable product types, state transition rules, deterministic formatting/correction processing, and routing decisions.
-- `settings.rs`: versioned schema v3, legacy migration, normalization, and persistence. Secrets are not settings.
+- `settings.rs`: versioned schema v4, legacy migration, normalization, and persistence. Secrets are not settings.
 - `audio.rs`: device enumeration, format conversion, mono downmix, in-memory capture, RMS speech arming, silence/max/manual endpoints, dynamic duration control, level events, and ephemeral WAV encoding.
 - `transcription.rs`: `TranscriptionBackend` contract, local/cloud implementations, route/fallback policy, streaming partial drains that preserve the active native session, and recognizer lifecycle status.
 - `native/nemo.rs`: app-local dynamic loading boundary for the pinned NeMo-Speech.cpp C ABI. No machine-wide SDK or PATH dependency.
 - `runtime.rs`: pinned runtime/model metadata, resumable size-bounded downloads, checksum verification, safe staged extraction, and explicit setup progress.
 - `updater.rs`: `UpdateProvider` seam, stable-version filtering, signed Tauri updater integration, update state machine, scheduling, passive restart behavior, and the installation reservation gate.
-- `usage.rs`: local aggregate counters, daily history, metadata-only recent sessions, and derived metrics. It never receives transcript text or raw samples.
+- `usage.rs`: local aggregate counters, indefinite daily aggregates, one-year metadata-only sessions, and derived metrics. It never receives transcript text or raw samples.
+- `saved_items.rs`: independent History and Scratchpad file stores, user-bound DPAPI protection for text, retention, bounded paginated metadata reads, and collection-specific operations.
 - `tray.rs`: the single tray update menu item, kept in sync with updater status.
 - `clipboard.rs`: bounded Windows text snapshots, sequence-number-guarded clipboard recovery, and clipboard operations.
 - `windows.rs`: foreground target capture, display enumeration, active/primary/fixed monitor placement, fallback status, non-activating bar behavior, and `SendInput` integration with an HWND/process/focus recheck before each injection.
 - `commands.rs`: Tauri commands and event emission; this is presentation wiring, not domain policy.
 
-## v0.4 settings and lifecycle contracts
+## v0.5 settings and lifecycle contracts
 
-Schema v3 separates growing personalization data into an atomic local store. Processing order is normalize → explicit-cue backtracking → spoken formatting → corrections → snippets. The usage ledger retains 90 daily aggregate buckets and 200 privacy-safe sessions; it never receives raw samples or recognized text. Model artifacts have isolated paths and markers, and the experimental Nemotron path emits request-scoped partial events while only a final result can enter text processing or paste. Partial-result drains do not finish the native session; the router explicitly finishes and drains after the final audio chunk.
+Schema v4 adds History retention, its last non-Off choice, and the Scratchpad shortcut while preserving existing user settings. Processing order is normalize → explicit-cue backtracking → spoken formatting → corrections → snippets. Each capture has an immutable request destination: Dictation follows its original target and optional History save; Scratchpad stores a deliberate thought and never auto-pastes or copies it. Both use the same microphone, recognition, fallback, and text-processing pipeline. History and Scratchpad use separate local stores; only their text payloads are DPAPI-protected, and only explicitly requested item details cross the Rust/frontend bridge. The usage ledger retains daily aggregates indefinitely plus metadata-only sessions up to one year; it never receives raw samples or recognized text. Model artifacts have isolated paths and markers, and the experimental Nemotron path emits request-scoped partial events while only a final result can enter text processing or a saved-item store. Partial-result drains do not finish the native session; the router explicitly finishes and drains after the final audio chunk.
 
 Recovery shortcuts are registered as a set with duplicate validation and rollback. Tray hiding requires a valid Open Settings shortcut. Target identity is reduced to an executable basename and built-in category before profile matching; full paths and window titles never cross into persistence.
 
@@ -88,8 +94,8 @@ The updater reserves installation before the async download begins. The reservat
 
 - Raw samples exist only in memory for the lifetime of a session.
 - A PCM WAV is created only for a cloud upload and is dropped after the request.
-- Only the last transcript is retained in memory for recovery.
-- `%LOCALAPPDATA%\Lyra\usage.json` contains aggregate counters for dictations, audio duration, result timing, backend counts, failures, paste attempts, and fallbacks. Derived cost estimates are opt-in and use the local configured rate.
+- The latest transcript remains in memory for normal recovery. Optional Transcript History stores final, processed dictation text only when its retention is enabled; History starts Off. Scratchpad stores final text only after an intentional Scratchpad capture or History promotion. Both stores are under `%LOCALAPPDATA%\Lyra\saved-items\` and protect text using current-user DPAPI; metadata is kept beside the encrypted text.
+- `%LOCALAPPDATA%\Lyra\usage.json` contains aggregate counters for dictations, audio duration, result timing, backend counts, failures, paste attempts, and fallbacks. Daily aggregates remain indefinitely; metadata-only sessions expire after a year. Derived cost estimates are opt-in and use the local configured rate.
 - Logs contain state, backend, timing, and redacted failures; never raw audio, transcript text, API keys, or clipboard content. Persisted fallback details use fixed labels rather than free-form error strings.
 - Copied diagnostic reports are built from an allowlist and omit local filesystem paths, endpoints, executable paths, and free-form errors.
 - Cloud credentials use Windows Credential Manager through the Rust backend.

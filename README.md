@@ -6,11 +6,11 @@ The repository is intentionally standalone. Lyra does not depend on Orion's gate
 
 ## Current phase
 
-v0.4.4 is the current published release in the v0.4 streaming, personalization, reliability, and product-design line. It includes an optional English Nemotron streaming engine, contextual Words, Corrections, exact multiline Snippets, app-aware paste profiles, adaptive capture diagnostics, recovery shortcuts, a local one-recording benchmark, richer metadata-only Insights, and a seven-screen desktop shell. This security patch hardens streaming lifecycle, clipboard handling, target-aware injection, artifact downloads, diagnostic disclosure, and TLS dependencies. Parakeet TDT remains the default.
+v0.4.4 is the current published release. The local v0.5.0 development build adds optional, Windows-account-encrypted Transcript History (Off by default) and an intentional Scratchpad for thoughts spoken directly into Lyra. Daily Insights aggregates are retained indefinitely; detailed session metadata expires after one year. This v0.5.0 work is at the local review checkpoint and has not been tagged or published.
 
 The v0.3 → v0.4 settings and personalization migrations are automatic and idempotent. Existing microphone, ten-minute duration, startup, placement, correction, and cost preferences are preserved. Runtime and model installation remains separate and explicit; the optional Nemotron model is independently versioned and verified.
 
-The current development phase is stabilization through daily use. v0.4.x patch releases are intended for observed defects, interaction friction, small quality-of-life improvements, acceptance gaps, and documentation. The next major version is deliberately deferred until real usage points to its scope.
+The current published baseline is v0.4.4. The next local product pass is v0.5.0, focused on keeping opt-in dictated text separate from Insights metadata and on a small, deliberate Scratchpad workflow. The review build must be accepted before any v0.5.0 release action.
 
 ## Stack
 
@@ -49,6 +49,8 @@ cargo test --manifest-path src-tauri/Cargo.toml
 
 The durable manual evidence sheet is [docs/ACCEPTANCE-V0.4.md](docs/ACCEPTANCE-V0.4.md). Hardware and installed-updater cases stay explicitly separate from automated tests.
 
+The v0.5.0 scope and review gate are in [PLAN.md](PLAN.md); local build and hands-on results belong in [docs/ACCEPTANCE-V0.5.md](docs/ACCEPTANCE-V0.5.md).
+
 The first public release is published from the private source repository to the release-only [`OrionAISystems/Lyra-Releases`](https://github.com/OrionAISystems/Lyra-Releases) repository. Installed clients use its public signed `latest.json` feed and do not need GitHub credentials.
 
 To build the local installer after configuring updater signing, run `npm run tauri:build`. Authenticode signing is optional, so local and early release installers may be unsigned by Windows. The debug output under `src-tauri/target/debug` is left intact for development; release output is written under `src-tauri/target/release`.
@@ -61,4 +63,4 @@ To build the local installer after configuring updater signing, run `npm run tau
 - [docs/RELEASES.md](docs/RELEASES.md) records the tag, signing, cross-repository publication, and update-feed contract.
 - [CHANGELOG.md](CHANGELOG.md) records the canonical per-version changes and is mirrored to the public [Lyra-Releases changelog](https://github.com/OrionAISystems/Lyra-Releases/blob/main/CHANGELOG.md).
 
-The v1 scope is Windows x64, local-first dictation, optional English streaming recognition, optional OpenAI fallback, secure target-aware injection, metadata-only local statistics, and no saved audio/transcript history. Mobile/macOS/Linux, accounts, teams, rewriting, editor extensions, and persistent developer context remain future phases.
+The v1 scope is Windows x64, local-first dictation, optional English streaming recognition, optional OpenAI fallback, secure target-aware injection, independent metadata-only Insights, optional local transcript History, and intentional Scratchpad entries. Lyra never saves audio. Transcript History starts Off, while Scratchpad text is saved only after a deliberate Scratchpad capture. Mobile/macOS/Linux, accounts, teams, rewriting, editor extensions, and persistent developer context remain future phases.

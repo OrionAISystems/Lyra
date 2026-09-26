@@ -109,38 +109,37 @@ pub enum ActivationAction {
 #[derive(Debug, Clone)]
 pub struct ActivationController {
     mode: ActivationMode,
-    active: bool,
+    active_mode: Option<ActivationMode>,
 }
 
 impl ActivationController {
     pub fn new(mode: ActivationMode) -> Self {
         Self {
             mode,
-            active: false,
+            active_mode: None,
         }
     }
 
     pub fn set_mode(&mut self, mode: ActivationMode) {
         self.mode = mode;
-        self.active = false;
+    }
+
+    pub fn reset(&mut self) {
+        self.active_mode = None;
     }
 
     pub fn handle(&mut self, edge: ShortcutEdge) -> ActivationAction {
-        match (self.mode, edge) {
-            (ActivationMode::PushToTalk, ShortcutEdge::Pressed) if !self.active => {
-                self.active = true;
+        match (self.active_mode, edge) {
+            (None, ShortcutEdge::Pressed) => {
+                self.active_mode = Some(self.mode);
                 ActivationAction::Start
             }
-            (ActivationMode::PushToTalk, ShortcutEdge::Released) if self.active => {
-                self.active = false;
+            (Some(ActivationMode::PushToTalk), ShortcutEdge::Released) => {
+                self.active_mode = None;
                 ActivationAction::Stop
             }
-            (ActivationMode::Toggle, ShortcutEdge::Pressed) if !self.active => {
-                self.active = true;
-                ActivationAction::Start
-            }
-            (ActivationMode::Toggle, ShortcutEdge::Pressed) if self.active => {
-                self.active = false;
+            (Some(ActivationMode::Toggle), ShortcutEdge::Pressed) => {
+                self.active_mode = None;
                 ActivationAction::Stop
             }
             _ => ActivationAction::Ignore,
@@ -240,9 +239,17 @@ pub struct SessionSnapshot {
     pub input_level: f32,
     pub request_id: Option<String>,
     pub error: Option<String>,
-    pub transcript: Option<String>,
     pub backend: Option<String>,
     pub fallback_reason: Option<String>,
+    #[serde(default)]
+    pub destination: Option<SessionDestination>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionDestination {
+    Dictation,
+    Scratchpad,
 }
 
 impl Default for SessionSnapshot {
@@ -253,9 +260,9 @@ impl Default for SessionSnapshot {
             input_level: 0.0,
             request_id: None,
             error: None,
-            transcript: None,
             backend: None,
             fallback_reason: None,
+            destination: None,
         }
     }
 }
@@ -588,6 +595,37 @@ mod tests {
         assert_eq!(
             controller.handle(ShortcutEdge::Pressed),
             ActivationAction::Stop
+        );
+    }
+
+    #[test]
+    fn activation_mode_changes_do_not_change_the_active_gesture() {
+        let mut push_to_talk = ActivationController::new(ActivationMode::PushToTalk);
+        assert_eq!(
+            push_to_talk.handle(ShortcutEdge::Pressed),
+            ActivationAction::Start
+        );
+        push_to_talk.set_mode(ActivationMode::Toggle);
+        assert_eq!(
+            push_to_talk.handle(ShortcutEdge::Released),
+            ActivationAction::Stop
+        );
+
+        let mut toggle = ActivationController::new(ActivationMode::Toggle);
+        assert_eq!(
+            toggle.handle(ShortcutEdge::Pressed),
+            ActivationAction::Start
+        );
+        toggle.set_mode(ActivationMode::PushToTalk);
+        assert_eq!(
+            toggle.handle(ShortcutEdge::Released),
+            ActivationAction::Ignore
+        );
+        assert_eq!(toggle.handle(ShortcutEdge::Pressed), ActivationAction::Stop);
+        toggle.reset();
+        assert_eq!(
+            toggle.handle(ShortcutEdge::Pressed),
+            ActivationAction::Start
         );
     }
 

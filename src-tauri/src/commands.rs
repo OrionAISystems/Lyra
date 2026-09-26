@@ -1,6 +1,9 @@
 use std::{
     str::FromStr,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
     thread,
     time::{Duration, Instant},
 };
@@ -18,11 +21,12 @@ use crate::{
     clipboard::{ClipboardService, TextInjector},
     domain::{
         ActivationAction, ActivationController, ActivationSource, BackendError, CaptureEndpoint,
-        DictationState, DictationStateMachine, SessionEvent, SessionSnapshot, ShortcutEdge,
-        TextProcessingOptions, TranscriptionRequest, TranscriptionResult,
+        DictationState, DictationStateMachine, SessionDestination, SessionEvent, SessionSnapshot,
+        ShortcutEdge, TextProcessingOptions, TranscriptionRequest, TranscriptionResult,
     },
     personalization::{Personalization, PersonalizationStore},
     runtime::{RuntimeManager, RuntimeStatus, SetupArtifact, SetupArtifactKind, SetupProgress},
+    saved_items::{display_app_name, SavedItemPage, SavedItemStore, SavedItemSummary},
     settings::{BarPlacement, LocalEngine, Settings, SettingsStore},
     streaming::StreamingResult,
     transcription::{ModelRuntimeStatus, TranscriptionRouter},
@@ -33,8 +37,9 @@ use crate::{
         UsageStatsStore,
     },
     windows::{
-        capture_foreground_target, list_displays as enumerate_displays, place_bar,
-        target_executable, BarPlacementStatus, DisplayInfo, TargetContext,
+        capture_external_foreground_target, capture_foreground_target,
+        list_displays as enumerate_displays, place_bar, target_executable, target_is_alive,
+        BarPlacementStatus, DisplayInfo, TargetContext,
     },
 };
 
@@ -60,6 +65,12 @@ pub struct AppState {
     pub started_at: Option<Instant>,
     pub usage: UsageStatsStore,
     pub personalization: PersonalizationStore,
+    pub saved_items: SavedItemStore,
+    pub capture_destination: Option<SessionDestination>,
+    pub last_external_target: Option<TargetContext>,
+    pub tracking_external_target: Arc<AtomicBool>,
+    pub scratchpad_activation: ActivationController,
+    pub scratchpad_hotkey_status: HotkeyStatus,
     pub placement_status: Mutex<BarPlacementStatus>,
 }
 
@@ -69,6 +80,29 @@ pub struct HotkeyStatus {
     pub hotkey: String,
     pub registered: bool,
     pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedItemDetail {
+    pub summary: SavedItemSummary,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum SavedItemCollection {
+    History,
+    Scratchpad,
+}
+
+impl SavedItemCollection {
+    fn parse(value: &str) -> Result<Self, String> {
+        match value {
+            "history" => Ok(Self::History),
+            "scratchpad" => Ok(Self::Scratchpad),
+            _ => Err("saved item collection is invalid".to_owned()),
+        }
+    }
 }
 
 impl AppState {
@@ -81,6 +115,7 @@ impl AppState {
         app: AppHandle,
         usage: UsageStatsStore,
         personalization: PersonalizationStore,
+        saved_items: SavedItemStore,
     ) -> Self {
         let settings_value = settings.get();
         let model_status_app = app.clone();
@@ -97,6 +132,7 @@ impl AppState {
             session: DictationStateMachine::default(),
             snapshot: SessionSnapshot::default(),
             activation: ActivationController::new(settings_value.activation_mode),
+            scratchpad_activation: ActivationController::new(settings_value.activation_mode),
             active_capture: None,
             session_settings: None,
             target: None,
@@ -107,10 +143,19 @@ impl AppState {
                 registered: false,
                 error: Some("Hotkey registration has not completed".to_owned()),
             },
+            scratchpad_hotkey_status: HotkeyStatus {
+                hotkey: settings_value.scratchpad_hotkey,
+                registered: false,
+                error: Some("Scratchpad shortcut registration has not completed".to_owned()),
+            },
             app,
             started_at: None,
             usage,
             personalization,
+            saved_items,
+            capture_destination: None,
+            last_external_target: None,
+            tracking_external_target: Arc::new(AtomicBool::new(true)),
             placement_status: Mutex::new(BarPlacementStatus {
                 placement: settings_value.bar_placement,
                 monitor_id: settings_value.bar_monitor_id,
@@ -182,6 +227,10 @@ impl AppState {
     }
 
     pub fn shutdown(&mut self) {
+        self.tracking_external_target
+            .store(false, Ordering::Release);
+        self.activation.reset();
+        self.scratchpad_activation.reset();
         if let Some(capture) = self.active_capture.take() {
             capture.cancel();
         }
@@ -192,6 +241,7 @@ impl AppState {
 pub fn initialize(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let settings = app.state::<Arc<Mutex<AppState>>>().inner().clone();
     let hotkey_status = try_register_hotkey(app, settings.clone());
+    let scratchpad_hotkey_status = try_register_scratchpad_hotkey(app, settings.clone());
     if let Err(error) = register_recovery_shortcuts(app, settings) {
         warn!(error = %error, "one or more recovery shortcuts are unavailable");
     }
@@ -240,6 +290,11 @@ pub fn initialize(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     if let Ok(mut state) = runtime.lock() {
         state.hotkey_status = hotkey_status;
         state.emit_hotkey_status();
+        state.scratchpad_hotkey_status = scratchpad_hotkey_status;
+        let _ = state.app.emit(
+            "lyra://scratchpad-hotkey-status",
+            state.scratchpad_hotkey_status.clone(),
+        );
         state.emit_runtime_status(state.runtime.status());
         let settings = state.settings.get();
         state
@@ -253,8 +308,40 @@ pub fn initialize(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         ));
         state.emit_state();
     }
+    track_external_foreground_target(app.clone());
     schedule_update_checks(app);
     Ok(())
+}
+
+fn track_external_foreground_target(app: AppHandle) {
+    let tracker_running = app.try_state::<Arc<Mutex<AppState>>>().and_then(|state| {
+        state
+            .lock()
+            .ok()
+            .map(|state| state.tracking_external_target.clone())
+    });
+    let Some(tracker_running) = tracker_running else {
+        return;
+    };
+    let tracker = thread::Builder::new()
+        .name("lyra-external-target-tracker".to_owned())
+        .spawn(move || {
+            while tracker_running.load(Ordering::Acquire) {
+                if let Some(state) = app.try_state::<Arc<Mutex<AppState>>>() {
+                    if let Some(target) = capture_external_foreground_target(std::process::id()) {
+                        if let Ok(mut state) = state.lock() {
+                            state.last_external_target = Some(target);
+                        }
+                    }
+                } else {
+                    break;
+                }
+                thread::sleep(Duration::from_millis(250));
+            }
+        });
+    if let Err(error) = tracker {
+        warn!(error = %error, "could not start external foreground target tracking");
+    }
 }
 
 fn current_hotkey_label(state: &Arc<Mutex<AppState>>) -> String {
@@ -319,22 +406,116 @@ fn register_hotkey(
                 .unwrap_or(ActivationAction::Ignore);
             match action {
                 ActivationAction::Start => {
-                    if let Err(error) =
-                        start_session(handler_state.clone(), ActivationSource::Hotkey)
-                    {
-                        warn!(error = %error, "global shortcut could not start dictation");
+                    match start_session(
+                        handler_state.clone(),
+                        ActivationSource::Hotkey,
+                        SessionDestination::Dictation,
+                    ) {
+                        Ok(true) => {}
+                        Ok(false) => reset_activation_controller(
+                            &handler_state,
+                            SessionDestination::Dictation,
+                        ),
+                        Err(error) => {
+                            reset_activation_controller(
+                                &handler_state,
+                                SessionDestination::Dictation,
+                            );
+                            warn!(error = %error, "global shortcut could not start dictation");
+                        }
                     }
                 }
                 ActivationAction::Stop => {
-                    if let Err(error) =
-                        stop_session(handler_state.clone(), ActivationSource::Hotkey)
-                    {
+                    if let Err(error) = stop_session(
+                        handler_state.clone(),
+                        ActivationSource::Hotkey,
+                        SessionDestination::Dictation,
+                    ) {
                         warn!(error = %error, "global shortcut could not stop dictation");
                     }
                 }
                 ActivationAction::Ignore => {}
             }
             let _ = app.emit("lyra://shortcut", edge);
+        })?;
+    Ok(())
+}
+
+fn current_scratchpad_hotkey_label(state: &Arc<Mutex<AppState>>) -> String {
+    state
+        .lock()
+        .map(|state| state.settings.get().scratchpad_hotkey)
+        .unwrap_or_else(|_| "Ctrl+Alt+Shift+Space".to_owned())
+}
+
+fn try_register_scratchpad_hotkey(app: &AppHandle, state: Arc<Mutex<AppState>>) -> HotkeyStatus {
+    let label = current_scratchpad_hotkey_label(&state);
+    let status = parse_shortcut(&label).and_then(|shortcut| {
+        register_scratchpad_hotkey(app, state, shortcut).map_err(|error| error.to_string().into())
+    });
+    match status {
+        Ok(()) => HotkeyStatus {
+            hotkey: canonical_shortcut(
+                parse_shortcut(&label).expect("registered Scratchpad shortcut was parsed"),
+            ),
+            registered: true,
+            error: None,
+        },
+        Err(error) => HotkeyStatus {
+            hotkey: label,
+            registered: false,
+            error: Some(error.to_string()),
+        },
+    }
+}
+
+fn register_scratchpad_hotkey(
+    app: &AppHandle,
+    state: Arc<Mutex<AppState>>,
+    shortcut: Shortcut,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let handler_state = state.clone();
+    app.global_shortcut()
+        .on_shortcut(shortcut, move |_, _, event| {
+            let edge = match event.state {
+                ShortcutState::Pressed => ShortcutEdge::Pressed,
+                ShortcutState::Released => ShortcutEdge::Released,
+            };
+            let action = handler_state
+                .lock()
+                .ok()
+                .map(|mut state| state.scratchpad_activation.handle(edge))
+                .unwrap_or(ActivationAction::Ignore);
+            match action {
+                ActivationAction::Start => {
+                    match start_session(
+                        handler_state.clone(),
+                        ActivationSource::Hotkey,
+                        SessionDestination::Scratchpad,
+                    ) {
+                        Ok(true) => {}
+                        Ok(false) => reset_activation_controller(
+                            &handler_state,
+                            SessionDestination::Scratchpad,
+                        ),
+                        Err(error) => {
+                            reset_activation_controller(
+                                &handler_state,
+                                SessionDestination::Scratchpad,
+                            );
+                            warn!(error = %error, "Scratchpad shortcut could not start capture");
+                        }
+                    }
+                }
+                ActivationAction::Stop => {
+                    let _ = stop_session(
+                        handler_state.clone(),
+                        ActivationSource::Hotkey,
+                        SessionDestination::Scratchpad,
+                    );
+                }
+                ActivationAction::Ignore => {}
+            }
         })?;
     Ok(())
 }
@@ -410,6 +591,9 @@ fn register_recovery_shortcuts_for(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut seen = std::collections::HashSet::new();
     seen.insert(canonical_shortcut(parse_shortcut(&settings.hotkey)?));
+    seen.insert(canonical_shortcut(parse_shortcut(
+        &settings.scratchpad_hotkey,
+    )?));
     for (action, label) in recovery_shortcuts(settings) {
         let shortcut = parse_shortcut(&label)?;
         let canonical = canonical_shortcut(shortcut);
@@ -452,9 +636,17 @@ fn register_recovery_shortcuts_for(
                             state.session.state() == DictationState::Listening
                         });
                         if listening {
-                            let _ = stop_session(handler_state.clone(), ActivationSource::Hotkey);
+                            let _ = stop_session(
+                                handler_state.clone(),
+                                ActivationSource::Hotkey,
+                                SessionDestination::Dictation,
+                            );
                         } else {
-                            let _ = start_session(handler_state.clone(), ActivationSource::Hotkey);
+                            let _ = start_session(
+                                handler_state.clone(),
+                                ActivationSource::Hotkey,
+                                SessionDestination::Dictation,
+                            );
                         }
                     }
                     RecoveryAction::OpenSettings => {
@@ -462,6 +654,22 @@ fn register_recovery_shortcuts_for(
                     }
                 }
             })?;
+    }
+    Ok(())
+}
+
+fn validate_shortcut_set(settings: &Settings) -> Result<(), String> {
+    let mut seen = std::collections::HashSet::new();
+    let recovery = recovery_shortcuts(settings);
+    let labels = std::iter::once(settings.hotkey.as_str())
+        .chain(std::iter::once(settings.scratchpad_hotkey.as_str()))
+        .chain(recovery.iter().map(|(_, shortcut)| shortcut.as_str()));
+    for label in labels {
+        let shortcut = parse_shortcut(label).map_err(|error| error.to_string())?;
+        let canonical = canonical_shortcut(shortcut);
+        if !seen.insert(canonical.clone()) {
+            return Err(format!("shortcut {canonical} is assigned more than once"));
+        }
     }
     Ok(())
 }
@@ -584,6 +792,16 @@ pub fn get_hotkey_status(state: State<'_, Arc<Mutex<AppState>>>) -> Result<Hotke
 }
 
 #[tauri::command]
+pub fn get_scratchpad_hotkey_status(
+    state: State<'_, Arc<Mutex<AppState>>>,
+) -> Result<HotkeyStatus, String> {
+    state
+        .lock()
+        .map(|state| state.scratchpad_hotkey_status.clone())
+        .map_err(|_| "state lock poisoned".to_owned())
+}
+
+#[tauri::command]
 pub fn retry_hotkey(state: State<'_, Arc<Mutex<AppState>>>) -> Result<HotkeyStatus, String> {
     let shared_state = state.inner().clone();
     let app = shared_state
@@ -621,6 +839,27 @@ pub fn save_settings(
         .lock()
         .map_err(|_| "state lock poisoned".to_owned())?;
     let previous = state.settings.get();
+    settings.history_last_retention = if settings.transcript_history_retention.is_enabled() {
+        settings.transcript_history_retention
+    } else if previous.transcript_history_retention.is_enabled() {
+        previous.transcript_history_retention
+    } else {
+        previous.history_last_retention
+    };
+    if let Err(message) = validate_shortcut_set(&settings) {
+        state.scratchpad_hotkey_status = HotkeyStatus {
+            hotkey: previous.scratchpad_hotkey.clone(),
+            registered: parse_shortcut(&previous.scratchpad_hotkey)
+                .ok()
+                .is_some_and(|shortcut| state.app.global_shortcut().is_registered(shortcut)),
+            error: Some(message.clone()),
+        };
+        let _ = state.app.emit(
+            "lyra://scratchpad-hotkey-status",
+            state.scratchpad_hotkey_status.clone(),
+        );
+        return Err(message);
+    }
     let previous_hotkey_registered = parse_shortcut(&previous.hotkey)
         .ok()
         .is_some_and(|shortcut| state.app.global_shortcut().is_registered(shortcut));
@@ -651,8 +890,39 @@ pub fn save_settings(
     } else {
         None
     };
+    let candidate_scratchpad_shortcut = if settings.scratchpad_hotkey.trim()
+        != previous.scratchpad_hotkey.trim()
+    {
+        let candidate =
+            parse_shortcut(&settings.scratchpad_hotkey).map_err(|error| error.to_string())?;
+        if let Err(error) = register_scratchpad_hotkey(&state.app, shared_state.clone(), candidate)
+        {
+            if let Some(primary) = candidate_shortcut {
+                let _ = state.app.global_shortcut().unregister(primary);
+            }
+            let message = error.to_string();
+            state.scratchpad_hotkey_status = HotkeyStatus {
+                hotkey: previous.scratchpad_hotkey.clone(),
+                registered: parse_shortcut(&previous.scratchpad_hotkey)
+                    .ok()
+                    .is_some_and(|shortcut| state.app.global_shortcut().is_registered(shortcut)),
+                error: Some(message.clone()),
+            };
+            let _ = state.app.emit(
+                "lyra://scratchpad-hotkey-status",
+                state.scratchpad_hotkey_status.clone(),
+            );
+            return Err(message);
+        }
+        Some(candidate)
+    } else {
+        None
+    };
     if let Some(candidate) = candidate_shortcut {
         settings.hotkey = canonical_shortcut(candidate);
+    }
+    if let Some(candidate) = candidate_scratchpad_shortcut {
+        settings.scratchpad_hotkey = canonical_shortcut(candidate);
     }
     let recovery_changed = settings.recovery_shortcuts != previous.recovery_shortcuts;
     if recovery_changed {
@@ -661,6 +931,12 @@ pub fn save_settings(
             register_recovery_shortcuts_for(&state.app, shared_state.clone(), &settings)
         {
             let _ = register_recovery_shortcuts_for(&state.app, shared_state.clone(), &previous);
+            if let Some(candidate) = candidate_scratchpad_shortcut {
+                let _ = state.app.global_shortcut().unregister(candidate);
+            }
+            if let Some(candidate) = candidate_shortcut {
+                let _ = state.app.global_shortcut().unregister(candidate);
+            }
             return Err(error.to_string());
         }
     }
@@ -673,6 +949,9 @@ pub fn save_settings(
                     let _ = register_hotkey(&state.app, shared_state.clone(), old);
                 }
             }
+            if let Some(candidate) = candidate_scratchpad_shortcut {
+                let _ = state.app.global_shortcut().unregister(candidate);
+            }
             if recovery_changed {
                 unregister_recovery_shortcuts(&state.app, &previous);
                 let _ =
@@ -683,6 +962,7 @@ pub fn save_settings(
     };
     if previous.activation_mode != saved.activation_mode {
         state.activation.set_mode(saved.activation_mode);
+        state.scratchpad_activation.set_mode(saved.activation_mode);
     }
     if let Some(candidate) = candidate_shortcut {
         if let Ok(old) = parse_shortcut(&previous.hotkey) {
@@ -697,6 +977,22 @@ pub fn save_settings(
         };
         state.emit_hotkey_status();
     }
+    if let Some(candidate) = candidate_scratchpad_shortcut {
+        if let Ok(old) = parse_shortcut(&previous.scratchpad_hotkey) {
+            if old != candidate {
+                let _ = state.app.global_shortcut().unregister(old);
+            }
+        }
+        state.scratchpad_hotkey_status = HotkeyStatus {
+            hotkey: saved.scratchpad_hotkey.clone(),
+            registered: true,
+            error: None,
+        };
+        let _ = state.app.emit(
+            "lyra://scratchpad-hotkey-status",
+            state.scratchpad_hotkey_status.clone(),
+        );
+    }
     if previous.max_duration_seconds != saved.max_duration_seconds {
         if let Some(control) = &state.active_capture {
             control.update_max_duration(saved.max_duration_seconds);
@@ -706,6 +1002,16 @@ pub fn save_settings(
     state.emit_model_status(state.router.model_status());
     state.emit_settings(&saved);
     state.emit_usage_from_settings(&saved);
+    if previous.transcript_history_retention != saved.transcript_history_retention
+        || previous.history_last_retention != saved.history_last_retention
+    {
+        if let Err(error) = state.saved_items.prune_history(
+            saved.transcript_history_retention,
+            saved.history_last_retention,
+        ) {
+            warn!(error = %error, "could not apply transcript history retention update");
+        }
+    }
     if saved.launch_at_login {
         state
             .app
@@ -1106,7 +1412,9 @@ pub fn start_dictation(
     start_session(
         state.inner().clone(),
         source.unwrap_or(ActivationSource::Bar),
+        SessionDestination::Dictation,
     )
+    .map(|_| ())
 }
 
 #[tauri::command]
@@ -1117,6 +1425,26 @@ pub fn stop_dictation(
     stop_session(
         state.inner().clone(),
         source.unwrap_or(ActivationSource::Bar),
+        SessionDestination::Dictation,
+    )
+}
+
+#[tauri::command]
+pub fn start_scratchpad(state: State<'_, Arc<Mutex<AppState>>>) -> Result<(), String> {
+    start_session(
+        state.inner().clone(),
+        ActivationSource::Bar,
+        SessionDestination::Scratchpad,
+    )
+    .map(|_| ())
+}
+
+#[tauri::command]
+pub fn stop_scratchpad(state: State<'_, Arc<Mutex<AppState>>>) -> Result<(), String> {
+    stop_session(
+        state.inner().clone(),
+        ActivationSource::Bar,
+        SessionDestination::Scratchpad,
     )
 }
 
@@ -1138,6 +1466,256 @@ pub fn copy_last_transcript(
         .copy_text(&text)
         .map_err(|error| error.to_string())?;
     Ok(Some(text))
+}
+
+#[tauri::command]
+pub fn list_history(
+    offset: usize,
+    limit: usize,
+    state: State<'_, Arc<Mutex<AppState>>>,
+) -> Result<SavedItemPage, String> {
+    let (store, settings) = {
+        let state = state.lock().map_err(|_| "state lock poisoned".to_owned())?;
+        (state.saved_items.clone(), state.settings.get())
+    };
+    store
+        .list_history_page(
+            settings.transcript_history_retention,
+            settings.history_last_retention,
+            offset,
+            limit,
+        )
+        .map_err(|_| "Transcript History could not be read from local storage".to_owned())
+}
+
+#[tauri::command]
+pub fn get_history_item(
+    id: String,
+    state: State<'_, Arc<Mutex<AppState>>>,
+) -> Result<SavedItemDetail, String> {
+    let (store, settings) = {
+        let state = state.lock().map_err(|_| "state lock poisoned".to_owned())?;
+        (state.saved_items.clone(), state.settings.get())
+    };
+    store
+        .prune_history(
+            settings.transcript_history_retention,
+            settings.history_last_retention,
+        )
+        .map_err(|_| "Transcript History retention could not be applied".to_owned())?;
+    let (summary, text) = store
+        .history_text(&id)
+        .map_err(|_| "This History item is unavailable or could not be decrypted".to_owned())?;
+    Ok(SavedItemDetail { summary, text })
+}
+
+#[tauri::command]
+pub fn delete_history_item(
+    id: String,
+    state: State<'_, Arc<Mutex<AppState>>>,
+) -> Result<(), String> {
+    let (store, app) = {
+        let state = state.lock().map_err(|_| "state lock poisoned".to_owned())?;
+        (state.saved_items.clone(), state.app.clone())
+    };
+    store
+        .delete_history(&id)
+        .map_err(|_| "This History item could not be deleted".to_owned())?;
+    let _ = app.emit("lyra://saved-items-updated", true);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn clear_history(state: State<'_, Arc<Mutex<AppState>>>) -> Result<(), String> {
+    let (store, app) = {
+        let state = state.lock().map_err(|_| "state lock poisoned".to_owned())?;
+        (state.saved_items.clone(), state.app.clone())
+    };
+    store
+        .clear_history()
+        .map_err(|_| "Transcript History could not be cleared".to_owned())?;
+    let _ = app.emit("lyra://saved-items-updated", true);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn promote_history_item(
+    id: String,
+    state: State<'_, Arc<Mutex<AppState>>>,
+) -> Result<SavedItemSummary, String> {
+    let (store, app, settings) = {
+        let state = state.lock().map_err(|_| "state lock poisoned".to_owned())?;
+        (
+            state.saved_items.clone(),
+            state.app.clone(),
+            state.settings.get(),
+        )
+    };
+    store
+        .prune_history(
+            settings.transcript_history_retention,
+            settings.history_last_retention,
+        )
+        .map_err(|_| "Transcript History retention could not be applied".to_owned())?;
+    let item = store
+        .promote_history(&id)
+        .map_err(|_| "This History item could not be sent to Scratchpad".to_owned())?;
+    let _ = app.emit("lyra://saved-items-updated", true);
+    Ok(item)
+}
+
+#[tauri::command]
+pub fn list_scratchpad(
+    offset: usize,
+    limit: usize,
+    state: State<'_, Arc<Mutex<AppState>>>,
+) -> Result<SavedItemPage, String> {
+    let store = state
+        .lock()
+        .map_err(|_| "state lock poisoned".to_owned())?
+        .saved_items
+        .clone();
+    store
+        .list_scratchpad_page(offset, limit)
+        .map_err(|_| "Scratchpad could not be read from local storage".to_owned())
+}
+
+#[tauri::command]
+pub fn get_scratchpad_item(
+    id: String,
+    state: State<'_, Arc<Mutex<AppState>>>,
+) -> Result<SavedItemDetail, String> {
+    let store = state
+        .lock()
+        .map_err(|_| "state lock poisoned".to_owned())?
+        .saved_items
+        .clone();
+    let (summary, text) = store
+        .scratchpad_text(&id)
+        .map_err(|_| "This Scratchpad item is unavailable or could not be decrypted".to_owned())?;
+    Ok(SavedItemDetail { summary, text })
+}
+
+#[tauri::command]
+pub fn delete_scratchpad_item(
+    id: String,
+    state: State<'_, Arc<Mutex<AppState>>>,
+) -> Result<(), String> {
+    let (store, app) = {
+        let state = state.lock().map_err(|_| "state lock poisoned".to_owned())?;
+        (state.saved_items.clone(), state.app.clone())
+    };
+    store
+        .delete_scratchpad(&id)
+        .map_err(|_| "This Scratchpad item could not be deleted".to_owned())?;
+    let _ = app.emit("lyra://saved-items-updated", true);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_scratchpad_pinned(
+    id: String,
+    pinned: bool,
+    state: State<'_, Arc<Mutex<AppState>>>,
+) -> Result<SavedItemSummary, String> {
+    let (store, app) = {
+        let state = state.lock().map_err(|_| "state lock poisoned".to_owned())?;
+        (state.saved_items.clone(), state.app.clone())
+    };
+    let item = store
+        .set_pinned(&id, pinned)
+        .map_err(|_| "This Scratchpad item could not be updated".to_owned())?;
+    let _ = app.emit("lyra://saved-items-updated", true);
+    Ok(item)
+}
+
+#[tauri::command]
+pub fn copy_saved_item(
+    collection: String,
+    id: String,
+    state: State<'_, Arc<Mutex<AppState>>>,
+) -> Result<(), String> {
+    let collection = SavedItemCollection::parse(&collection)?;
+    let (store, injector, settings) = {
+        let state = state.lock().map_err(|_| "state lock poisoned".to_owned())?;
+        (
+            state.saved_items.clone(),
+            state.injector.clone(),
+            state.settings.get(),
+        )
+    };
+    if matches!(collection, SavedItemCollection::History) {
+        store
+            .prune_history(
+                settings.transcript_history_retention,
+                settings.history_last_retention,
+            )
+            .map_err(|_| "Transcript History retention could not be applied".to_owned())?;
+    }
+    let (_, text) = match collection {
+        SavedItemCollection::History => store.history_text(&id),
+        SavedItemCollection::Scratchpad => store.scratchpad_text(&id),
+    }
+    .map_err(|_| "This saved item is unavailable or could not be decrypted".to_owned())?;
+    injector
+        .copy_text(&text)
+        .map_err(|_| "The saved text could not be copied to the clipboard".to_owned())
+}
+
+#[tauri::command]
+pub fn paste_saved_item(
+    collection: String,
+    id: String,
+    state: State<'_, Arc<Mutex<AppState>>>,
+) -> Result<(), String> {
+    let collection = SavedItemCollection::parse(&collection)?;
+    let (store, injector, target, personalization, settings) = {
+        let state = state.lock().map_err(|_| "state lock poisoned".to_owned())?;
+        (
+            state.saved_items.clone(),
+            state.injector.clone(),
+            state.last_external_target,
+            state.personalization.get(),
+            state.settings.get(),
+        )
+    };
+    if matches!(collection, SavedItemCollection::History) {
+        store
+            .prune_history(
+                settings.transcript_history_retention,
+                settings.history_last_retention,
+            )
+            .map_err(|_| "Transcript History retention could not be applied".to_owned())?;
+    }
+    let (_, text) = match collection {
+        SavedItemCollection::History => store.history_text(&id),
+        SavedItemCollection::Scratchpad => store.scratchpad_text(&id),
+    }
+    .map_err(|_| "This saved item is unavailable or could not be decrypted".to_owned())?;
+    let Some(target) = target.filter(|target| target_is_alive(*target)) else {
+        injector.copy_text(&text).map_err(|_| {
+            "No safe target was available and the text could not be copied".to_owned()
+        })?;
+        return Err("Text copied. No recent external app was available for safe paste.".to_owned());
+    };
+    let executable = target_executable(target);
+    let profile = personalization.profile_for(executable.as_deref());
+    match injector.paste_with_profile(target, &text, &profile) {
+        Ok(outcome) if outcome.pasted => Ok(()),
+        Ok(_) => {
+            injector.copy_text(&text).map_err(|_| {
+                "This app profile uses clipboard-only mode, but the text could not be copied"
+                    .to_owned()
+            })?;
+            Err("Text copied. This app profile is set to clipboard only.".to_owned())
+        }
+        Err(_) => {
+            injector
+                .copy_text(&text)
+                .map_err(|_| "Paste failed and the text could not be copied".to_owned())?;
+            Err("Paste failed. Text copied so you can paste it manually.".to_owned())
+        }
+    }
 }
 
 #[tauri::command]
@@ -1226,9 +1804,18 @@ fn schedule_update_checks(app: &AppHandle) {
     });
 }
 
-fn start_session(state: Arc<Mutex<AppState>>, _source: ActivationSource) -> Result<(), String> {
+fn start_session(
+    state: Arc<Mutex<AppState>>,
+    _source: ActivationSource,
+    destination: SessionDestination,
+) -> Result<bool, String> {
     let state_for_error_reset = state.clone();
-    let target = capture_foreground_target().map_err(|error| error.to_string())?;
+    let target = match destination {
+        SessionDestination::Dictation => {
+            Some(capture_foreground_target().map_err(|error| error.to_string())?)
+        }
+        SessionDestination::Scratchpad => None,
+    };
     let (active_capture, app, request_id) = {
         let mut state = state.lock().map_err(|_| "state lock poisoned".to_owned())?;
         if state.updater.installation_blocks_sessions() {
@@ -1240,7 +1827,7 @@ fn start_session(state: Arc<Mutex<AppState>>, _source: ActivationSource) -> Resu
             state.session.state(),
             DictationState::Idle | DictationState::Success | DictationState::Error
         ) {
-            return Ok(());
+            return Ok(false);
         }
         if state.session.state() != DictationState::Idle {
             state
@@ -1259,9 +1846,9 @@ fn start_session(state: Arc<Mutex<AppState>>, _source: ActivationSource) -> Resu
             input_level: 0.0,
             request_id: Some(request_id.clone()),
             error: None,
-            transcript: None,
             backend: None,
             fallback_reason: None,
+            destination: Some(destination),
         };
         state.started_at = Some(Instant::now());
         let app = state.app.clone();
@@ -1285,10 +1872,13 @@ fn start_session(state: Arc<Mutex<AppState>>, _source: ActivationSource) -> Resu
             Ok(capture) => capture,
             Err(error) => {
                 state.session.transition(SessionEvent::Failure).ok();
+                state.activation.reset();
+                state.scratchpad_activation.reset();
                 state.snapshot.state = DictationState::Error;
                 state.snapshot.error = Some(error.to_string());
                 state.started_at = None;
                 state.session_settings = None;
+                state.capture_destination = None;
                 state.usage.record_failure();
                 state.emit_usage_from_current_settings();
                 state.emit_state();
@@ -1300,7 +1890,8 @@ fn start_session(state: Arc<Mutex<AppState>>, _source: ActivationSource) -> Resu
         };
         state.session_settings = Some(settings.clone());
         state.active_capture = Some(capture.control());
-        state.target = Some(target);
+        state.target = target;
+        state.capture_destination = Some(destination);
         state.usage.record_started();
         state.emit_usage_from_current_settings();
         place_bar_for_session(&state, target);
@@ -1333,10 +1924,19 @@ fn start_session(state: Arc<Mutex<AppState>>, _source: ActivationSource) -> Resu
     }
     info!("dictation session started");
     let _ = app.emit("lyra://session-started", true);
-    Ok(())
+    Ok(true)
 }
 
-fn place_bar_for_session(state: &AppState, target: TargetContext) {
+fn reset_activation_controller(state: &Arc<Mutex<AppState>>, destination: SessionDestination) {
+    if let Ok(mut state) = state.lock() {
+        match destination {
+            SessionDestination::Dictation => state.activation.reset(),
+            SessionDestination::Scratchpad => state.scratchpad_activation.reset(),
+        }
+    }
+}
+
+fn place_bar_for_session(state: &AppState, target: Option<TargetContext>) {
     let Some(bar) = state.app.get_webview_window("bar") else {
         return;
     };
@@ -1346,17 +1946,24 @@ fn place_bar_for_session(state: &AppState, target: TargetContext) {
         settings.bar_placement,
         settings.bar_monitor_id.as_deref(),
         settings.bar_monitor_index,
-        Some(target),
+        target,
     ) {
         Ok(status) => state.emit_placement_status(status),
         Err(error) => warn!(error = %error, "could not place dictation bar for session"),
     }
 }
 
-fn stop_session(state: Arc<Mutex<AppState>>, _source: ActivationSource) -> Result<(), String> {
+fn stop_session(
+    state: Arc<Mutex<AppState>>,
+    _source: ActivationSource,
+    destination: SessionDestination,
+) -> Result<(), String> {
     let control = {
         let mut state = state.lock().map_err(|_| "state lock poisoned".to_owned())?;
         if state.session.state() != DictationState::Listening {
+            return Ok(());
+        }
+        if state.capture_destination != Some(destination) {
             return Ok(());
         }
         state
@@ -1389,6 +1996,9 @@ fn cancel_session(state: Arc<Mutex<AppState>>) -> Result<(), String> {
         state.started_at = None;
         state.target = None;
         state.session_settings = None;
+        state.capture_destination = None;
+        state.activation.reset();
+        state.scratchpad_activation.reset();
         let control = state.active_capture.take();
         state.emit_state();
         control
@@ -1423,12 +2033,16 @@ fn complete_capture(state: Arc<Mutex<AppState>>, request_id: String, captured: C
             .session_settings
             .take()
             .unwrap_or_else(|| state.settings.get());
+        let destination = state
+            .capture_destination
+            .take()
+            .unwrap_or(SessionDestination::Dictation);
         let target = state.target.take();
         let router = state.router.clone();
         let injector = state.injector.clone();
         let app = state.app.clone();
         state.emit_state();
-        (settings, router, injector, target, app)
+        (settings, router, injector, target, app, destination)
     };
     if captured.endpoint != CaptureEndpoint::Manual {
         info!(
@@ -1446,7 +2060,8 @@ fn complete_capture(state: Arc<Mutex<AppState>>, request_id: String, captured: C
         "capture audio diagnostics"
     );
     process_capture(
-        state, request_id, context.0, context.1, context.2, context.3, context.4, captured,
+        state, request_id, context.0, context.1, context.2, context.3, context.4, context.5,
+        captured,
     );
 }
 
@@ -1458,6 +2073,7 @@ fn process_capture(
     injector: Arc<dyn TextInjector>,
     target: Option<TargetContext>,
     app: AppHandle,
+    destination: SessionDestination,
     captured: CapturedAudio,
 ) {
     let captured_duration_ms = captured.duration_ms;
@@ -1559,7 +2175,7 @@ fn process_capture(
     let mut injection_error = None;
     let mut paste_attempted = false;
     let mut paste_succeeded = false;
-    if settings.auto_paste {
+    if destination == SessionDestination::Dictation && settings.auto_paste {
         paste_attempted = true;
         if let Some(target) = target {
             match injector.paste_with_profile(target, &result.text, &profile) {
@@ -1573,8 +2189,10 @@ fn process_capture(
                     .to_owned(),
             ));
         }
-    } else if let Err(error) = injector.copy_text(&result.text) {
-        injection_error = Some(error);
+    } else if destination == SessionDestination::Dictation {
+        if let Err(error) = injector.copy_text(&result.text) {
+            injection_error = Some(error);
+        }
     }
     if paste_attempted {
         if let Ok(state_guard) = state.lock() {
@@ -1582,14 +2200,84 @@ fn process_capture(
             state_guard.emit_usage_from_settings(&settings);
         }
     }
+    let timestamp = timestamp_ms();
+    let metadata = SavedItemSummary {
+        id: String::new(),
+        timestamp_ms: timestamp,
+        duration_ms: captured_duration_ms,
+        word_count: result.text.split_whitespace().count() as u64,
+        target_app: display_app_name(target_executable_name.as_deref()),
+        target_executable: target_executable_name.clone(),
+        engine: result.backend.clone(),
+        backend: result.backend.clone(),
+        model: result.model.clone(),
+        latency_ms: result.latency_ms,
+        paste_outcome: match destination {
+            SessionDestination::Scratchpad => "not_applicable".to_owned(),
+            SessionDestination::Dictation if paste_attempted && paste_succeeded => {
+                "success".to_owned()
+            }
+            SessionDestination::Dictation if paste_attempted => "failed_or_clipboard".to_owned(),
+            SessionDestination::Dictation if injection_error.is_some() => "copy_failed".to_owned(),
+            SessionDestination::Dictation => "copied".to_owned(),
+        },
+        pinned: false,
+    };
+    let (saved_item, save_warning, scratchpad_save_error) = if let Ok(state_guard) = state.lock() {
+        match destination {
+            SessionDestination::Dictation => {
+                let current_settings = state_guard.settings.get();
+                match state_guard.saved_items.save_history(
+                    metadata,
+                    &result.text,
+                    current_settings.transcript_history_retention,
+                ) {
+                    Ok(item) => (item, None, None),
+                    Err(_) => (
+                        None,
+                        Some("Lyra couldn't save this transcript to local History.".to_owned()),
+                        None,
+                    ),
+                }
+            }
+            SessionDestination::Scratchpad => {
+                match state_guard
+                    .saved_items
+                    .create_scratchpad(metadata, &result.text)
+                {
+                    Ok(item) => (Some(item), None, None),
+                    Err(_) => (
+                        None,
+                        None,
+                        Some("Lyra couldn't save this thought to Scratchpad.".to_owned()),
+                    ),
+                }
+            }
+        }
+    } else {
+        (
+            None,
+            Some("Lyra couldn't access local saved items.".to_owned()),
+            (destination == SessionDestination::Scratchpad)
+                .then(|| "Lyra couldn't access local Scratchpad storage.".to_owned()),
+        )
+    };
+    if save_warning.is_some() || scratchpad_save_error.is_some() {
+        warn!(destination = ?destination, "recognized text could not be saved locally");
+    }
     if let Ok(state_guard) = state.lock() {
         state_guard.usage.record_session(SessionRecord {
-            timestamp_ms: timestamp_ms(),
+            timestamp_ms: timestamp,
             app_version: env!("CARGO_PKG_VERSION").to_owned(),
             duration_ms: captured_duration_ms,
             word_count: result.text.split_whitespace().count() as u64,
             target_executable: target_executable_name,
-            target_category: Some(format!("{:?}", profile.category).to_ascii_lowercase()),
+            target_category: Some(match destination {
+                SessionDestination::Dictation => {
+                    format!("{:?}", profile.category).to_ascii_lowercase()
+                }
+                SessionDestination::Scratchpad => "scratchpad".to_owned(),
+            }),
             endpoint,
             engine: format!("{:?}", settings.local_engine).to_ascii_lowercase(),
             runtime: state_guard
@@ -1605,7 +2293,9 @@ fn process_capture(
             latency_ms: Some(result.latency_ms),
             real_time_factor: (captured_duration_ms > 0)
                 .then_some(result.transcription_duration_ms as f64 / captured_duration_ms as f64),
-            paste_outcome: if paste_attempted {
+            paste_outcome: if destination == SessionDestination::Scratchpad {
+                "not_applicable"
+            } else if paste_attempted {
                 if paste_succeeded {
                     "success"
                 } else {
@@ -1627,7 +2317,8 @@ fn process_capture(
         }
         state.last_transcript = Some(result.text.clone());
         state.last_result = Some(result.clone());
-        let _ = app.emit("lyra://transcription-result", result.clone());
+        state.activation.reset();
+        state.scratchpad_activation.reset();
         if let Some(error) = injection_error {
             state.usage.record_failure();
             state.emit_usage_from_settings(&settings);
@@ -1636,14 +2327,18 @@ fn process_capture(
             state.snapshot.error = Some(format!(
                 "{error}; The transcript remains available in Lyra for copying"
             ));
-            state.snapshot.transcript = Some(result.text);
+            state.snapshot.backend = Some(result.backend);
+            state.snapshot.fallback_reason = result.fallback_reason;
+        } else if let Some(error) = scratchpad_save_error.clone() {
+            state.session.transition(SessionEvent::Failure).ok();
+            state.snapshot.state = DictationState::Error;
+            state.snapshot.error = Some(error);
             state.snapshot.backend = Some(result.backend);
             state.snapshot.fallback_reason = result.fallback_reason;
         } else {
             state.session.transition(SessionEvent::Success).ok();
             state.snapshot.state = DictationState::Success;
-            state.snapshot.error = None;
-            state.snapshot.transcript = Some(result.text);
+            state.snapshot.error = save_warning.clone();
             state.snapshot.backend = Some(result.backend);
             state.snapshot.fallback_reason = result.fallback_reason;
         }
@@ -1652,6 +2347,7 @@ fn process_capture(
             .map(|started| started.elapsed().as_millis() as u64)
             .unwrap_or(result.audio_duration_ms);
         state.started_at = None;
+        state.capture_destination = None;
         state.emit_state();
         true
     } else {
@@ -1659,6 +2355,22 @@ fn process_capture(
     };
     if state_updated && has_injection_error {
         schedule_error_reset(&state, &request_id);
+    }
+    if state_updated && scratchpad_save_error.is_some() {
+        schedule_error_reset(&state, &request_id);
+    }
+    if let Some(message) = save_warning {
+        let _ = app.emit("lyra://saved-item-notice", message);
+    }
+    if let Some(message) = scratchpad_save_error {
+        let _ = app.emit("lyra://saved-item-notice", message);
+    }
+    if let Some(item) = saved_item {
+        let _ = app.emit("lyra://saved-items-updated", true);
+        if destination == SessionDestination::Scratchpad {
+            let _ = show_settings_window(&app);
+            let _ = app.emit("lyra://open-scratchpad", item.id);
+        }
     }
 }
 
@@ -1675,6 +2387,9 @@ fn finish_error(state: &Arc<Mutex<AppState>>, request_id: &str, error: BackendEr
         state.active_capture = None;
         state.target = None;
         state.session_settings = None;
+        state.capture_destination = None;
+        state.activation.reset();
+        state.scratchpad_activation.reset();
         state
             .usage
             .record_categorized_failure(classify_error(&error));
@@ -1734,8 +2449,9 @@ fn schedule_error_reset(state: &Arc<Mutex<AppState>>, request_id: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{benchmark_is_blocked, canonical_shortcut, parse_shortcut};
+    use super::{benchmark_is_blocked, canonical_shortcut, parse_shortcut, validate_shortcut_set};
     use crate::domain::DictationState;
+    use crate::settings::Settings;
 
     #[test]
     fn shortcuts_require_a_modifier_and_canonicalize_key_order() {
@@ -1753,5 +2469,21 @@ mod tests {
         assert!(!benchmark_is_blocked(DictationState::Idle));
         assert!(!benchmark_is_blocked(DictationState::Success));
         assert!(!benchmark_is_blocked(DictationState::Error));
+    }
+
+    #[test]
+    fn shortcut_validation_detects_primary_and_recovery_conflicts() {
+        let mut settings = Settings::default();
+        assert!(validate_shortcut_set(&settings).is_ok());
+
+        settings.scratchpad_hotkey = settings.hotkey.clone();
+        assert!(validate_shortcut_set(&settings).is_err());
+
+        settings.scratchpad_hotkey = settings
+            .recovery_shortcuts
+            .open_settings
+            .clone()
+            .expect("default settings shortcut");
+        assert!(validate_shortcut_set(&settings).is_err());
     }
 }

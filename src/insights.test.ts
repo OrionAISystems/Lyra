@@ -10,4 +10,9 @@ describe("formatUsageDay", () => {
   it("preserves short fixture labels", () => {
     expect(formatUsageDay("Mon")).toBe("Mon");
   });
+
+  it("formats monthly and yearly aggregate labels", () => {
+    expect(formatUsageDay("2026-09")).toMatch(/Sep.*26|26.*Sep/i);
+    expect(formatUsageDay("2026")).toBe("2026");
+  });
 });

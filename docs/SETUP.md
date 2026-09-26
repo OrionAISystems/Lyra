@@ -12,7 +12,7 @@ Development requires Node.js, Rust with the MSVC Windows target, and the Tauri p
 
 ## Settings and dictation policy
 
-Settings are persisted as schema v3 under the app configuration directory. Existing settings migrate on first load; legacy Corrections move into the separate local personalization store, which also holds Words, Snippets, app profiles, and self-correction preferences. These files remain local to the user.
+Settings are persisted as schema v4 under the app configuration directory. Existing settings migrate on first load; legacy Corrections move into the separate local personalization store, which also holds Words, Snippets, app profiles, and self-correction preferences. Transcript History migrates as Off, and existing shortcuts and other preferences are preserved.
 
 Push-to-talk on the bar starts on primary-pointer down and stops on pointer up, cancellation, or lost pointer capture. Toggle mode starts and stops on clicks. Silence endpointing is off by default, is available at 1.0, 1.5, 2.0, or 3.0 seconds, and applies only after a short voiced interval has crossed Lyra's fixed conservative RMS threshold. Maximum duration changes are applied to the persistent bar and active capture without restarting Lyra.
 
@@ -57,7 +57,11 @@ The optional OpenAI credential is entered through the settings flow and stored i
 
 ## Usage statistics
 
-The Usage sidebar stores 90 days of daily aggregates and up to 200 recent metadata-only sessions in `%LOCALAPPDATA%\Lyra\usage.json`. Records include counts and timing, engine/runtime/fallback information, paste outcome, failure category, and a target executable basename/category; they do not include transcript text, raw audio, clipboard content, window titles, full paths, or credentials. Cost estimates are hidden until enabled and use the editable local rate, defaulting to `$0.003/minute`. Reset requires confirmation and restores empty counters.
+The Usage sidebar stores daily aggregate Insights indefinitely and metadata-only session records from the latest year in `%LOCALAPPDATA%\Lyra\usage.json`. Older session records expire by age; lifetime totals and daily aggregates remain. These records include counts and timing, engine/runtime/fallback information, paste outcome, failure category, and a target executable basename/category. They do not include transcript text, raw audio, clipboard content, window titles, full paths, or credentials. Cost estimates are hidden until enabled and use the editable local rate, defaulting to `$0.003/minute`. Reset requires confirmation and restores empty counters.
+
+Transcript History and Scratchpad text use separate stores under `%LOCALAPPDATA%\Lyra\saved-items\history` and `%LOCALAPPDATA%\Lyra\saved-items\scratchpad`. The transcript text is protected with Windows DPAPI for the current Windows user; saved-item metadata remains local alongside the encrypted text. History is Off by default and offers 7 days, 30 days, 90 days, 1 year, or Forever. Turning History Off stops new History saves; existing entries continue under the last selected retention until they expire. Clear transcript history affects neither Scratchpad nor Insights. Scratchpad entries are created only when deliberately recorded or promoted from History, and remain until deleted. Neither store contains audio. Encrypted text cannot be opened by another Windows account or moved to another machine without a future export feature.
+
+Use Scratchpad when you want to speak a thought without sending it to the current app. Its shortcut and the visible Record control use the same activation mode and speech pipeline as dictation, but a Scratchpad capture does not automatically paste or change the clipboard. Copy and Paste into current app are explicit actions on a saved entry.
 
 ## Updates
 

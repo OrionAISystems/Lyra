@@ -9,12 +9,14 @@ import type {
   ModelRuntimeStatus,
   Personalization,
   RuntimeStatus,
+  SavedItemDetail,
+  SavedItemPage,
+  SavedItemSummary,
   SessionSnapshot,
   Settings,
   SetupArtifact,
   SetupProgress,
   TranscriptionPartial,
-  TranscriptionResult,
   UpdateStatus,
   UsageStats,
 } from "./types";
@@ -44,6 +46,8 @@ export const getBarPlacementStatus = () =>
 export const getUsageStats = () => command<UsageStats>("get_usage_stats");
 export const resetUsageStats = () => command<UsageStats>("reset_usage_stats");
 export const getHotkeyStatus = () => command<HotkeyStatus>("get_hotkey_status");
+export const getScratchpadHotkeyStatus = () =>
+  command<HotkeyStatus>("get_scratchpad_hotkey_status");
 export const retryHotkey = () => command<HotkeyStatus>("retry_hotkey");
 export const getSetupArtifacts = async () =>
   (await command<SetupArtifact[]>("get_setup_artifacts")) ?? [];
@@ -72,6 +76,29 @@ export const hideBar = () => command<void>("hide_bar");
 export const quitLyra = () => command<void>("quit_lyra");
 export const copyLastTranscript = () =>
   command<string | null>("copy_last_transcript");
+export const listHistory = (offset = 0, limit = 50) =>
+  command<SavedItemPage>("list_history", { offset, limit });
+export const getHistoryItem = (id: string) =>
+  command<SavedItemDetail>("get_history_item", { id });
+export const deleteHistoryItem = (id: string) =>
+  command<void>("delete_history_item", { id });
+export const clearHistory = () => command<void>("clear_history");
+export const promoteHistoryItem = (id: string) =>
+  command<SavedItemSummary>("promote_history_item", { id });
+export const listScratchpad = (offset = 0, limit = 50) =>
+  command<SavedItemPage>("list_scratchpad", { offset, limit });
+export const getScratchpadItem = (id: string) =>
+  command<SavedItemDetail>("get_scratchpad_item", { id });
+export const deleteScratchpadItem = (id: string) =>
+  command<void>("delete_scratchpad_item", { id });
+export const setScratchpadPinned = (id: string, pinned: boolean) =>
+  command<SavedItemSummary>("set_scratchpad_pinned", { id, pinned });
+export const copySavedItem = (collection: "history" | "scratchpad", id: string) =>
+  command<void>("copy_saved_item", { collection, id });
+export const pasteSavedItem = (collection: "history" | "scratchpad", id: string) =>
+  command<void>("paste_saved_item", { collection, id });
+export const startScratchpad = () => command<void>("start_scratchpad");
+export const stopScratchpad = () => command<void>("stop_scratchpad");
 export const hasOpenAiCredential = async () =>
   (await command<boolean>("has_openai_credential")) ?? false;
 export const saveOpenAiCredential = (secret: string) =>
@@ -103,10 +130,13 @@ export async function listenToLyraEvents(h: {
   onPlacementStatus: (v: BarPlacementStatus) => void;
   onUsage: (v: UsageStats) => void;
   onHotkeyStatus: (v: HotkeyStatus) => void;
+  onScratchpadHotkeyStatus: (v: HotkeyStatus) => void;
   onSetupProgress: (v: SetupProgress) => void;
   onUpdateStatus: (v: UpdateStatus) => void;
-  onResult: (v: TranscriptionResult) => void;
   onPartial: (v: TranscriptionPartial) => void;
+  onSavedItemsUpdated: () => void;
+  onScratchpadOpened: (id: string) => void;
+  onSavedItemNotice: (notice: string) => void;
 }): Promise<UnlistenFn[]> {
   if (!isTauri) return [];
   return Promise.all([
@@ -129,17 +159,24 @@ export async function listenToLyraEvents(h: {
     listen("lyra://hotkey-status", (e) =>
       h.onHotkeyStatus(e.payload as HotkeyStatus),
     ),
+    listen("lyra://scratchpad-hotkey-status", (e) =>
+      h.onScratchpadHotkeyStatus(e.payload as HotkeyStatus),
+    ),
     listen("lyra://setup-progress", (e) =>
       h.onSetupProgress(e.payload as SetupProgress),
     ),
     listen("lyra://update-status", (e) =>
       h.onUpdateStatus(e.payload as UpdateStatus),
     ),
-    listen("lyra://transcription-result", (e) =>
-      h.onResult(e.payload as TranscriptionResult),
-    ),
     listen("lyra://transcription-partial", (e) =>
       h.onPartial(e.payload as TranscriptionPartial),
+    ),
+    listen("lyra://saved-items-updated", () => h.onSavedItemsUpdated()),
+    listen("lyra://open-scratchpad", (e) =>
+      h.onScratchpadOpened(e.payload as string),
+    ),
+    listen("lyra://saved-item-notice", (e) =>
+      h.onSavedItemNotice(e.payload as string),
     ),
   ]);
 }

@@ -21,12 +21,22 @@ export type ModelWarmPolicy =
   | "unload_after_30_minutes"
   | "never_keep_warm";
 export type LocalEngine = "parakeet_tdt" | "nemotron_streaming_en";
+export type TranscriptHistoryRetention =
+  | "off"
+  | "seven_days"
+  | "thirty_days"
+  | "ninety_days"
+  | "one_year"
+  | "forever";
+export type SessionDestination = "dictation" | "scratchpad";
 export type Screen =
   | "home"
   | "dictation"
   | "personalization"
   | "audio"
   | "insights"
+  | "history"
+  | "scratchpad"
   | "appearance"
   | "diagnostics";
 export interface CorrectionEntry {
@@ -97,6 +107,9 @@ export interface Settings {
   localEngine: LocalEngine;
   adaptiveAudioEnabled: boolean;
   onboardingComplete: boolean;
+  transcriptHistoryRetention: TranscriptHistoryRetention;
+  historyLastRetention: TranscriptHistoryRetention;
+  scratchpadHotkey: string;
 }
 export interface AudioDeviceInfo {
   id: string;
@@ -219,9 +232,9 @@ export interface SessionSnapshot {
   inputLevel: number;
   requestId: string | null;
   error: string | null;
-  transcript: string | null;
   backend: string | null;
   fallbackReason: string | null;
+  destination: SessionDestination | null;
 }
 export interface TranscriptionPartial {
   requestId: string;
@@ -302,8 +315,32 @@ export interface UsageStats {
   recentSessions: SessionRecord[];
   failureCounts: Record<string, number>;
 }
+export interface SavedItemSummary {
+  id: string;
+  timestampMs: number;
+  durationMs: number;
+  wordCount: number;
+  targetApp: string | null;
+  targetExecutable: string | null;
+  engine: string;
+  backend: string;
+  model: string;
+  latencyMs: number;
+  pasteOutcome: string;
+  pinned: boolean;
+}
+export interface SavedItemPage {
+  items: SavedItemSummary[];
+  total: number;
+  offset: number;
+  hasMore: boolean;
+}
+export interface SavedItemDetail {
+  summary: SavedItemSummary;
+  text: string;
+}
 export const defaultSettings: Settings = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   activationMode: "push_to_talk",
   hotkey: "Ctrl+Alt+Space",
   showBar: true,
@@ -336,6 +373,9 @@ export const defaultSettings: Settings = {
   localEngine: "parakeet_tdt",
   adaptiveAudioEnabled: true,
   onboardingComplete: false,
+  transcriptHistoryRetention: "off",
+  historyLastRetention: "thirty_days",
+  scratchpadHotkey: "Ctrl+Alt+Shift+Space",
 };
 export const defaultPersonalization: Personalization = {
   schemaVersion: 1,

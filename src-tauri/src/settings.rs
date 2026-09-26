@@ -6,10 +6,44 @@ use tracing::{info, warn};
 
 use crate::domain::{ActivationMode, CorrectionEntry, LanguagePreference, TranscriptionRoute};
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 3;
+pub const CURRENT_SCHEMA_VERSION: u32 = 4;
 
 const DEFAULT_CLOUD_COST_PER_MINUTE_USD: f64 = 0.003;
 const DEFAULT_TYPING_WPM: u32 = 40;
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TranscriptHistoryRetention {
+    Off,
+    SevenDays,
+    ThirtyDays,
+    NinetyDays,
+    OneYear,
+    Forever,
+}
+
+impl Default for TranscriptHistoryRetention {
+    fn default() -> Self {
+        Self::Off
+    }
+}
+
+impl TranscriptHistoryRetention {
+    pub fn days(self) -> Option<u64> {
+        match self {
+            Self::Off => None,
+            Self::SevenDays => Some(7),
+            Self::ThirtyDays => Some(30),
+            Self::NinetyDays => Some(90),
+            Self::OneYear => Some(365),
+            Self::Forever => Some(u64::MAX),
+        }
+    }
+
+    pub fn is_enabled(self) -> bool {
+        self != Self::Off
+    }
+}
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -138,6 +172,12 @@ pub struct Settings {
     pub adaptive_audio_enabled: bool,
     #[serde(default)]
     pub onboarding_complete: bool,
+    #[serde(default)]
+    pub transcript_history_retention: TranscriptHistoryRetention,
+    #[serde(default = "default_history_last_retention")]
+    pub history_last_retention: TranscriptHistoryRetention,
+    #[serde(default = "default_scratchpad_hotkey")]
+    pub scratchpad_hotkey: String,
 }
 
 fn default_schema_version() -> u32 {
@@ -167,6 +207,14 @@ fn default_cloud_cost_per_minute_usd() -> f64 {
 }
 fn default_typing_wpm() -> u32 {
     DEFAULT_TYPING_WPM
+}
+
+fn default_history_last_retention() -> TranscriptHistoryRetention {
+    TranscriptHistoryRetention::ThirtyDays
+}
+
+fn default_scratchpad_hotkey() -> String {
+    "Ctrl+Alt+Shift+Space".to_owned()
 }
 
 fn default_corrections() -> Vec<CorrectionEntry> {
@@ -208,6 +256,9 @@ impl Default for Settings {
             local_engine: LocalEngine::default(),
             adaptive_audio_enabled: true,
             onboarding_complete: false,
+            transcript_history_retention: TranscriptHistoryRetention::Off,
+            history_last_retention: default_history_last_retention(),
+            scratchpad_hotkey: default_scratchpad_hotkey(),
         }
     }
 }
@@ -215,6 +266,12 @@ impl Default for Settings {
 impl Settings {
     pub fn normalized(mut self) -> Self {
         self.schema_version = CURRENT_SCHEMA_VERSION;
+        if !self.history_last_retention.is_enabled() {
+            self.history_last_retention = TranscriptHistoryRetention::ThirtyDays;
+        }
+        if self.scratchpad_hotkey.trim().is_empty() {
+            self.scratchpad_hotkey = default_scratchpad_hotkey();
+        }
         self.max_duration_seconds = self.max_duration_seconds.clamp(1, 600);
         if self.hotkey.trim().is_empty() {
             self.hotkey = default_hotkey();
@@ -436,6 +493,59 @@ mod tests {
         );
         assert_eq!(migrated.corrections.len(), 1);
         assert!(!migrated.corrections[0].enabled);
+    }
+
+    #[test]
+    fn v3_settings_migrate_with_history_off_and_preserve_shortcuts() {
+        let legacy = serde_json::json!({
+            "schemaVersion": 3,
+            "hotkey": "Ctrl+Alt+K",
+            "recoveryShortcuts": {
+                "pasteLast": "Ctrl+Shift+V",
+                "openSettings": "Ctrl+Alt+Shift+L"
+            },
+            "activationMode": "toggle",
+            "autoPaste": false
+        });
+
+        let migrated = migrate_settings_value(legacy).unwrap().normalized();
+
+        assert_eq!(migrated.schema_version, CURRENT_SCHEMA_VERSION);
+        assert_eq!(
+            migrated.transcript_history_retention,
+            TranscriptHistoryRetention::Off
+        );
+        assert_eq!(
+            migrated.history_last_retention,
+            TranscriptHistoryRetention::ThirtyDays
+        );
+        assert_eq!(migrated.scratchpad_hotkey, default_scratchpad_hotkey());
+        assert_eq!(migrated.hotkey, "Ctrl+Alt+K");
+        assert_eq!(
+            migrated.recovery_shortcuts.paste_last.as_deref(),
+            Some("Ctrl+Shift+V")
+        );
+        assert_eq!(migrated.activation_mode, ActivationMode::Toggle);
+        assert!(!migrated.auto_paste);
+    }
+
+    #[test]
+    fn history_retention_off_keeps_the_last_non_off_choice() {
+        let settings = Settings {
+            transcript_history_retention: TranscriptHistoryRetention::Off,
+            history_last_retention: TranscriptHistoryRetention::OneYear,
+            ..Settings::default()
+        }
+        .normalized();
+
+        assert_eq!(
+            settings.transcript_history_retention,
+            TranscriptHistoryRetention::Off
+        );
+        assert_eq!(
+            settings.history_last_retention,
+            TranscriptHistoryRetention::OneYear
+        );
     }
 
     #[test]

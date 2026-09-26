@@ -43,9 +43,9 @@ const session0: SessionSnapshot = {
   inputLevel: 0,
   requestId: null,
   error: null,
-  transcript: null,
   backend: null,
   fallbackReason: null,
+  destination: null,
 };
 const usage0: UsageStats = {
   dictationsToday: 8,
@@ -117,15 +117,24 @@ export function useLyra() {
     totalBytes: 0,
     error: null,
   });
-  const [hotkey, setHotkey] = useState<HotkeyStatus>({
+    const [hotkey, setHotkey] = useState<HotkeyStatus>({
     hotkey: defaultSettings.hotkey,
     registered: true,
     error: null,
+    });
+  const [scratchpadHotkey, setScratchpadHotkey] = useState<HotkeyStatus>({
+    hotkey: defaultSettings.scratchpadHotkey,
+    registered: false,
+    error: null,
   });
   const [partial, setPartial] = useState<TranscriptionPartial | null>(null);
+  const [savedItemsRevision, setSavedItemsRevision] = useState(0);
+  const [scratchpadOpenId, setScratchpadOpenId] = useState<string | null>(null);
+  const [savedItemNotice, setSavedItemNotice] = useState<string | null>(null);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
   const [update, setUpdate] = useState<UpdateStatus>({
     state: "idle",
-    currentVersion: "0.4.2",
+    currentVersion: "0.5.0",
     availableVersion: null,
     notes: null,
     publishedAt: null,
@@ -134,7 +143,7 @@ export function useLyra() {
     error: null,
   });
   const refresh = useCallback(async () => {
-    const [s, p, r, m, u, d, a, sp, h, sn, up] = await Promise.all([
+    const [s, p, r, m, u, d, a, sp, h, sh, sn, up] = await Promise.all([
       api.getSettings(),
       api.getPersonalization(),
       api.getRuntimeStatus(),
@@ -144,6 +153,7 @@ export function useLyra() {
       api.getSetupArtifacts(),
       api.getSetupProgress(),
       api.getHotkeyStatus(),
+      api.getScratchpadHotkeyStatus(),
       api.getSessionSnapshot(),
       api.getUpdateStatus(),
     ]);
@@ -156,6 +166,7 @@ export function useLyra() {
     if (a.length) setArtifacts(a);
     if (sp) setSetup(sp);
     if (h) setHotkey(h);
+    if (sh) setScratchpadHotkey(sh);
     if (sn) setSession(sn);
     if (up) setUpdate(up);
   }, []);
@@ -178,15 +189,18 @@ export function useLyra() {
         onPlacementStatus: () => {},
         onUsage: setUsage,
         onHotkeyStatus: setHotkey,
+        onScratchpadHotkeyStatus: setScratchpadHotkey,
         onSetupProgress: setSetup,
         onUpdateStatus: setUpdate,
-        onResult: () => setPartial(null),
         onPartial: (v) =>
           setPartial((current) =>
             !activeRequestId.current || v.requestId === activeRequestId.current
               ? v
               : current,
           ),
+        onSavedItemsUpdated: () => setSavedItemsRevision((revision) => revision + 1),
+        onScratchpadOpened: setScratchpadOpenId,
+        onSavedItemNotice: setSavedItemNotice,
       })
       .then((v) => {
         if (dead) v.forEach((x) => x());
@@ -207,9 +221,18 @@ export function useLyra() {
   const updateSettings = useCallback(
     async (patch: Partial<Settings>) => {
       const next = { ...settings, ...patch };
+      setSettingsError(null);
       setSettings(next);
-      const saved = await api.saveSettings(next);
-      if (saved) setSettings(saved);
+      try {
+        const saved = await api.saveSettings(next);
+        if (saved) setSettings(saved);
+      } catch (error) {
+        const persisted = await api.getSettings().catch(() => null);
+        setSettings(persisted ?? settings);
+        setSettingsError(
+          error instanceof Error ? error.message : "Lyra couldn't save those settings.",
+        );
+      }
     },
     [settings],
   );
@@ -232,7 +255,13 @@ export function useLyra() {
       artifacts,
       setup,
       hotkey,
+      scratchpadHotkey,
       partial,
+      savedItemsRevision,
+      scratchpadOpenId,
+      savedItemNotice,
+      settingsError,
+      clearSavedItemNotice: () => setSavedItemNotice(null),
       update,
       refresh,
     }),
@@ -249,7 +278,12 @@ export function useLyra() {
       artifacts,
       setup,
       hotkey,
+      scratchpadHotkey,
       partial,
+      savedItemsRevision,
+      scratchpadOpenId,
+      savedItemNotice,
+      settingsError,
       update,
       refresh,
     ],

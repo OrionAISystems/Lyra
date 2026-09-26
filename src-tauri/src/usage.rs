@@ -14,8 +14,7 @@ use crate::domain::TranscriptionResult;
 
 const STATS_SCHEMA_VERSION: u32 = 3;
 const DEFAULT_RATE_USD_PER_MINUTE: f64 = 0.003;
-const DAILY_RETENTION: usize = 90;
-const SESSION_RETENTION: usize = 200;
+const SESSION_RETENTION_MS: u64 = 365 * 86_400_000;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
@@ -149,7 +148,11 @@ impl Default for UsageCounters {
 }
 
 impl UsageCounters {
-    fn normalized(mut self) -> Self {
+    fn normalized(self) -> Self {
+        self.normalized_at(timestamp_ms())
+    }
+
+    fn normalized_at(mut self, now_ms: u64) -> Self {
         let current_day = today_key();
         if self.schema_version < STATS_SCHEMA_VERSION {
             if self.today_key.is_empty() {
@@ -198,13 +201,9 @@ impl UsageCounters {
             left.paste_successes += right.paste_successes;
             true
         });
-        if self.daily.len() > DAILY_RETENTION {
-            self.daily.drain(..self.daily.len() - DAILY_RETENTION);
-        }
-        if self.sessions.len() > SESSION_RETENTION {
-            self.sessions
-                .drain(..self.sessions.len() - SESSION_RETENTION);
-        }
+        let session_cutoff = now_ms.saturating_sub(SESSION_RETENTION_MS);
+        self.sessions
+            .retain(|session| session.timestamp_ms >= session_cutoff);
         self
     }
 
@@ -537,17 +536,23 @@ mod tests {
         fs::remove_file(path).ok();
     }
     #[test]
-    fn retention_is_bounded() {
+    fn daily_aggregates_are_indefinite_and_sessions_expire_by_age() {
         let mut c = UsageCounters::default();
-        c.daily = (0..100)
+        c.daily = (0..1_000)
             .map(|i| DailyUsage {
                 day: format!("2026-{:02}-{:02}", i / 28 + 1, i % 28 + 1),
                 ..DailyUsage::default()
             })
             .collect();
-        c.sessions = (0..220)
+        let now = timestamp_ms();
+        let cutoff = now.saturating_sub(SESSION_RETENTION_MS);
+        c.sessions = (0..3)
             .map(|i| SessionRecord {
-                timestamp_ms: i,
+                timestamp_ms: match i {
+                    0 => cutoff.saturating_sub(1),
+                    1 => cutoff,
+                    _ => now,
+                },
                 app_version: "0.4.0".to_owned(),
                 duration_ms: 1,
                 word_count: 0,
@@ -564,9 +569,11 @@ mod tests {
                 failure_category: None,
             })
             .collect();
-        let c = c.normalized();
-        assert_eq!(c.daily.len(), DAILY_RETENTION);
-        assert_eq!(c.sessions.len(), SESSION_RETENTION);
+        let c = c.normalized_at(now);
+        assert_eq!(c.daily.len(), 1_000);
+        assert_eq!(c.sessions.len(), 2);
+        assert_eq!(c.sessions[0].timestamp_ms, cutoff);
+        assert_eq!(c.sessions[1].timestamp_ms, now);
     }
     #[test]
     fn paste_rate_is_safe_when_empty() {
@@ -584,7 +591,7 @@ mod tests {
         let store = UsageStatsStore::for_tests(path.clone());
         let sensitive_detail = r"C:\Users\Met\AppData\Local\Lyra\runtime\nemo_speech_asr_c.dll";
         let record = SessionRecord {
-            timestamp_ms: 1,
+            timestamp_ms: timestamp_ms(),
             app_version: "0.4.4".to_owned(),
             duration_ms: 1,
             word_count: 1,

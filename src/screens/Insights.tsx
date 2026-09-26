@@ -3,12 +3,20 @@ import { Activity, FileText, Timer, Zap } from "lucide-react";
 import { Card, Page, Select } from "../components/Controls";
 import { formatUsageDay } from "../insights";
 import type { LyraState } from "../state/useLyra";
+import type { DailyUsage } from "../types";
 
 export default function Insights({ state }: { state: LyraState }) {
   const [range, setRange] = useState("7");
   const [advanced, setAdvanced] = useState(false);
-  const daily = state.usage.daily.slice(-Number(range));
-  const max = Math.max(1, ...daily.map((d) => d.words));
+  const daily = range === "all"
+    ? state.usage.daily
+    : state.usage.daily.slice(-Number(range));
+  const hasCalendarDateKeys = daily.length > 0 && daily.every(({ day }) => /^\d{4}-\d{2}-\d{2}$/.test(day));
+  const granularity = !hasCalendarDateKeys
+    ? "day"
+    : range === "all" ? "year" : Number(range) > 30 ? "month" : "day";
+  const chartDaily = aggregateDailyForChart(daily, granularity);
+  const max = Math.max(1, ...chartDaily.map((d) => d.words));
   const noSpeech = state.usage.failureCounts.no_speech ?? 0;
   const considered = Math.max(1, state.usage.dictationsAllTime - noSpeech);
   const successRate = (state.usage.completedResults / considered) * 100;
@@ -31,6 +39,8 @@ export default function Insights({ state }: { state: LyraState }) {
             <option value="7">Last 7 days</option>
             <option value="30">Last 30 days</option>
             <option value="90">Last 90 days</option>
+            <option value="365">Last year</option>
+            <option value="all">All time</option>
           </Select>
           <button
             type="button"
@@ -74,13 +84,14 @@ export default function Insights({ state }: { state: LyraState }) {
             <i className="legend-swatch nemotron" />
             Nemotron
           </span>
+          <span className="chart-granularity">{granularity === "day" ? "Daily totals" : granularity === "month" ? "Monthly totals" : "Yearly totals"}</span>
         </div>
         <div
           className="bars"
           role="img"
           aria-label="Daily dictated words chart, split by engine"
         >
-          {daily.map((d, i) => {
+          {chartDaily.map((d, i) => {
             const parakeet = d.parakeetWords || (d.nemotronWords ? 0 : d.words);
             const nemotron = d.nemotronWords;
             const total = Math.max(1, parakeet + nemotron || d.words);
@@ -168,6 +179,33 @@ export default function Insights({ state }: { state: LyraState }) {
       </Card>
     </Page>
   );
+}
+
+function aggregateDailyForChart(
+  daily: DailyUsage[],
+  granularity: "day" | "month" | "year",
+): DailyUsage[] {
+  const buckets = new Map<string, DailyUsage>();
+  for (const day of daily) {
+    const key = granularity === "year" ? day.day.slice(0, 4)
+      : granularity === "month" ? day.day.slice(0, 7)
+        : day.day;
+    const current = buckets.get(key);
+    if (!current) {
+      buckets.set(key, { ...day, day: key });
+      continue;
+    }
+    current.sessions += day.sessions;
+    current.completed += day.completed;
+    current.failed += day.failed;
+    current.durationMs += day.durationMs;
+    current.words += day.words;
+    current.parakeetWords += day.parakeetWords;
+    current.nemotronWords += day.nemotronWords;
+    current.pasteAttempts += day.pasteAttempts;
+    current.pasteSuccesses += day.pasteSuccesses;
+  }
+  return [...buckets.values()];
 }
 
 function Metric({
