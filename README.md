@@ -6,11 +6,11 @@ The repository is intentionally standalone. Lyra does not depend on Orion's gate
 
 ## Current phase
 
-v0.4.4 is the current published release. The local v0.5.0 development build adds optional, Windows-account-encrypted Transcript History (Off by default) and an intentional Scratchpad for thoughts spoken directly into Lyra. Daily Insights aggregates are retained indefinitely; detailed session metadata expires after one year. This v0.5.0 work is at the local review checkpoint and has not been tagged or published.
+v0.5.0 (2026-09-26) is the current published release. It adds optional, Windows-account-encrypted Transcript History (Off by default) and an intentional Scratchpad for thoughts spoken directly into Lyra. Daily Insights aggregates are retained indefinitely; detailed session metadata expires after one year. The release and its updater feed are published in [`OrionAISystems/Lyra-Releases`](https://github.com/OrionAISystems/Lyra-Releases/releases/tag/v0.5.0).
 
-The v0.3 → v0.4 settings and personalization migrations are automatic and idempotent. Existing microphone, ten-minute duration, startup, placement, correction, and cost preferences are preserved. Runtime and model installation remains separate and explicit; the optional Nemotron model is independently versioned and verified.
+Settings migrations through schema v4 are automatic and idempotent. The v0.5 migration keeps Transcript History Off and preserves existing microphone, ten-minute duration, startup, placement, correction, and cost preferences. Runtime and model installation remains separate and explicit; the optional Nemotron model is independently versioned and verified.
 
-The current published baseline is v0.4.4. The next local product pass is v0.5.0, focused on keeping opt-in dictated text separate from Insights metadata and on a small, deliberate Scratchpad workflow. The review build must be accepted before any v0.5.0 release action.
+Remaining installed-updater, hardware-backed recognition, and cross-application injection checks are tracked in [docs/ACCEPTANCE-V0.5.md](docs/ACCEPTANCE-V0.5.md); they are not inferred from the successful release build.
 
 ## Stack
 

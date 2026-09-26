@@ -2,7 +2,7 @@
 
 ## Installed application
 
-The v0.4.4 Windows x64 release is a per-user NSIS installer. It creates the Lyra Start Menu entry and offers the desktop shortcut during setup. It does not require administrator elevation and does not bundle the native speech runtime or the 714 MB (about 681 MiB) Parakeet model. Existing debug builds remain separate under `src-tauri\target\debug`.
+The v0.5.0 Windows x64 release is a per-user NSIS installer. It creates the Lyra Start Menu entry and offers the desktop shortcut during setup. It does not require administrator elevation and does not bundle the native speech runtime or the 714 MB (about 681 MiB) Parakeet model. Existing debug builds remain separate under `src-tauri\target\debug`.
 
 The installer uses Tauri's WebView2 download bootstrapper. On a machine without a suitable WebView2 runtime, the installer obtains the standard Microsoft runtime; Lyra itself never changes `PATH`, installs the CUDA Toolkit, or installs CMake/Ninja.
 

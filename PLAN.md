@@ -2,9 +2,9 @@
 
 ## Status and delivery boundary
 
-This is the implementation plan for v0.5.0. It records the product decisions made for this pass; it is not an implementation or release record. The current published version is v0.4.4.
+This plan records the product decisions and implementation sequence for v0.5.0. The release was published on 2026-09-26; see [docs/ACCEPTANCE-V0.5.md](docs/ACCEPTANCE-V0.5.md) for build, review, workflow, and public-artifact evidence. The current published version is v0.5.0.
 
-Implement and validate the feature in the local development build first. **Stop after the local dev build and hands-on acceptance review.** Do not tag, publish, or update the public release repository until the user has reviewed that build and explicitly asks to proceed. After that checkpoint, follow the existing signed v0.5.0 release pipeline and verify its public artifacts.
+The implementation and local review were completed before release. After the user reviewed the build and approved release, the existing updater-signed tag workflow published v0.5.0. Hardware-backed, installed-updater, and other unobserved acceptance cases remain explicitly pending in the acceptance record.
 
 ## Product contract
 
@@ -50,8 +50,8 @@ Implement and validate the feature in the local development build first. **Stop 
 2. **Capture routing:** request-scoped destination, shared recognition/processing, Scratchpad shortcut and UI start/stop, one-session arbitration, actual backend metadata, write-failure behavior. Focused Rust tests cover success, paste failure, no speech, cancellation, targetless Scratchpad, shortcut collision/rollback, and an in-flight settings change.
 3. **Saved-item actions and UI:** list/detail/pagination, copy/paste/promotion/pin/delete/clear, privacy and error states, keyboard behavior, responsive layout. Verify that text does not leak into usage, logs, diagnostics, or broad snapshots. Exercise real click targets and focus behavior in the rendered app.
 4. **Local gate:** synchronize source version files to 0.5.0 and draft its canonical changelog entry before building, so the reviewed build identifies itself correctly. Run repository checks (`npm run typecheck`, `npm test`, `npm run build`, `cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check`, `cargo check --manifest-path src-tauri/Cargo.toml`, `cargo test --manifest-path src-tauri/Cargo.toml`, `npm run verify:version`, `npm run verify:changelog`, `npm run verify:release-config`). Build and run the local dev app; record manual results in the v0.5 acceptance sheet for normal dictation, Scratchpad via shortcut and UI, cross-app paste, target loss, restart persistence, retention transitions, encryption-at-rest inspection, and narrow/desktop UI states. Keep hardware-only cases explicitly pending if they cannot be observed.
-5. **Required stop:** provide the local build, acceptance evidence, and remaining limitations to the user for review. Wait for their instruction before any v0.5.0 tag or public release action.
-6. **After approval to release:** finalize the v0.5.0 changelog and acceptance evidence, rerun the complete release checks, publish through the existing protected tag workflow, and inspect the public installer, updater artifact/signature, `latest.json`, and mirrored changelog. Record installed updater and hardware acceptance based on observation, not assumption.
+5. **Review checkpoint (complete):** the user reported that basic initial tests worked and explicitly approved the v0.5.0 release. Detailed unobserved behavior remains pending in the acceptance sheet.
+6. **Release (complete):** finalized the changelog, pushed the v0.5.0 tag, passed the tagged GitHub Actions workflow, and inspected the public installer digest, updater signature asset and manifest, and mirrored changelog. The installer is not Authenticode-signed because the optional certificate is not configured. Installed-updater and hardware acceptance remain pending until directly observed.
 
 ## Acceptance criteria
 
