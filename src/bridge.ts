@@ -66,6 +66,8 @@ export const getSessionSnapshot = () =>
   command<SessionSnapshot>("get_session_snapshot");
 export const listAudioDevices = async () =>
   (await command<AudioDeviceInfo[]>("list_audio_devices")) ?? [];
+export const startMicrophoneTest = () => command<void>("start_microphone_test");
+export const stopMicrophoneTest = () => command<void>("stop_microphone_test");
 export const startDictation = (source: "hotkey" | "bar" = "bar") =>
   command<void>("start_dictation", { source });
 export const stopDictation = (source: "hotkey" | "bar" = "bar") =>
@@ -118,6 +120,18 @@ export async function listenToBenchmarkEvents(h: {
     listen("lyra://benchmark-result", (e) =>
       h.onResult(e.payload as BenchmarkResult),
     ),
+  ]);
+}
+export async function listenToMicrophoneTestEvents(h: {
+  onLevel: (level: number) => void;
+  onStopped: () => void;
+  onError: (message: string) => void;
+}): Promise<UnlistenFn[]> {
+  if (!isTauri) return [];
+  return Promise.all([
+    listen("lyra://microphone-test-level", (e) => h.onLevel(e.payload as number)),
+    listen("lyra://microphone-test-stopped", () => h.onStopped()),
+    listen("lyra://microphone-test-error", (e) => h.onError(e.payload as string)),
   ]);
 }
 export async function listenToLyraEvents(h: {

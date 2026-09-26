@@ -32,7 +32,7 @@ The first candidate is the official NeMo-Speech.cpp v0.1.0 Windows x64 CUDA arch
 
 ## First launch checklist
 
-1. Confirm microphone enumeration and choose the Windows default or a specific device.
+1. Confirm microphone enumeration, choose the Windows default or a specific device, and use **Test mic** in Audio & Engine to verify live input without starting dictation.
 2. Detect the GPU and display the measured VRAM.
 3. Approve and verify the native runtime.
 4. Approve and verify the Parakeet model. Separately approve the Nemotron model only if you want to try the experimental English streaming engine.
@@ -42,6 +42,8 @@ The first candidate is the official NeMo-Speech.cpp v0.1.0 Windows x64 CUDA arch
 The default bar placement is Follow active window. Lyra places the bar at startup and when each session starts; it does not continuously move while browsing. Primary display and one fixed option per detected display are also available. Fixed monitors are resolved by identity first and ordinal second. If a saved monitor is unavailable, Lyra uses the primary display and shows a non-blocking status in General Settings.
 
 The model resource policy is independent from artifact installation: Always warm, unload after 5/15/30 minutes, or Never keep warm. General Settings shows Loading, Ready, Unloaded, or an error detail.
+
+The Audio & Engine microphone test opens the selected input only while the test is active. It reports a live level without retaining, saving, or transcribing audio samples. Stop the test or leave Audio & Engine to close the input stream.
 
 If any injection step fails, Lyra keeps the transcript available in the app for copying and says `Copied — paste manually.` Before restoring earlier clipboard contents, Lyra checks that the clipboard still matches its last write so it does not overwrite newer contents placed there by another app. Lyra never presses Enter.
 

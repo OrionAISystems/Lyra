@@ -103,6 +103,30 @@ impl ActiveCapture {
     }
 }
 
+pub struct InputLevelMonitor {
+    stop: Arc<AtomicBool>,
+    worker: Option<thread::JoinHandle<()>>,
+}
+
+impl InputLevelMonitor {
+    pub fn stop(mut self) {
+        self.stop_inner();
+    }
+
+    fn stop_inner(&mut self) {
+        self.stop.store(true, Ordering::SeqCst);
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
+}
+
+impl Drop for InputLevelMonitor {
+    fn drop(&mut self) {
+        self.stop_inner();
+    }
+}
+
 pub trait AudioCapture: Send + Sync {
     fn list_devices(&self) -> Result<Vec<AudioDeviceInfo>, BackendError>;
     fn start(
@@ -110,6 +134,12 @@ pub trait AudioCapture: Send + Sync {
         options: CaptureOptions,
         on_level: Arc<dyn Fn(f32) + Send + Sync>,
     ) -> Result<ActiveCapture, BackendError>;
+    fn start_input_level_monitor(
+        &self,
+        device_id: Option<String>,
+        on_level: Arc<dyn Fn(f32) + Send + Sync>,
+        on_error: Arc<dyn Fn(String) + Send + Sync>,
+    ) -> Result<InputLevelMonitor, BackendError>;
 }
 
 #[derive(Debug, Default)]
@@ -377,6 +407,119 @@ impl AudioCapture for CpalAudioCapture {
             result: result_rx,
         })
     }
+
+    fn start_input_level_monitor(
+        &self,
+        device_id: Option<String>,
+        on_level: Arc<dyn Fn(f32) + Send + Sync>,
+        on_error: Arc<dyn Fn(String) + Send + Sync>,
+    ) -> Result<InputLevelMonitor, BackendError> {
+        let (device, _) = self.find_device(device_id.as_deref())?;
+        let supported_config = device
+            .default_input_config()
+            .map_err(|error| BackendError::DeviceFailure(error.to_string()))?;
+        let sample_format = supported_config.sample_format();
+        let config: cpal::StreamConfig = supported_config.config();
+        let stream_error = Arc::new(Mutex::new(None::<String>));
+        let last_reported_ms = Arc::new(AtomicU64::new(0));
+        let monitor_clock = Instant::now();
+
+        let stream = match sample_format {
+            cpal::SampleFormat::F32 => {
+                let error_for_callback = Arc::clone(&stream_error);
+                let last_for_callback = Arc::clone(&last_reported_ms);
+                let level_for_callback = Arc::clone(&on_level);
+                device.build_input_stream(
+                    &config,
+                    move |data: &[f32], _| {
+                        report_input_level(
+                            data,
+                            &level_for_callback,
+                            &last_for_callback,
+                            monitor_clock,
+                            |value| value,
+                        )
+                    },
+                    move |error| set_stream_error(&error_for_callback, error.to_string()),
+                    None,
+                )
+            }
+            cpal::SampleFormat::I16 => {
+                let error_for_callback = Arc::clone(&stream_error);
+                let last_for_callback = Arc::clone(&last_reported_ms);
+                let level_for_callback = Arc::clone(&on_level);
+                device.build_input_stream(
+                    &config,
+                    move |data: &[i16], _| {
+                        report_input_level(
+                            data,
+                            &level_for_callback,
+                            &last_for_callback,
+                            monitor_clock,
+                            |value| f32::from(value) / 32_768.0,
+                        )
+                    },
+                    move |error| set_stream_error(&error_for_callback, error.to_string()),
+                    None,
+                )
+            }
+            cpal::SampleFormat::U16 => {
+                let error_for_callback = Arc::clone(&stream_error);
+                let last_for_callback = Arc::clone(&last_reported_ms);
+                let level_for_callback = Arc::clone(&on_level);
+                device.build_input_stream(
+                    &config,
+                    move |data: &[u16], _| {
+                        report_input_level(
+                            data,
+                            &level_for_callback,
+                            &last_for_callback,
+                            monitor_clock,
+                            |value| (f32::from(value) - 32_768.0) / 32_768.0,
+                        )
+                    },
+                    move |error| set_stream_error(&error_for_callback, error.to_string()),
+                    None,
+                )
+            }
+            other => {
+                return Err(BackendError::Unsupported(format!(
+                    "microphone format {other:?}"
+                )))
+            }
+        }
+        .map_err(|error| BackendError::StreamFailure(error.to_string()))?;
+
+        stream
+            .play()
+            .map_err(|error| BackendError::StreamFailure(error.to_string()))?;
+
+        let stop = Arc::new(AtomicBool::new(false));
+        let stop_for_worker = Arc::clone(&stop);
+        let error_for_worker = Arc::clone(&stream_error);
+        let worker = thread::Builder::new()
+            .name("lyra-input-level-monitor".to_owned())
+            .spawn(move || {
+                while !stop_for_worker.load(Ordering::SeqCst) {
+                    let error = error_for_worker
+                        .lock()
+                        .ok()
+                        .and_then(|mut value| value.take());
+                    if let Some(error) = error {
+                        on_error(error);
+                        break;
+                    }
+                    thread::sleep(Duration::from_millis(50));
+                }
+                drop(stream);
+            })
+            .map_err(|error| BackendError::StreamFailure(error.to_string()))?;
+
+        Ok(InputLevelMonitor {
+            stop,
+            worker: Some(worker),
+        })
+    }
 }
 
 fn format_device_id(name: &str, index: usize) -> String {
@@ -386,6 +529,46 @@ fn format_device_id(name: &str, index: usize) -> String {
 fn set_stream_error(target: &Mutex<Option<String>>, error: String) {
     if let Ok(mut target) = target.lock() {
         *target = Some(error);
+    }
+}
+
+fn report_input_level<T: Copy>(
+    data: &[T],
+    on_level: &Arc<dyn Fn(f32) + Send + Sync>,
+    last_reported_ms: &AtomicU64,
+    monitor_clock: Instant,
+    convert: impl Fn(T) -> f32,
+) {
+    let level = input_level(data, convert);
+    let now_ms = monitor_clock.elapsed().as_millis() as u64 + 1;
+
+    loop {
+        let previous_ms = last_reported_ms.load(Ordering::Relaxed);
+        if previous_ms != 0 && now_ms.saturating_sub(previous_ms) < 80 {
+            return;
+        }
+        if last_reported_ms
+            .compare_exchange(previous_ms, now_ms, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+        {
+            on_level(level);
+            return;
+        }
+    }
+}
+
+fn input_level<T: Copy>(data: &[T], convert: impl Fn(T) -> f32) -> f32 {
+    let mut sum = 0.0_f32;
+    let mut sample_count = 0_u32;
+    for value in data.iter().copied().map(convert) {
+        let value = if value.is_finite() { value } else { 0.0 };
+        sum += value * value;
+        sample_count += 1;
+    }
+    if sample_count == 0 {
+        0.0
+    } else {
+        (sum / sample_count as f32).sqrt().clamp(0.0, 1.0)
     }
 }
 
@@ -689,5 +872,23 @@ mod tests {
         assert_eq!(control.max_duration_ms.load(Ordering::Acquire), 300_000);
         control.update_max_duration(60);
         assert_eq!(control.max_duration_ms.load(Ordering::Acquire), 60_000);
+    }
+
+    #[test]
+    fn input_level_measures_mono_rms_without_retaining_samples() {
+        let level = input_level(&[0.5_f32, -0.5, 0.5, -0.5], |value| value);
+        assert!((level - 0.5).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn input_level_detects_out_of_phase_stereo_channels() {
+        let level = input_level(&[1.0_f32, -1.0], |value| value);
+        assert!((level - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn input_level_ignores_non_finite_samples() {
+        let level = input_level(&[f32::NAN, f32::INFINITY], |value| value);
+        assert_eq!(level, 0.0);
     }
 }

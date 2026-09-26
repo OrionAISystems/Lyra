@@ -1,9 +1,13 @@
 import { useEffect, useState } from "react";
-import { Cpu, Download, Mic, ShieldCheck } from "lucide-react";
+import { Cpu, Download, Mic, ShieldCheck, Square } from "lucide-react";
 import {
   getBenchmarkResult,
+  isTauri,
+  listenToMicrophoneTestEvents,
   listenToBenchmarkEvents,
   runBenchmark,
+  startMicrophoneTest,
+  stopMicrophoneTest,
   startSetupArtifact,
 } from "../bridge";
 import {
@@ -25,6 +29,27 @@ export default function AudioEngine({ state }: { state: LyraState }) {
   const [benchmarkError, setBenchmarkError] = useState<string | null>(null);
   const [benchmarkResult, setBenchmarkResult] =
     useState<Awaited<ReturnType<typeof getBenchmarkResult>>>(null);
+  const [microphoneTestState, setMicrophoneTestState] = useState<
+    "idle" | "starting" | "listening" | "error"
+  >("idle");
+  const [microphoneTestLevel, setMicrophoneTestLevel] = useState(0);
+  const [microphoneTestError, setMicrophoneTestError] = useState<string | null>(
+    null,
+  );
+  const sessionListening = state.session.state === "listening";
+  const sessionBusy = sessionListening || state.session.state === "processing";
+  const benchmarkBusy = ["starting", "recording", "comparing"].includes(
+    benchmarkState,
+  );
+  const inputLevel = Math.max(
+    0,
+    Math.min(1, sessionListening ? state.session.inputLevel : microphoneTestLevel),
+  );
+  const meterPercent =
+    inputLevel <= 0.001
+      ? 0
+      : Math.max(0, Math.min(100, ((20 * Math.log10(inputLevel) + 60) / 60) * 100));
+
   useEffect(() => {
     let dead = false;
     void getBenchmarkResult().then((result) => {
@@ -46,6 +71,80 @@ export default function AudioEngine({ state }: { state: LyraState }) {
       un.forEach((item) => item());
     };
   }, []);
+  useEffect(() => {
+    let dead = false;
+    let un: (() => void)[] = [];
+    void listenToMicrophoneTestEvents({
+      onLevel: (level) => setMicrophoneTestLevel(Math.max(0, Math.min(1, level))),
+      onStopped: () => {
+        setMicrophoneTestLevel(0);
+        setMicrophoneTestState("idle");
+      },
+      onError: (message) => {
+        setMicrophoneTestLevel(0);
+        setMicrophoneTestState("error");
+        setMicrophoneTestError(message);
+        void stopMicrophoneTest().catch((error) => {
+          setMicrophoneTestError(
+            `${message}; ${error instanceof Error ? error.message : String(error)}`,
+          );
+        });
+      },
+    }).then((items) => {
+      if (dead) items.forEach((item) => item());
+      else un = items;
+    });
+    return () => {
+      dead = true;
+      un.forEach((item) => item());
+      void stopMicrophoneTest().catch(() => {});
+    };
+  }, []);
+
+  const toggleMicrophoneTest = async () => {
+    if (microphoneTestState === "listening") {
+      try {
+        await stopMicrophoneTest();
+        setMicrophoneTestState("idle");
+        setMicrophoneTestLevel(0);
+        setMicrophoneTestError(null);
+      } catch (error) {
+        setMicrophoneTestState("error");
+        setMicrophoneTestError(
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+      return;
+    }
+    setMicrophoneTestError(null);
+    setMicrophoneTestLevel(0);
+    setMicrophoneTestState("starting");
+    try {
+      await startMicrophoneTest();
+      setMicrophoneTestState("listening");
+    } catch (error) {
+      setMicrophoneTestState("error");
+      setMicrophoneTestError(
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  };
+
+  const selectMicrophone = async (deviceId: string) => {
+    try {
+      await stopMicrophoneTest();
+      setMicrophoneTestState("idle");
+      setMicrophoneTestLevel(0);
+      setMicrophoneTestError(null);
+      await u({ audioDeviceId: deviceId || null });
+    } catch (error) {
+      setMicrophoneTestState("error");
+      setMicrophoneTestError(
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  };
+
   const startBenchmark = async () => {
     setBenchmarkError(null);
     setBenchmarkState("starting");
@@ -64,27 +163,84 @@ export default function AudioEngine({ state }: { state: LyraState }) {
     >
       <Card>
         <Row
+          className="microphone-row"
           icon={<Mic />}
           title="Microphone"
-          description="Live input is held in memory only"
+          description="Test your selected input without starting dictation"
         >
-          <Select
-            label="Microphone"
-            value={s.audioDeviceId ?? ""}
-            onChange={(v) => void u({ audioDeviceId: v || null })}
-          >
-            <option value="">System default</option>
-            {state.devices.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
-          </Select>
+          <div className="microphone-controls">
+            <Select
+              label="Microphone"
+              value={s.audioDeviceId ?? ""}
+              disabled={microphoneTestState === "starting"}
+              onChange={(v) => void selectMicrophone(v)}
+            >
+              <option value="">System default</option>
+              {state.devices.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </Select>
+            <button
+              className={microphoneTestState === "listening" ? "secondary" : "primary"}
+              type="button"
+              disabled={
+                !isTauri ||
+                sessionBusy ||
+                benchmarkBusy ||
+                microphoneTestState === "starting"
+              }
+              onClick={() => void toggleMicrophoneTest()}
+              aria-pressed={microphoneTestState === "listening"}
+            >
+              {microphoneTestState === "starting" ? (
+                "Starting…"
+              ) : microphoneTestState === "listening" ? (
+                <><Square size={12} fill="currentColor" /> Stop test</>
+              ) : (
+                "Test mic"
+              )}
+            </button>
+          </div>
         </Row>
-        <div className="meter" aria-label="Microphone input level">
-          <i
-            style={{ width: `${Math.max(5, state.session.inputLevel * 100)}%` }}
-          />
+        <div
+          className="meter"
+          role="meter"
+          aria-label="Microphone input level"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(meterPercent)}
+          aria-valuetext={
+            inputLevel > 0 ? `${Math.round(20 * Math.log10(inputLevel))} dBFS` : "No input"
+          }
+          data-active={microphoneTestState === "listening" || sessionListening}
+        >
+          <i style={{ width: `${meterPercent}%` }} />
+        </div>
+        <div
+          className={`microphone-test-status ${microphoneTestError ? "error" : ""}`}
+          role="status"
+          aria-live="polite"
+        >
+          {microphoneTestError ? (
+            <span>{microphoneTestError}</span>
+          ) : !isTauri ? (
+            <span>Open Lyra desktop to test a microphone.</span>
+          ) : sessionListening ? (
+            <span>Dictation is using the microphone.</span>
+          ) : microphoneTestState === "starting" ? (
+            <span>Opening microphone…</span>
+          ) : microphoneTestState === "listening" && inputLevel >= 0.012 ? (
+            <span className="detected">Input detected</span>
+          ) : microphoneTestState === "listening" ? (
+            <span>Listening — speak or make a sound.</span>
+          ) : (
+            <span>Microphone test is off.</span>
+          )}
+          {microphoneTestState === "listening" && inputLevel > 0 && (
+            <span>{Math.round(20 * Math.log10(inputLevel))} dBFS</span>
+          )}
         </div>
         <Row
           icon={<ShieldCheck />}
@@ -164,9 +320,9 @@ export default function AudioEngine({ state }: { state: LyraState }) {
             className="primary"
             type="button"
             disabled={
-              benchmarkState === "recording" ||
-              benchmarkState === "comparing" ||
-              benchmarkState === "starting"
+              benchmarkBusy ||
+              microphoneTestState === "listening" ||
+              microphoneTestState === "starting"
             }
             onClick={() => void startBenchmark()}
           >
@@ -193,8 +349,9 @@ export default function AudioEngine({ state }: { state: LyraState }) {
         )}
       </Card>
       <Notice>
-        Audio and recognized text are never saved. Benchmark results contain
-        scores and environment metadata only.
+        The microphone test only measures a live input level; Lyra does not
+        retain, save, or transcribe its audio. Benchmark results contain scores
+        and environment metadata only.
       </Notice>
     </Page>
   );

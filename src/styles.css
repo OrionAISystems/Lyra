@@ -694,6 +694,38 @@ blockquote {
   display: block;
   height: 100%;
   background: linear-gradient(90deg, #685bff, #9b83ff);
+  transition: width 80ms ease-out;
+}
+.microphone-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.microphone-controls .select {
+  flex: 0 1 auto;
+}
+.microphone-controls button {
+  min-width: 88px;
+  white-space: nowrap;
+}
+.microphone-test-status {
+  min-height: 16px;
+  margin: -5px 15px 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.microphone-test-status .detected {
+  color: #6ce1a5;
+}
+.microphone-test-status.error {
+  color: #ff8188;
+}
+.meter[data-active="false"] i {
+  opacity: 0.35;
 }
 .metrics {
   display: grid;
@@ -1759,5 +1791,23 @@ html.bar-window,
   .scratchpad-intro small {
     width: 100%;
     margin-left: 16px;
+  }
+}
+@media (max-width: 560px) {
+  .microphone-row {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .microphone-row .row-control,
+  .microphone-controls {
+    width: 100%;
+  }
+  .microphone-row .row-control {
+    min-width: 0;
+  }
+  .microphone-controls .select {
+    flex: 1 1 auto;
+    min-width: 0;
   }
 }

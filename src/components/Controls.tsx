@@ -47,14 +47,16 @@ export function Row({
   title,
   description,
   children,
+  className = "",
 }: {
   icon?: ReactNode;
   title: string;
   description?: string;
   children: ReactNode;
+  className?: string;
 }) {
   return (
-    <div className="setting-row">
+    <div className={`setting-row ${className}`}>
       <div className="row-copy">
         {icon && <span className="row-icon">{icon}</span>}
         <div>
@@ -93,11 +95,13 @@ export function Select({
   onChange,
   children,
   label,
+  disabled = false,
 }: {
   value: string | number;
   onChange: (v: string) => void;
   children: ReactNode;
   label: string;
+  disabled?: boolean;
 }) {
   type OptionProps = {
     value?: string | number;
@@ -186,6 +190,7 @@ export function Select({
       <button
         type="button"
         className="select-trigger"
+        disabled={disabled}
         aria-label={label}
         aria-haspopup="listbox"
         aria-expanded={open}

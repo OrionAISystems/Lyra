@@ -53,6 +53,11 @@ pub fn run() {
             if window.label() == "settings" {
                 if let WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
+                    if let Some(state) = window.try_state::<Arc<Mutex<AppState>>>() {
+                        if let Ok(mut state) = state.lock() {
+                            state.stop_microphone_test(true);
+                        }
+                    }
                     let _ = window.hide();
                 }
             }
@@ -106,6 +111,8 @@ pub fn run() {
             commands::defer_update,
             commands::get_session_snapshot,
             commands::list_audio_devices,
+            commands::start_microphone_test,
+            commands::stop_microphone_test,
             commands::get_benchmark_result,
             commands::run_benchmark,
             commands::start_dictation,

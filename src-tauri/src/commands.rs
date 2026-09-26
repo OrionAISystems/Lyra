@@ -16,7 +16,7 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::{
-    audio::{AudioCapture, CaptureControl, CaptureOptions, CapturedAudio},
+    audio::{AudioCapture, CaptureControl, CaptureOptions, CapturedAudio, InputLevelMonitor},
     benchmark::{self, BenchmarkResult, BenchmarkScore, BENCHMARK_PHRASE},
     clipboard::{ClipboardService, TextInjector},
     domain::{
@@ -56,6 +56,8 @@ pub struct AppState {
     pub snapshot: SessionSnapshot,
     pub activation: ActivationController,
     pub active_capture: Option<CaptureControl>,
+    pub microphone_test: Option<InputLevelMonitor>,
+    pub benchmark_active: bool,
     pub session_settings: Option<Settings>,
     pub target: Option<TargetContext>,
     pub last_transcript: Option<String>,
@@ -134,6 +136,8 @@ impl AppState {
             activation: ActivationController::new(settings_value.activation_mode),
             scratchpad_activation: ActivationController::new(settings_value.activation_mode),
             active_capture: None,
+            microphone_test: None,
+            benchmark_active: false,
             session_settings: None,
             target: None,
             last_transcript: None,
@@ -231,10 +235,21 @@ impl AppState {
             .store(false, Ordering::Release);
         self.activation.reset();
         self.scratchpad_activation.reset();
+        self.stop_microphone_test(false);
         if let Some(capture) = self.active_capture.take() {
             capture.cancel();
         }
         info!("Lyra shutdown requested");
+    }
+
+    pub(crate) fn stop_microphone_test(&mut self, notify_ui: bool) {
+        if let Some(monitor) = self.microphone_test.take() {
+            monitor.stop();
+            let _ = self.app.emit("lyra://microphone-test-level", 0.0_f32);
+            if notify_ui {
+                let _ = self.app.emit("lyra://microphone-test-stopped", true);
+            }
+        }
     }
 }
 
@@ -1218,7 +1233,11 @@ pub async fn install_update(
     state: State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<UpdateStatus, String> {
     let (updater, reservation) = {
-        let state = state.lock().map_err(|_| "state lock poisoned".to_owned())?;
+        let mut state = state.lock().map_err(|_| "state lock poisoned".to_owned())?;
+        if state.benchmark_active {
+            return Err("Finish the microphone benchmark before installing an update".to_owned());
+        }
+        state.stop_microphone_test(true);
         let updater = state.updater.clone();
         let reservation = updater.reserve_installation(state.session.state());
         (updater, reservation)
@@ -1258,6 +1277,50 @@ pub fn list_audio_devices(
 }
 
 #[tauri::command]
+pub fn start_microphone_test(state: State<'_, Arc<Mutex<AppState>>>) -> Result<(), String> {
+    let mut state = state.lock().map_err(|_| "state lock poisoned".to_owned())?;
+    if state.updater.installation_blocks_sessions() {
+        return Err(
+            "An update is being installed; microphone testing is temporarily blocked".to_owned(),
+        );
+    }
+    if state.benchmark_active {
+        return Err("Finish the microphone benchmark before starting a microphone test".to_owned());
+    }
+    if benchmark_is_blocked(state.session.state()) {
+        return Err("Finish the active dictation before testing the microphone".to_owned());
+    }
+    if state.microphone_test.is_some() {
+        return Ok(());
+    }
+
+    let settings = state.settings.get();
+    let level_app = state.app.clone();
+    let error_app = state.app.clone();
+    let monitor = state
+        .audio
+        .start_input_level_monitor(
+            settings.audio_device_id,
+            Arc::new(move |level| {
+                let _ = level_app.emit("lyra://microphone-test-level", level);
+            }),
+            Arc::new(move |error| {
+                let _ = error_app.emit("lyra://microphone-test-error", error);
+            }),
+        )
+        .map_err(|error| error.to_string())?;
+    state.microphone_test = Some(monitor);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn stop_microphone_test(state: State<'_, Arc<Mutex<AppState>>>) -> Result<(), String> {
+    let mut state = state.lock().map_err(|_| "state lock poisoned".to_owned())?;
+    state.stop_microphone_test(false);
+    Ok(())
+}
+
+#[tauri::command]
 pub fn get_benchmark_result(
     state: State<'_, Arc<Mutex<AppState>>>,
 ) -> Result<Option<BenchmarkResult>, String> {
@@ -1273,12 +1336,16 @@ pub fn get_benchmark_result(
 pub fn run_benchmark(state: State<'_, Arc<Mutex<AppState>>>) -> Result<(), String> {
     let shared = state.inner().clone();
     let (capture, router, runtime, app, microphone) = {
-        let state = shared
+        let mut state = shared
             .lock()
             .map_err(|_| "state lock poisoned".to_owned())?;
         if benchmark_is_blocked(state.session.state()) {
             return Err("Finish the active dictation before benchmarking".to_owned());
         }
+        if state.benchmark_active {
+            return Err("A microphone benchmark is already running".to_owned());
+        }
+        state.stop_microphone_test(true);
         let settings = state.settings.get();
         let app = state.app.clone();
         let level_app = app.clone();
@@ -1296,6 +1363,7 @@ pub fn run_benchmark(state: State<'_, Arc<Mutex<AppState>>>) -> Result<(), Strin
                 }),
             )
             .map_err(|error| error.to_string())?;
+        state.benchmark_active = true;
         (
             capture,
             state.router.clone(),
@@ -1305,9 +1373,13 @@ pub fn run_benchmark(state: State<'_, Arc<Mutex<AppState>>>) -> Result<(), Strin
         )
     };
     let _ = app.emit("lyra://benchmark-state", "recording");
-    thread::Builder::new()
+    let benchmark_control = capture.control();
+    let state_for_worker = shared.clone();
+    let app_for_spawn_failure = app.clone();
+    let worker = thread::Builder::new()
         .name("lyra-benchmark".to_owned())
         .spawn(move || {
+            let _active_reset = BenchmarkActivityReset(state_for_worker);
             let Ok(captured) = capture.wait() else {
                 let _ = app.emit("lyra://benchmark-state", "error");
                 return;
@@ -1392,9 +1464,26 @@ pub fn run_benchmark(state: State<'_, Arc<Mutex<AppState>>>) -> Result<(), Strin
             let _ = benchmark::save(&app, &result);
             let _ = app.emit("lyra://benchmark-result", result);
             let _ = app.emit("lyra://benchmark-state", "complete");
-        })
-        .map_err(|error| error.to_string())?;
+        });
+    if let Err(error) = worker {
+        benchmark_control.cancel();
+        if let Ok(mut state) = shared.lock() {
+            state.benchmark_active = false;
+        }
+        let _ = app_for_spawn_failure.emit("lyra://benchmark-state", "error");
+        return Err(error.to_string());
+    }
     Ok(())
+}
+
+struct BenchmarkActivityReset(Arc<Mutex<AppState>>);
+
+impl Drop for BenchmarkActivityReset {
+    fn drop(&mut self) {
+        if let Ok(mut state) = self.0.lock() {
+            state.benchmark_active = false;
+        }
+    }
 }
 
 fn benchmark_is_blocked(state: DictationState) -> bool {
@@ -1823,6 +1912,12 @@ fn start_session(
                 "An update is being installed; new dictations are temporarily blocked".to_owned(),
             );
         }
+        if state.benchmark_active {
+            return Err(
+                "A microphone benchmark is running; try dictating again when it finishes"
+                    .to_owned(),
+            );
+        }
         if !matches!(
             state.session.state(),
             DictationState::Idle | DictationState::Success | DictationState::Error
@@ -1835,6 +1930,7 @@ fn start_session(
                 .transition(SessionEvent::Reset)
                 .map_err(|error| error.to_string())?;
         }
+        state.stop_microphone_test(true);
         state
             .session
             .transition(SessionEvent::Start)
