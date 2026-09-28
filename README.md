@@ -6,11 +6,11 @@ The repository is intentionally standalone. Lyra does not depend on Orion's gate
 
 ## Current phase
 
-v0.5.0 (2026-09-26) is the current published release. It adds optional, Windows-account-encrypted Transcript History (Off by default) and an intentional Scratchpad for thoughts spoken directly into Lyra. Daily Insights aggregates are retained indefinitely; detailed session metadata expires after one year. The release and its updater feed are published in [`OrionAISystems/Lyra-Releases`](https://github.com/OrionAISystems/Lyra-Releases/releases/tag/v0.5.0).
+v0.5.1 (2026-09-28) is the current published release. It adds a live microphone input-level test and fixes punctuation left at the start of a line after the “new line” and “new paragraph” voice commands. The release and its updater feed are published in [`OrionAISystems/Lyra-Releases`](https://github.com/OrionAISystems/Lyra-Releases/releases/tag/v0.5.1). It retains the optional, Windows-account-encrypted Transcript History and intentional Scratchpad introduced in v0.5.0.
 
 Settings migrations through schema v4 are automatic and idempotent. The v0.5 migration keeps Transcript History Off and preserves existing microphone, ten-minute duration, startup, placement, correction, and cost preferences. Runtime and model installation remains separate and explicit; the optional Nemotron model is independently versioned and verified.
 
-Remaining installed-updater, hardware-backed recognition, and cross-application injection checks are tracked in [docs/ACCEPTANCE-V0.5.md](docs/ACCEPTANCE-V0.5.md); they are not inferred from the successful release build.
+Remaining installed-updater, hardware-backed recognition, and cross-application injection checks are tracked in [docs/ACCEPTANCE-V0.5.md](docs/ACCEPTANCE-V0.5.md). v0.5.1 release gates and pending hands-on checks are recorded in [docs/ACCEPTANCE-V0.5.1.md](docs/ACCEPTANCE-V0.5.1.md); a successful release build does not count as hardware or installed-app acceptance.
 
 ## Stack
 

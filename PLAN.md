@@ -2,7 +2,7 @@
 
 ## Status and delivery boundary
 
-This plan records the product decisions and implementation sequence for v0.5.0. The release was published on 2026-09-26; see [docs/ACCEPTANCE-V0.5.md](docs/ACCEPTANCE-V0.5.md) for build, review, workflow, and public-artifact evidence. The current published version is v0.5.0.
+This plan records the product decisions and implementation sequence for v0.5.0. The release was published on 2026-09-26; see [docs/ACCEPTANCE-V0.5.md](docs/ACCEPTANCE-V0.5.md) for build, review, workflow, and public-artifact evidence. The current published version is v0.5.1; its release record is in [docs/ACCEPTANCE-V0.5.1.md](docs/ACCEPTANCE-V0.5.1.md).
 
 The implementation and local review were completed before release. After the user reviewed the build and approved release, the existing updater-signed tag workflow published v0.5.0. Hardware-backed, installed-updater, and other unobserved acceptance cases remain explicitly pending in the acceptance record.
 

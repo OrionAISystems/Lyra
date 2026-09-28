@@ -1,6 +1,6 @@
 # Lyra build stage
 
-The current published version is v0.5.0 (2026-09-26). It adds opt-in Transcript History and intentional Scratchpad capture with separate retention and storage policies. The tag workflow and public artifacts succeeded; detailed installed, hardware, and cross-application checks remain tracked in [docs/ACCEPTANCE-V0.5.md](docs/ACCEPTANCE-V0.5.md).
+The current published version is v0.5.1 (2026-09-28). It adds a live microphone input-level test and fixes punctuation after the “new line” and “new paragraph” voice commands. The release workflow and public artifacts succeeded; pending installed-app checks are tracked in [docs/ACCEPTANCE-V0.5.1.md](docs/ACCEPTANCE-V0.5.1.md), while v0.5.0's History and Scratchpad acceptance remains in [docs/ACCEPTANCE-V0.5.md](docs/ACCEPTANCE-V0.5.md).
 
 ## Stage 0 — foundation
 
@@ -90,6 +90,15 @@ Runtime and model are separate approvals. The runtime setup reports source, size
 - [x] User reports successful basic initial tests and approves the v0.5.0 release.
 - [x] Tagged release workflow publishes the NSIS installer, updater signature, `latest.json`, and public changelog.
 - [x] Public installer digest, feed version and URL, signature asset, and changelog mirror inspected; Authenticode is unsigned because the optional certificate is not configured.
+
+## Stage 8 — v0.5.1 release
+
+- [x] Added a live microphone input-level test without recording or saving audio.
+- [x] Fixed recognizer-added punctuation at the start of lines inserted by “new line” and “new paragraph” commands.
+- [x] Version, changelog, release configuration, frontend, updater fixture, Rust, and Windows Tauri build checks passed.
+- [x] Tagged GitHub Actions release workflow published the NSIS installer, updater signature, `latest.json`, and public changelog.
+- [x] Verified the public manifest version and installer URL, its signature against the detached signature asset, the public changelog mirror, and the GitHub installer digest. Authenticode is unsigned because the optional certificate is not configured.
+- [ ] Hands-on checks of the voice formatting commands, microphone level test, and installed update remain pending in `docs/ACCEPTANCE-V0.5.1.md`.
 
 ## Future stages
 
