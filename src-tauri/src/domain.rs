@@ -383,9 +383,8 @@ pub fn process_transcription_text(
     }
 
     if options.formatting_commands_enabled {
+        text = replace_line_break_commands(&text, &[("new paragraph", "\n\n"), ("new line", "\n")]);
         let mut formatting = vec![
-            ("new paragraph", "\n\n"),
-            ("new line", "\n"),
             ("open quote", "\""),
             ("close quote", "\""),
             ("comma", ","),
@@ -519,6 +518,61 @@ fn phrase_boundary(text: &str, start: usize, end: usize) -> bool {
     let after = text[end..].chars().next();
     before.is_none_or(|character| !character.is_alphanumeric())
         && after.is_none_or(|character| !character.is_alphanumeric())
+}
+
+fn replace_line_break_commands(text: &str, commands: &[(&str, &str)]) -> String {
+    let mut result = text.to_owned();
+    for (source, replacement) in commands {
+        result = replace_phrase_and_following_punctuation(&result, source, replacement);
+    }
+    result
+}
+
+// ASR may attach sentence punctuation to a spoken line-break command.
+fn replace_phrase_and_following_punctuation(text: &str, source: &str, replacement: &str) -> String {
+    let source = source.trim();
+    if source.is_empty() || text.is_empty() || source.len() > text.len() {
+        return text.to_owned();
+    }
+
+    let mut result = String::with_capacity(text.len());
+    let mut cursor = 0;
+    while let Some((start, end)) = find_phrase(text, cursor, source, false) {
+        result.push_str(&text[cursor..start]);
+        result.push_str(replacement);
+        cursor = consume_following_punctuation(text, end);
+    }
+    result.push_str(&text[cursor..]);
+    result
+}
+
+fn consume_following_punctuation(text: &str, end: usize) -> usize {
+    let mut punctuation_start = end;
+    while let Some(character) = text[punctuation_start..].chars().next() {
+        if !matches!(character, ' ' | '\t') {
+            break;
+        }
+        punctuation_start += character.len_utf8();
+    }
+
+    let mut cursor = punctuation_start;
+    while let Some(character) = text[cursor..].chars().next() {
+        if !matches!(character, '.' | ',' | ';' | ':' | '!' | '?') {
+            break;
+        }
+        cursor += character.len_utf8();
+    }
+    if cursor == punctuation_start {
+        return end;
+    }
+
+    while let Some(character) = text[cursor..].chars().next() {
+        if !matches!(character, ' ' | '\t') {
+            break;
+        }
+        cursor += character.len_utf8();
+    }
+    cursor
 }
 
 fn normalize_formatting_spacing(text: &str) -> String {
@@ -666,6 +720,22 @@ mod tests {
         assert_eq!(
             process_transcription_text("new paragraph next new line item", None, options),
             "next\nitem"
+        );
+        assert_eq!(
+            process_transcription_text(
+                "This is a test first sentence. New paragraph. This is a test second sentence.",
+                None,
+                options,
+            ),
+            "This is a test first sentence.\n\nThis is a test second sentence."
+        );
+        assert_eq!(
+            process_transcription_text(
+                "This is another test first sentence. New line. This is a test second sentence.",
+                None,
+                options,
+            ),
+            "This is another test first sentence.\nThis is a test second sentence."
         );
         assert_eq!(
             process_transcription_text("open quote hello close quote", None, options),
