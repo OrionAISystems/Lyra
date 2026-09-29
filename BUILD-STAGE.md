@@ -1,6 +1,6 @@
 # Lyra build stage
 
-The current published version is v0.5.2 (2026-09-28 local time). It fixes the dictation bar menu placement and paste after releasing the push-to-talk Space key. The release workflow and public artifacts succeeded; pending installed-app checks are tracked in [docs/ACCEPTANCE-V0.5.2.md](docs/ACCEPTANCE-V0.5.2.md). Earlier v0.5 acceptance remains in [docs/ACCEPTANCE-V0.5.1.md](docs/ACCEPTANCE-V0.5.1.md) and [docs/ACCEPTANCE-V0.5.md](docs/ACCEPTANCE-V0.5.md).
+The current published version is v0.5.3 (2026-09-28 local time). It groups Insights by the computer's local calendar day and migrates retained UTC usage metadata. The release workflow, public artifacts, installed update, and first new local-day dictation succeeded; evidence is in [docs/ACCEPTANCE-V0.5.3.md](docs/ACCEPTANCE-V0.5.3.md). Earlier v0.5 acceptance remains in [docs/ACCEPTANCE-V0.5.2.md](docs/ACCEPTANCE-V0.5.2.md), [docs/ACCEPTANCE-V0.5.1.md](docs/ACCEPTANCE-V0.5.1.md), and [docs/ACCEPTANCE-V0.5.md](docs/ACCEPTANCE-V0.5.md).
 
 ## Stage 0 — foundation
 
@@ -111,12 +111,12 @@ Runtime and model are separate approvals. The runtime setup reports source, size
 - [x] Confirm the installed v0.5.1 to v0.5.2 update and running file version.
 - [ ] Verify installed v0.5.2 menu and push-to-talk paste behavior in `docs/ACCEPTANCE-V0.5.2.md`.
 
-## Stage 10 — v0.5.3 release preparation
+## Stage 10 — v0.5.3 release
 
 - [x] Merge local-calendar-day Insights and the one-time UTC aggregate migration.
 - [x] Complete and record v0.5.3 local release gates in `docs/ACCEPTANCE-V0.5.3.md`.
-- [ ] Tag, publish, and inspect the v0.5.3 updater and installer after the main Windows gate passes.
-- [ ] Verify the installed update and local-day behavior.
+- [x] Main Windows gate passed; tagged, published, and inspected the v0.5.3 updater and installer.
+- [x] Verified the installed update, local-day migration, and a new dictation incrementing today's bucket.
 
 ## Future stages
 

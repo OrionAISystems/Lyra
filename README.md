@@ -6,13 +6,11 @@ The repository is intentionally standalone. Lyra does not depend on Orion's gate
 
 ## Current phase
 
-v0.5.2 (2026-09-28 local time) is the current published release. It makes the dictation bar context menu visible above the bar and fixes paste when Space ends push-to-talk while Ctrl and Alt remain held. The release and its updater feed are published in [`OrionAISystems/Lyra-Releases`](https://github.com/OrionAISystems/Lyra-Releases/releases/tag/v0.5.2). It retains the live microphone test, formatting fixes, optional encrypted Transcript History, and intentional Scratchpad from earlier v0.5 releases.
-
-v0.5.3 is in release preparation. It groups Insights by the computer's local calendar day and migrates retained session metadata from UTC daily buckets. Release checks are tracked in [docs/ACCEPTANCE-V0.5.3.md](docs/ACCEPTANCE-V0.5.3.md).
+v0.5.3 (2026-09-28 local time) is the current published release. It groups Insights by the computer's local calendar day and migrates retained session metadata from legacy UTC daily buckets. The release and its updater feed are published in [`OrionAISystems/Lyra-Releases`](https://github.com/OrionAISystems/Lyra-Releases/releases/tag/v0.5.3). It retains the dictation bar menu, push-to-talk paste, live microphone test, optional encrypted Transcript History, and intentional Scratchpad from earlier v0.5 releases.
 
 Settings migrations through schema v4 are automatic and idempotent. The v0.5 migration keeps Transcript History Off and preserves existing microphone, ten-minute duration, startup, placement, correction, and cost preferences. Runtime and model installation remains separate and explicit; the optional Nemotron model is independently versioned and verified.
 
-Remaining installed-updater, hardware-backed recognition, and cross-application injection checks are tracked in [docs/ACCEPTANCE-V0.5.md](docs/ACCEPTANCE-V0.5.md). v0.5.2 release gates and pending hands-on checks are recorded in [docs/ACCEPTANCE-V0.5.2.md](docs/ACCEPTANCE-V0.5.2.md); a successful release build does not count as hardware or installed-app acceptance.
+Remaining installed-updater, hardware-backed recognition, and cross-application injection checks are tracked in [docs/ACCEPTANCE-V0.5.md](docs/ACCEPTANCE-V0.5.md). v0.5.3 release gates and hands-on checks are recorded in [docs/ACCEPTANCE-V0.5.3.md](docs/ACCEPTANCE-V0.5.3.md); a successful release build does not count as hardware or installed-app acceptance.
 
 ## Stack
 
