@@ -84,6 +84,8 @@ The benchmark records one phrase, retains its PCM only in memory, replays it thr
 
 The primary bar gesture is derived from the durable activation mode: toggle uses click-to-toggle, while push-to-talk uses pointer capture and stops on pointer-up, cancel, or lost capture. The hotkey uses the same activation controller. The frontend never invents a second activation setting.
 
+On Windows, the global shortcut library reports release of its trigger key. Releasing Space ends the default push-to-talk chord; releasing only Ctrl or Alt while Space remains held does not. Paste input checks held modifier state and temporarily lifts unrelated modifiers in one `SendInput` batch so Ctrl+Alt held after Space release does not turn Ctrl+V into Ctrl+Alt+V.
+
 Text processing is deterministic and ordered: normalize line endings, replace whole formatting phrases, normalize punctuation/quote spacing, apply enabled whole-word corrections longest-source-first, then run conservative insertion cleanup. Corrections are case-insensitive unless an entry opts into case sensitivity.
 
 The bar is placed at startup and at session start. Follow-active-window resolves the target window's monitor at those points; fixed placement resolves the saved monitor identity first and ordinal second. Missing fixed monitors fall back to primary and emit a non-blocking placement status.
