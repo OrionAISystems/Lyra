@@ -11,7 +11,7 @@ v0.5.2 is prepared for release. The current published release remains v0.5.1 unt
 | Updater fixtures | Pass | `npm run test:updater-fixture` passed signed, corrupt-signature, failed-install, offline, and temporary-configuration cases. | 2026-09-28 | |
 | Rust format and release tests | Pass | `cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check` and `cargo test --release --locked --manifest-path src-tauri/Cargo.toml` succeeded. | 2026-09-28 | 73 passed, 0 failed, 1 ignored. The ignored test requires the separately installed NeMo runtime and Nemotron model. |
 | Local unbundled Tauri release build | Pass | `npm run tauri build -- --no-bundle` succeeded and produced `src-tauri/target/release/lyra.exe`. | 2026-09-28 | The installer bundle and updater signature are created by the tagged workflow, not this build. |
-| Main GitHub Windows workflow | Pending | | | Required before tag. |
+| Main GitHub Windows workflow | Pass | [Run 36508214156](https://github.com/OrionAISystems/Lyra/actions/runs/36508214156) succeeded in 12m54s on release preparation commit `086a415`, including metadata validation, frontend build/tests, Rust release tests, and unbundled Tauri build. | 2026-09-28 | GitHub warned that actions/cache@v4, actions/checkout@v4, and actions/setup-node@v4 target Node 20 and were forced to run on Node 24; the workflow passed. |
 | Tagged GitHub release workflow | Pending | | | Tagging publishes to Lyra-Releases. |
 | Public release assets and updater manifest | Pending | | | Verify after publication. |
 | Public changelog mirror | Pending | | | Verify after publication. |

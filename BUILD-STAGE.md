@@ -107,7 +107,7 @@ Runtime and model are separate approvals. The runtime setup reports source, size
 - [x] Made the dictation bar context menu visible above the bar, with working dismissal and menu actions.
 - [x] Fixed paste when Space ends push-to-talk while Ctrl and Alt remain held; releasing Ctrl or Alt alone continues recording until Space is released.
 - [x] Complete and record v0.5.2 local release gates in `docs/ACCEPTANCE-V0.5.2.md`.
-- [ ] Complete the main Windows workflow gate before tagging.
+- [x] Complete the main Windows workflow gate before tagging.
 - [ ] Tag, publish, and inspect v0.5.2 release assets and update feed.
 
 ## Future stages
