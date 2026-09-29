@@ -130,8 +130,9 @@ mod platform {
         },
         UI::{
             Input::KeyboardAndMouse::{
-                SendInput, INPUT, INPUT_0, KEYBDINPUT, KEYEVENTF_KEYUP, VK_CONTROL, VK_INSERT,
-                VK_SHIFT, VK_V,
+                GetAsyncKeyState, SendInput, INPUT, INPUT_0, KEYBDINPUT, KEYEVENTF_EXTENDEDKEY,
+                KEYEVENTF_KEYUP, VK_CONTROL, VK_INSERT, VK_LCONTROL, VK_LMENU, VK_LSHIFT, VK_LWIN,
+                VK_RCONTROL, VK_RMENU, VK_RSHIFT, VK_RWIN, VK_SHIFT, VK_V,
             },
             WindowsAndMessaging::{
                 GetForegroundWindow, GetWindowThreadProcessId, IsWindow, SetForegroundWindow,
@@ -208,17 +209,32 @@ mod platform {
     }
 
     pub fn inject_ctrl_v(target: TargetContext) -> Result<(), BackendError> {
-        let mut inputs = [
-            keyboard_input(VK_CONTROL as u16, 0),
-            keyboard_input(VK_V as u16, 0),
-            keyboard_input(VK_V as u16, KEYEVENTF_KEYUP),
-            keyboard_input(VK_CONTROL as u16, KEYEVENTF_KEYUP),
-        ];
+        inject_paste_chord(target, VK_CONTROL, VK_V)
+    }
+
+    pub fn inject_shift_insert(target: TargetContext) -> Result<(), BackendError> {
+        inject_paste_chord(target, VK_SHIFT, VK_INSERT)
+    }
+
+    // The shortcut can finish while Ctrl or Alt remains physically held. SendInput
+    // preserves that state, so a plain Ctrl+V can become Ctrl+Alt+V in the target.
+    // Lift only the unrelated held modifiers and restore them in the same input batch.
+    fn inject_paste_chord(
+        target: TargetContext,
+        chord_modifier: u16,
+        key: u16,
+    ) -> Result<(), BackendError> {
         if !target_is_foreground(target) {
             return Err(BackendError::DeviceFailure(
                 "the original target lost focus before paste input".to_owned(),
             ));
         }
+        let held = held_modifiers();
+        let sequence = paste_key_sequence(&held, chord_modifier, key);
+        let mut inputs = sequence
+            .iter()
+            .map(|(key, flags)| keyboard_input(*key, *flags))
+            .collect::<Vec<_>>();
         let sent = unsafe {
             SendInput(
                 inputs.len() as u32,
@@ -227,6 +243,27 @@ mod platform {
             )
         };
         if sent != inputs.len() as u32 {
+            if sent > 0 {
+                let mut recovery =
+                    paste_recovery_sequence(&held, chord_modifier, key, &sequence[..sent as usize])
+                        .iter()
+                        .map(|(key, flags)| keyboard_input(*key, *flags))
+                        .collect::<Vec<_>>();
+                if !recovery.is_empty() {
+                    let restored = unsafe {
+                        SendInput(
+                            recovery.len() as u32,
+                            recovery.as_mut_ptr(),
+                            size_of::<INPUT>() as i32,
+                        )
+                    };
+                    if restored != recovery.len() as u32 {
+                        tracing::warn!(
+                            "could not restore held keyboard modifiers after partial paste input"
+                        );
+                    }
+                }
+            }
             return Err(BackendError::DeviceFailure(
                 "Windows did not accept the paste input; the transcript remains on the clipboard"
                     .to_owned(),
@@ -235,32 +272,84 @@ mod platform {
         Ok(())
     }
 
-    pub fn inject_shift_insert(target: TargetContext) -> Result<(), BackendError> {
-        let mut inputs = [
-            keyboard_input(VK_SHIFT as u16, 0),
-            keyboard_input(VK_INSERT as u16, 0),
-            keyboard_input(VK_INSERT as u16, KEYEVENTF_KEYUP),
-            keyboard_input(VK_SHIFT as u16, KEYEVENTF_KEYUP),
-        ];
-        if !target_is_foreground(target) {
-            return Err(BackendError::DeviceFailure(
-                "the original target lost focus before paste input".to_owned(),
-            ));
+    fn held_modifiers() -> Vec<(u16, u32)> {
+        [
+            (VK_LCONTROL, 0),
+            (VK_RCONTROL, KEYEVENTF_EXTENDEDKEY),
+            (VK_LMENU, 0),
+            (VK_RMENU, KEYEVENTF_EXTENDEDKEY),
+            (VK_LSHIFT, 0),
+            (VK_RSHIFT, 0),
+            (VK_LWIN, KEYEVENTF_EXTENDEDKEY),
+            (VK_RWIN, KEYEVENTF_EXTENDEDKEY),
+        ]
+        .into_iter()
+        .filter(|(key, _)| unsafe { GetAsyncKeyState(*key as i32) < 0 })
+        .collect()
+    }
+
+    fn same_modifier(held_key: u16, chord_modifier: u16) -> bool {
+        match chord_modifier {
+            VK_CONTROL => held_key == VK_LCONTROL || held_key == VK_RCONTROL,
+            VK_SHIFT => held_key == VK_LSHIFT || held_key == VK_RSHIFT,
+            _ => false,
         }
-        let sent = unsafe {
-            SendInput(
-                inputs.len() as u32,
-                inputs.as_mut_ptr(),
-                size_of::<INPUT>() as i32,
-            )
-        };
-        if sent != inputs.len() as u32 {
-            return Err(BackendError::DeviceFailure(
-                "Windows did not accept Shift+Insert; the transcript remains on the clipboard"
-                    .to_owned(),
-            ));
+    }
+
+    fn paste_key_sequence(held: &[(u16, u32)], chord_modifier: u16, key: u16) -> Vec<(u16, u32)> {
+        let chord_held = held
+            .iter()
+            .any(|(held_key, _)| same_modifier(*held_key, chord_modifier));
+        let lifted = held
+            .iter()
+            .filter(|(held_key, _)| !same_modifier(*held_key, chord_modifier))
+            .copied()
+            .collect::<Vec<_>>();
+        let mut keys = Vec::with_capacity(lifted.len() * 2 + 4);
+        for (held_key, flags) in &lifted {
+            keys.push((*held_key, *flags | KEYEVENTF_KEYUP));
         }
-        Ok(())
+        if !chord_held {
+            keys.push((chord_modifier, 0));
+        }
+        keys.push((key, 0));
+        keys.push((key, KEYEVENTF_KEYUP));
+        if !chord_held {
+            keys.push((chord_modifier, KEYEVENTF_KEYUP));
+        }
+        for (held_key, flags) in lifted.iter().rev() {
+            keys.push((*held_key, *flags));
+        }
+        keys
+    }
+
+    fn paste_recovery_sequence(
+        held: &[(u16, u32)],
+        chord_modifier: u16,
+        key: u16,
+        sent: &[(u16, u32)],
+    ) -> Vec<(u16, u32)> {
+        let mut recovery = Vec::new();
+        if sent.contains(&(key, 0)) && !sent.contains(&(key, KEYEVENTF_KEYUP)) {
+            recovery.push((key, KEYEVENTF_KEYUP));
+        }
+        if !held
+            .iter()
+            .any(|(held_key, _)| same_modifier(*held_key, chord_modifier))
+            && sent.contains(&(chord_modifier, 0))
+            && !sent.contains(&(chord_modifier, KEYEVENTF_KEYUP))
+        {
+            recovery.push((chord_modifier, KEYEVENTF_KEYUP));
+        }
+        for (held_key, flags) in held.iter().rev() {
+            if !same_modifier(*held_key, chord_modifier)
+                && sent.contains(&(*held_key, *flags | KEYEVENTF_KEYUP))
+                && !sent.contains(&(*held_key, *flags))
+            {
+                recovery.push((*held_key, *flags));
+            }
+        }
+        recovery
     }
 
     pub fn target_executable(target: TargetContext) -> Option<String> {
@@ -405,6 +494,62 @@ mod platform {
         };
         (unsafe { GetMonitorInfoW(monitor, &mut info) } != 0)
             .then_some((info.rcMonitor.left, info.rcMonitor.top))
+    }
+
+    #[cfg(test)]
+    mod paste_tests {
+        use super::*;
+
+        #[test]
+        fn unmodified_ctrl_v_keeps_the_existing_input_sequence() {
+            assert_eq!(
+                paste_key_sequence(&[], VK_CONTROL, VK_V),
+                vec![
+                    (VK_CONTROL, 0),
+                    (VK_V, 0),
+                    (VK_V, KEYEVENTF_KEYUP),
+                    (VK_CONTROL, KEYEVENTF_KEYUP),
+                ]
+            );
+        }
+
+        #[test]
+        fn held_alt_is_lifted_around_ctrl_v_while_held_ctrl_stays_down() {
+            let keys = paste_key_sequence(&[(VK_LCONTROL, 0), (VK_LMENU, 0)], VK_CONTROL, VK_V);
+            assert_eq!(
+                keys,
+                vec![
+                    (VK_LMENU, KEYEVENTF_KEYUP),
+                    (VK_V, 0),
+                    (VK_V, KEYEVENTF_KEYUP),
+                    (VK_LMENU, 0),
+                ]
+            );
+        }
+
+        #[test]
+        fn unrelated_held_modifiers_are_restored_after_shift_insert() {
+            let keys = paste_key_sequence(
+                &[(VK_LCONTROL, 0), (VK_RMENU, KEYEVENTF_EXTENDEDKEY)],
+                VK_SHIFT,
+                VK_INSERT,
+            );
+            assert_eq!(keys.first(), Some(&(VK_LCONTROL, KEYEVENTF_KEYUP)));
+            assert_eq!(keys.last(), Some(&(VK_LCONTROL, 0)));
+            assert!(keys.contains(&(VK_SHIFT, 0)));
+            assert!(keys.contains(&(VK_RMENU, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP)));
+        }
+
+        #[test]
+        fn partial_paste_recovery_only_restores_keys_changed_by_sent_prefix() {
+            let held = [(VK_LCONTROL, 0), (VK_LMENU, 0)];
+            let sequence = paste_key_sequence(&held, VK_CONTROL, VK_V);
+            assert_eq!(
+                paste_recovery_sequence(&held, VK_CONTROL, VK_V, &sequence[..2]),
+                vec![(VK_V, KEYEVENTF_KEYUP), (VK_LMENU, 0)]
+            );
+            assert!(paste_recovery_sequence(&held, VK_CONTROL, VK_V, &[]).is_empty());
+        }
     }
 }
 
