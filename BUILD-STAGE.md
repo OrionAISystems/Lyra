@@ -111,6 +111,13 @@ Runtime and model are separate approvals. The runtime setup reports source, size
 - [x] Confirm the installed v0.5.1 to v0.5.2 update and running file version.
 - [ ] Verify installed v0.5.2 menu and push-to-talk paste behavior in `docs/ACCEPTANCE-V0.5.2.md`.
 
+## Stage 10 — v0.5.3 release preparation
+
+- [x] Merge local-calendar-day Insights and the one-time UTC aggregate migration.
+- [x] Complete and record v0.5.3 local release gates in `docs/ACCEPTANCE-V0.5.3.md`.
+- [ ] Tag, publish, and inspect the v0.5.3 updater and installer after the main Windows gate passes.
+- [ ] Verify the installed update and local-day behavior.
+
 ## Future stages
 
 - native multi-final VAD endpointing and simultaneous warm models
