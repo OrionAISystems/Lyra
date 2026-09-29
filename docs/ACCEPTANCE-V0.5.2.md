@@ -23,6 +23,7 @@ Lyra v0.5.2 was published on 2026-09-29 UTC (2026-09-28 local time). The [public
 | Dictation bar menu is visible above the bar. | Pass | Native dev bundle window expanded upward while open and returned to compact size after a second right-click. | 2026-09-28 | Escape and outside-click dismissal, and installed v0.5.2, remain hands-on checks. |
 | Releasing Space while holding Ctrl and Alt pastes, then Space starts another dictation. | Pass | User tested the v0.5.2 dev bundle and confirmed paste and immediate restart. | 2026-09-28 | |
 | Releasing Ctrl or Alt while Space remains held continues recording. | Pass | User tested the narrowed dev bundle and confirmed recording continued without stopping. | 2026-09-28 | The global shortcut library reports release of the trigger key, Space. |
-| Installed v0.5.1 updates to v0.5.2 and reports the new version. | Pending | | | Verify after publication. |
+| Installed v0.5.1 updates to v0.5.2 and reports the new version. | Pass | User reported the update completed and that v0.5.2 is running. The active installed executable reports product and file version `0.5.2`. | 2026-09-28 | |
+| Installed v0.5.2 menu and push-to-talk paste behavior. | Pending | | | Dev-bundle behavior passed; confirm the installed release in normal use. |
 
-Release automation and dev-bundle checks do not establish installed-app updater behavior. Record that result only after direct observation.
+Release automation and dev-bundle checks do not establish installed-app behavior. The updater result above includes the user's direct report and the installed process version; menu and shortcut behavior in that installed release remain unverified.

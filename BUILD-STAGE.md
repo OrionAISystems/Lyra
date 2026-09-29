@@ -108,7 +108,8 @@ Runtime and model are separate approvals. The runtime setup reports source, size
 - [x] Complete the main Windows workflow gate before tagging.
 - [x] Tagged v0.5.2; the GitHub Actions workflow published the NSIS installer, updater signature, `latest.json`, and public changelog.
 - [x] Verified installer digest, manifest version and URLs, signature match, live latest feed, and public changelog mirror.
-- [ ] Verify the installed v0.5.1 to v0.5.2 update and installed-app behavior in `docs/ACCEPTANCE-V0.5.2.md`.
+- [x] Confirm the installed v0.5.1 to v0.5.2 update and running file version.
+- [ ] Verify installed v0.5.2 menu and push-to-talk paste behavior in `docs/ACCEPTANCE-V0.5.2.md`.
 
 ## Future stages
 
