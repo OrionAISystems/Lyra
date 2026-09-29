@@ -137,6 +137,7 @@ pub fn run() {
             commands::clear_openai_credential,
             commands::show_settings,
             commands::hide_bar,
+            commands::set_bar_menu_visible,
             commands::quit_lyra
         ])
         .build(tauri::generate_context!())

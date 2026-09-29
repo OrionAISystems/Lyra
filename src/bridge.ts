@@ -75,6 +75,8 @@ export const stopDictation = (source: "hotkey" | "bar" = "bar") =>
 export const cancelDictation = () => command<void>("cancel_dictation");
 export const showSettings = () => command<void>("show_settings");
 export const hideBar = () => command<void>("hide_bar");
+export const setBarMenuVisible = (open: boolean) =>
+  command<void>("set_bar_menu_visible", { open });
 export const quitLyra = () => command<void>("quit_lyra");
 export const copyLastTranscript = () =>
   command<string | null>("copy_last_transcript");

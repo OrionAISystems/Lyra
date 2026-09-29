@@ -6,6 +6,7 @@ import {
   hideBar,
   isTauri,
   quitLyra,
+  setBarMenuVisible,
   showSettings,
   startDictation,
   stopDictation,
@@ -26,7 +27,6 @@ import { isPrimaryPointerButton, primaryBarGesture } from "./barActivation";
 import type { Screen } from "./types";
 function DictationBar() {
   const state = useLyra();
-  const barRef = useRef<HTMLElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [displayDurationMs, setDisplayDurationMs] = useState(0);
   const pttActive = useRef(false);
@@ -78,7 +78,11 @@ function DictationBar() {
   useEffect(() => {
     if (!menuOpen) return;
     const close = (event: PointerEvent) => {
-      if (!barRef.current?.contains(event.target as Node)) setMenuOpen(false);
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        !target.closest(".bar-menu, .bar-surface")
+      ) setMenuOpen(false);
     };
     const escape = (event: KeyboardEvent) => {
       if (event.key === "Escape") setMenuOpen(false);
@@ -89,6 +93,12 @@ function DictationBar() {
       window.removeEventListener("pointerdown", close);
       window.removeEventListener("keydown", escape);
     };
+  }, [menuOpen]);
+
+  useEffect(() => {
+    void setBarMenuVisible(menuOpen).catch(() => {
+      if (menuOpen) setMenuOpen(false);
+    });
   }, [menuOpen]);
 
   const begin = () => {
@@ -127,11 +137,10 @@ function DictationBar() {
 
   return (
     <main
-      ref={barRef}
-      className={`bar-shell bar-shell--${state.session.state}`}
+      className={`bar-shell bar-shell--${state.session.state}${menuOpen ? " bar-shell--menu-open" : ""}`}
       onContextMenu={(event) => {
         event.preventDefault();
-        setMenuOpen(true);
+        setMenuOpen((open) => !open);
       }}
     >
       <button

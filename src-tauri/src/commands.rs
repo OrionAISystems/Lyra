@@ -38,8 +38,8 @@ use crate::{
     },
     windows::{
         capture_external_foreground_target, capture_foreground_target,
-        list_displays as enumerate_displays, place_bar, target_executable, target_is_alive,
-        BarPlacementStatus, DisplayInfo, TargetContext,
+        list_displays as enumerate_displays, place_bar, set_bar_menu_open, target_executable,
+        target_is_alive, BarPlacementStatus, DisplayInfo, TargetContext,
     },
 };
 
@@ -1846,9 +1846,18 @@ pub fn show_settings(state: State<'_, Arc<Mutex<AppState>>>) -> Result<(), Strin
 pub fn hide_bar(state: State<'_, Arc<Mutex<AppState>>>) -> Result<(), String> {
     let state = state.lock().map_err(|_| "state lock poisoned".to_owned())?;
     if let Some(bar) = state.app.get_webview_window("bar") {
+        set_bar_menu_open(&bar, false).map_err(|error| error.to_string())?;
         bar.hide().map_err(|error| error.to_string())?;
     }
     Ok(())
+}
+
+#[tauri::command]
+pub fn set_bar_menu_visible(app: AppHandle, open: bool) -> Result<(), String> {
+    let bar = app
+        .get_webview_window("bar")
+        .ok_or_else(|| "dictation bar window is unavailable".to_owned())?;
+    set_bar_menu_open(&bar, open).map_err(|error| error.to_string())
 }
 
 #[tauri::command]

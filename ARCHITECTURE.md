@@ -12,6 +12,8 @@ The settings window is intentionally compact rather than dashboard-like. It expl
 
 The settings shell owns the viewport height. Its sidebar remains pinned as a single viewport column, while the `.content-scroll` pane owns vertical scrolling for long sections such as General and Usage. On narrow windows the same two-row shell keeps navigation visible while the content row scrolls.
 
+Right-clicking the dictation bar opens Settings, Hide bar, and Quit Lyra. The transparent bar window grows upward while this menu is open and keeps its lower edge fixed, so the menu remains visible above the bar without moving the dictation control. A second right-click or a click in the empty window area closes it.
+
 ## Runtime data flow
 
 ```text

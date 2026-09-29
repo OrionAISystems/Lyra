@@ -1527,6 +1527,10 @@ html.bar-window,
   width: 100%;
   user-select: none;
 }
+.bar-shell--menu-open {
+  align-items: flex-end;
+  padding-bottom: 11.5px;
+}
 .bar-surface {
   display: flex;
   align-items: center;
@@ -1623,7 +1627,7 @@ html.bar-window,
 }
 .bar-menu {
   position: absolute;
-  top: calc(50% + 14px);
+  bottom: 40px;
   right: 50%;
   z-index: 5;
   display: flex;
@@ -1662,6 +1666,10 @@ html.bar-window,
   color: rgba(149, 158, 170, 0.65);
   font-size: 8px;
   white-space: nowrap;
+}
+.bar-shell--menu-open .bar-runtime-hint,
+.bar-shell--menu-open .bar-recovery {
+  display: none;
 }
 .bar-recovery {
   position: absolute;

@@ -466,6 +466,45 @@ pub fn capture_external_foreground_target(excluded_process_id: u32) -> Option<Ta
         .filter(|target| target.process_id != excluded_process_id)
 }
 
+/// Grow the transparent bar window upward so its context menu remains on screen.
+/// The lower edge stays fixed, including when placement is recalculated mid-session.
+pub fn set_bar_menu_open(
+    bar: &tauri::WebviewWindow,
+    open: bool,
+) -> Result<(), crate::domain::BackendError> {
+    use tauri::{LogicalSize, PhysicalPosition};
+
+    let target_height = if open { 162.0 } else { 42.0 };
+    let scale = bar
+        .scale_factor()
+        .map_err(|error| crate::domain::BackendError::DeviceFailure(error.to_string()))?;
+    let current_size = bar
+        .inner_size()
+        .map_err(|error| crate::domain::BackendError::DeviceFailure(error.to_string()))?;
+    let target_physical_height = (target_height * scale).round() as i32;
+    let height_delta = current_size.height as i32 - target_physical_height;
+    if height_delta == 0 {
+        return Ok(());
+    }
+    let position = bar
+        .outer_position()
+        .map_err(|error| crate::domain::BackendError::DeviceFailure(error.to_string()))?;
+    let anchored_position = PhysicalPosition::new(position.x, position.y + height_delta);
+    let size = LogicalSize::new(190.0, target_height);
+    if open {
+        bar.set_position(anchored_position)
+            .map_err(|error| crate::domain::BackendError::DeviceFailure(error.to_string()))?;
+        bar.set_size(size)
+            .map_err(|error| crate::domain::BackendError::DeviceFailure(error.to_string()))?;
+    } else {
+        bar.set_size(size)
+            .map_err(|error| crate::domain::BackendError::DeviceFailure(error.to_string()))?;
+        bar.set_position(anchored_position)
+            .map_err(|error| crate::domain::BackendError::DeviceFailure(error.to_string()))?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{resolve_saved_monitor_index, target_identity_matches, TargetContext};
