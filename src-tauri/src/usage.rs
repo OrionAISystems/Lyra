@@ -12,7 +12,7 @@ use tracing::warn;
 
 use crate::domain::TranscriptionResult;
 
-const STATS_SCHEMA_VERSION: u32 = 3;
+const STATS_SCHEMA_VERSION: u32 = 4;
 const DEFAULT_RATE_USD_PER_MINUTE: f64 = 0.003;
 const SESSION_RETENTION_MS: u64 = 365 * 86_400_000;
 
@@ -153,8 +153,8 @@ impl UsageCounters {
     }
 
     fn normalized_at(mut self, now_ms: u64) -> Self {
-        let current_day = today_key();
-        if self.schema_version < STATS_SCHEMA_VERSION {
+        let current_day = local_day_key(now_ms);
+        if self.schema_version < 3 {
             if self.today_key.is_empty() {
                 self.today_key = current_day.clone();
             }
@@ -172,7 +172,6 @@ impl UsageCounters {
             });
             self.detailed_since = Some(current_day.clone());
         }
-        self.schema_version = STATS_SCHEMA_VERSION;
         for entry in &mut self.daily {
             if !is_iso_day(&entry.day) {
                 entry.day = current_day.clone();
@@ -181,42 +180,155 @@ impl UsageCounters {
                 entry.parakeet_words = entry.words;
             }
         }
+        merge_daily_entries(&mut self.daily);
+        if self.schema_version < STATS_SCHEMA_VERSION {
+            // Legacy daily buckets used UTC dates. Retained completed-session
+            // timestamps let us relocate their metadata without changing totals.
+            self.rebucket_retained_sessions(local_day_key);
+        }
+        self.schema_version = STATS_SCHEMA_VERSION;
         if self.today_key != current_day {
             self.today_key = current_day;
-            self.started_dictations_today = 0;
+            self.started_dictations_today = self
+                .daily
+                .iter()
+                .find(|entry| entry.day == self.today_key)
+                .map_or(0, |entry| entry.sessions);
         }
-        self.daily.sort_by(|left, right| left.day.cmp(&right.day));
-        self.daily.dedup_by(|left, right| {
-            if left.day != right.day {
-                return false;
-            }
-            left.sessions += right.sessions;
-            left.completed += right.completed;
-            left.failed += right.failed;
-            left.words += right.words;
-            left.parakeet_words += right.parakeet_words;
-            left.nemotron_words += right.nemotron_words;
-            left.duration_ms += right.duration_ms;
-            left.paste_attempts += right.paste_attempts;
-            left.paste_successes += right.paste_successes;
-            true
-        });
         let session_cutoff = now_ms.saturating_sub(SESSION_RETENTION_MS);
         self.sessions
             .retain(|session| session.timestamp_ms >= session_cutoff);
         self
     }
 
+    fn rebucket_retained_sessions(&mut self, local_day: impl Fn(u64) -> String) {
+        let mut original = std::mem::take(&mut self.daily)
+            .into_iter()
+            .map(|entry| (entry.day.clone(), entry))
+            .collect::<BTreeMap<_, _>>();
+        let mut additions = BTreeMap::<String, DailyUsage>::new();
+        for session in &self.sessions {
+            let utc_day = utc_day_key(session.timestamp_ms);
+            let destination_day = local_day(session.timestamp_ms);
+            if destination_day == utc_day {
+                continue;
+            }
+            let Some(source) = original.get_mut(&utc_day) else {
+                continue;
+            };
+            let mut moved = DailyUsage {
+                day: destination_day.clone(),
+                ..DailyUsage::default()
+            };
+            let words = source.words.min(session.word_count);
+            let is_nemotron = session
+                .backend
+                .as_deref()
+                .unwrap_or(&session.engine)
+                .to_ascii_lowercase()
+                .contains("nemotron");
+            if is_nemotron {
+                moved.nemotron_words = move_count(&mut source.nemotron_words, words);
+                moved.parakeet_words =
+                    move_count(&mut source.parakeet_words, words - moved.nemotron_words);
+            } else {
+                moved.parakeet_words = move_count(&mut source.parakeet_words, words);
+                moved.nemotron_words =
+                    move_count(&mut source.nemotron_words, words - moved.parakeet_words);
+            }
+            moved.words = moved.parakeet_words + moved.nemotron_words;
+            source.words -= moved.words;
+            moved.sessions = move_count(&mut source.sessions, 1);
+            moved.completed = move_count(&mut source.completed, 1);
+            moved.duration_ms = move_count(&mut source.duration_ms, session.duration_ms);
+            if matches!(
+                session.paste_outcome.as_str(),
+                "success" | "failed_or_clipboard"
+            ) {
+                moved.paste_attempts = move_count(&mut source.paste_attempts, 1);
+            }
+            if session.paste_outcome == "success" {
+                moved.paste_successes = move_count(&mut source.paste_successes, 1);
+            }
+            if session.failure_category == Some(FailureCategory::PasteInjection) {
+                moved.failed = move_count(&mut source.failed, 1);
+            }
+            let destination = additions
+                .entry(destination_day)
+                .or_insert_with(|| DailyUsage {
+                    day: moved.day.clone(),
+                    ..DailyUsage::default()
+                });
+            destination.sessions += moved.sessions;
+            destination.completed += moved.completed;
+            destination.failed += moved.failed;
+            destination.words += moved.words;
+            destination.parakeet_words += moved.parakeet_words;
+            destination.nemotron_words += moved.nemotron_words;
+            destination.duration_ms += moved.duration_ms;
+            destination.paste_attempts += moved.paste_attempts;
+            destination.paste_successes += moved.paste_successes;
+        }
+        self.daily = original
+            .into_values()
+            .chain(additions.into_values())
+            .collect();
+        merge_daily_entries(&mut self.daily);
+        self.daily.retain(|entry| {
+            entry.sessions != 0
+                || entry.completed != 0
+                || entry.failed != 0
+                || entry.words != 0
+                || entry.parakeet_words != 0
+                || entry.nemotron_words != 0
+                || entry.duration_ms != 0
+                || entry.paste_attempts != 0
+                || entry.paste_successes != 0
+        });
+    }
+
     fn today_mut(&mut self) -> &mut DailyUsage {
         let today = today_key();
-        if self.daily.last().is_none_or(|entry| entry.day != today) {
-            self.daily.push(DailyUsage {
-                day: today,
-                ..DailyUsage::default()
-            });
-        }
-        self.daily.last_mut().expect("daily entry exists")
+        let index = match self.daily.binary_search_by(|entry| entry.day.cmp(&today)) {
+            Ok(index) => index,
+            Err(index) => {
+                self.daily.insert(
+                    index,
+                    DailyUsage {
+                        day: today,
+                        ..DailyUsage::default()
+                    },
+                );
+                index
+            }
+        };
+        &mut self.daily[index]
     }
+}
+
+fn move_count(source: &mut u64, requested: u64) -> u64 {
+    let moved = (*source).min(requested);
+    *source -= moved;
+    moved
+}
+
+fn merge_daily_entries(daily: &mut Vec<DailyUsage>) {
+    daily.sort_by(|left, right| left.day.cmp(&right.day));
+    daily.dedup_by(|left, right| {
+        if left.day != right.day {
+            return false;
+        }
+        right.sessions += left.sessions;
+        right.completed += left.completed;
+        right.failed += left.failed;
+        right.words += left.words;
+        right.parakeet_words += left.parakeet_words;
+        right.nemotron_words += left.nemotron_words;
+        right.duration_ms += left.duration_ms;
+        right.paste_attempts += left.paste_attempts;
+        right.paste_successes += left.paste_successes;
+        true
+    });
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -473,7 +585,44 @@ pub fn timestamp_ms() -> u64 {
         .unwrap_or(0)
 }
 fn today_key() -> String {
-    let days = timestamp_ms() / 86_400_000;
+    local_day_key(timestamp_ms())
+}
+
+#[cfg(windows)]
+fn local_day_key(timestamp_ms: u64) -> String {
+    use windows_sys::Win32::{
+        Foundation::{FILETIME, SYSTEMTIME},
+        System::Time::{FileTimeToSystemTime, SystemTimeToTzSpecificLocalTimeEx},
+    };
+
+    // FILETIME is 100-nanosecond ticks since 1601-01-01 UTC.
+    let Some(ticks) = timestamp_ms
+        .checked_mul(10_000)
+        .and_then(|ticks| ticks.checked_add(116_444_736_000_000_000))
+    else {
+        return utc_day_key(timestamp_ms);
+    };
+    let file_time = FILETIME {
+        dwLowDateTime: ticks as u32,
+        dwHighDateTime: (ticks >> 32) as u32,
+    };
+    let mut utc = SYSTEMTIME::default();
+    let mut local = SYSTEMTIME::default();
+    if unsafe { FileTimeToSystemTime(&file_time, &mut utc) } == 0
+        || unsafe { SystemTimeToTzSpecificLocalTimeEx(std::ptr::null(), &utc, &mut local) } == 0
+    {
+        return utc_day_key(timestamp_ms);
+    }
+    format!("{:04}-{:02}-{:02}", local.wYear, local.wMonth, local.wDay)
+}
+
+#[cfg(not(windows))]
+fn local_day_key(timestamp_ms: u64) -> String {
+    utc_day_key(timestamp_ms)
+}
+
+fn utc_day_key(timestamp_ms: u64) -> String {
+    let days = timestamp_ms / 86_400_000;
     let z = days as i64 + 719_468;
     let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
     let doe = z - era * 146_097;
@@ -574,6 +723,133 @@ mod tests {
         assert_eq!(c.sessions.len(), 2);
         assert_eq!(c.sessions[0].timestamp_ms, cutoff);
         assert_eq!(c.sessions[1].timestamp_ms, now);
+    }
+    #[test]
+    fn retained_session_metadata_moves_utc_words_to_the_computer_day_once() {
+        let mut counters = UsageCounters::default();
+        counters.daily = vec![
+            DailyUsage {
+                day: "2026-09-28".to_owned(),
+                sessions: 97,
+                completed: 95,
+                words: 3_814,
+                parakeet_words: 3_814,
+                ..DailyUsage::default()
+            },
+            DailyUsage {
+                day: "2026-09-29".to_owned(),
+                sessions: 23,
+                completed: 23,
+                words: 820,
+                parakeet_words: 820,
+                duration_ms: 50_000,
+                paste_attempts: 23,
+                paste_successes: 22,
+                ..DailyUsage::default()
+            },
+        ];
+        counters.sessions.push(SessionRecord {
+            timestamp_ms: 1_790_641_800_000,
+            app_version: "0.5.2".to_owned(),
+            duration_ms: 2_000,
+            word_count: 820,
+            target_executable: None,
+            target_category: None,
+            endpoint: "manual".to_owned(),
+            engine: "parakeet_tdt".to_owned(),
+            runtime: None,
+            backend: Some("local_parakeet".to_owned()),
+            fallback_chain: Vec::new(),
+            latency_ms: None,
+            real_time_factor: None,
+            paste_outcome: "success".to_owned(),
+            failure_category: None,
+        });
+        assert_eq!(utc_day_key(counters.sessions[0].timestamp_ms), "2026-09-29");
+        counters.rebucket_retained_sessions(|_| "2026-09-28".to_owned());
+        let local = counters
+            .daily
+            .iter()
+            .find(|entry| entry.day == "2026-09-28")
+            .unwrap();
+        assert_eq!(local.words, 4_634);
+        assert_eq!(local.parakeet_words, 4_634);
+        assert_eq!(local.sessions, 98);
+        assert_eq!(local.completed, 96);
+        let next_utc_day = counters
+            .daily
+            .iter()
+            .find(|entry| entry.day == "2026-09-29")
+            .unwrap();
+        assert_eq!(next_utc_day.words, 0);
+        assert_eq!(next_utc_day.sessions, 22);
+        assert_eq!(next_utc_day.duration_ms, 48_000);
+        assert_eq!(next_utc_day.paste_attempts, 22);
+        counters.rebucket_retained_sessions(|_| "2026-09-28".to_owned());
+        assert_eq!(
+            counters.daily.iter().map(|entry| entry.words).sum::<u64>(),
+            4_634
+        );
+    }
+
+    #[test]
+    fn fully_rebucketed_utc_day_does_not_leave_a_future_chart_bucket() {
+        let mut counters = UsageCounters::default();
+        counters.daily = vec![DailyUsage {
+            day: "2026-09-29".to_owned(),
+            sessions: 2,
+            completed: 2,
+            failed: 1,
+            words: 30,
+            parakeet_words: 30,
+            duration_ms: 3_000,
+            paste_attempts: 2,
+            paste_successes: 1,
+            ..DailyUsage::default()
+        }];
+        let first = SessionRecord {
+            timestamp_ms: 1_790_641_800_000,
+            app_version: "0.5.2".to_owned(),
+            duration_ms: 1_000,
+            word_count: 10,
+            target_executable: None,
+            target_category: None,
+            endpoint: "manual".to_owned(),
+            engine: "parakeet_tdt".to_owned(),
+            runtime: None,
+            backend: Some("local_parakeet".to_owned()),
+            fallback_chain: Vec::new(),
+            latency_ms: None,
+            real_time_factor: None,
+            paste_outcome: "success".to_owned(),
+            failure_category: None,
+        };
+        let mut second = first.clone();
+        second.word_count = 20;
+        second.duration_ms = 2_000;
+        second.paste_outcome = "failed_or_clipboard".to_owned();
+        second.failure_category = Some(FailureCategory::PasteInjection);
+        counters.sessions = vec![first, second];
+        counters.rebucket_retained_sessions(|_| "2026-09-28".to_owned());
+        assert_eq!(counters.daily.len(), 1);
+        let local = &counters.daily[0];
+        assert_eq!(local.day, "2026-09-28");
+        assert_eq!((local.sessions, local.completed, local.failed), (2, 2, 1));
+        assert_eq!((local.words, local.parakeet_words), (30, 30));
+        assert_eq!(local.duration_ms, 3_000);
+        assert_eq!((local.paste_attempts, local.paste_successes), (2, 1));
+    }
+
+    #[test]
+    fn current_day_bucket_can_precede_an_older_utc_bucket() {
+        let mut counters = UsageCounters::default();
+        counters.daily = vec![DailyUsage {
+            day: "9999-12-31".to_owned(),
+            ..DailyUsage::default()
+        }];
+        counters.today_mut().words += 1;
+        assert_eq!(counters.daily.first().unwrap().day, today_key());
+        assert_eq!(counters.daily.last().unwrap().day, "9999-12-31");
     }
     #[test]
     fn paste_rate_is_safe_when_empty() {

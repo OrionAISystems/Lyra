@@ -32,7 +32,7 @@ export default function Insights({ state }: { state: LyraState }) {
   return (
     <Page
       title="Insights"
-      subtitle="A private, metadata-only view of your usage."
+      subtitle="Private usage totals grouped by your computer's time zone."
       action={
         <div className="insights-actions">
           <Select label="Range" value={range} onChange={setRange}>
