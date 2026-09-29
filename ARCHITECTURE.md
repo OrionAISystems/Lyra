@@ -63,7 +63,7 @@ The Rust side owns state transitions and side effects. The frontend renders even
 - `native/nemo.rs`: app-local dynamic loading boundary for the pinned NeMo-Speech.cpp C ABI. No machine-wide SDK or PATH dependency.
 - `runtime.rs`: pinned runtime/model metadata, resumable size-bounded downloads, checksum verification, safe staged extraction, and explicit setup progress.
 - `updater.rs`: `UpdateProvider` seam, stable-version filtering, signed Tauri updater integration, update state machine, scheduling, passive restart behavior, and the installation reservation gate.
-- `usage.rs`: local aggregate counters, indefinite daily aggregates, one-year metadata-only sessions, and derived metrics. It never receives transcript text or raw samples.
+- `usage.rs`: local aggregate counters, indefinite daily aggregates keyed to the Windows time zone, one-year metadata-only sessions, and derived metrics. It never receives transcript text or raw samples. A one-time migration moves retained completed-session metadata from legacy UTC buckets to local calendar days; older aggregates without timestamps remain on their original dates.
 - `saved_items.rs`: independent History and Scratchpad file stores, user-bound DPAPI protection for text, retention, bounded paginated metadata reads, and collection-specific operations.
 - `tray.rs`: the single tray update menu item, kept in sync with updater status.
 - `clipboard.rs`: bounded Windows text snapshots, sequence-number-guarded clipboard recovery, and clipboard operations.
