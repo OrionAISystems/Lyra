@@ -134,7 +134,7 @@ export function useLyra() {
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [update, setUpdate] = useState<UpdateStatus>({
     state: "idle",
-    currentVersion: "0.5.1",
+    currentVersion: "0.5.2",
     availableVersion: null,
     notes: null,
     publishedAt: null,

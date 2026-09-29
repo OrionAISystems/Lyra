@@ -2,6 +2,8 @@
 
 The current published version is v0.5.1 (2026-09-28). It adds a live microphone input-level test and fixes punctuation after the “new line” and “new paragraph” voice commands. The release workflow and public artifacts succeeded; pending installed-app checks are tracked in [docs/ACCEPTANCE-V0.5.1.md](docs/ACCEPTANCE-V0.5.1.md), while v0.5.0's History and Scratchpad acceptance remains in [docs/ACCEPTANCE-V0.5.md](docs/ACCEPTANCE-V0.5.md).
 
+v0.5.2 is in release preparation; its fixes and gate status are in [docs/ACCEPTANCE-V0.5.2.md](docs/ACCEPTANCE-V0.5.2.md).
+
 ## Stage 0 — foundation
 
 - [x] Private `OrionAISystems/Lyra` GitHub repository created.
@@ -99,6 +101,14 @@ Runtime and model are separate approvals. The runtime setup reports source, size
 - [x] Tagged GitHub Actions release workflow published the NSIS installer, updater signature, `latest.json`, and public changelog.
 - [x] Verified the public manifest version and installer URL, its signature against the detached signature asset, the public changelog mirror, and the GitHub installer digest. Authenticode is unsigned because the optional certificate is not configured.
 - [ ] Hands-on checks of the voice formatting commands, microphone level test, and installed update remain pending in `docs/ACCEPTANCE-V0.5.1.md`.
+
+## Stage 9 — v0.5.2 release preparation
+
+- [x] Made the dictation bar context menu visible above the bar, with working dismissal and menu actions.
+- [x] Fixed paste when Space ends push-to-talk while Ctrl and Alt remain held; releasing Ctrl or Alt alone continues recording until Space is released.
+- [x] Complete and record v0.5.2 local release gates in `docs/ACCEPTANCE-V0.5.2.md`.
+- [ ] Complete the main Windows workflow gate before tagging.
+- [ ] Tag, publish, and inspect v0.5.2 release assets and update feed.
 
 ## Future stages
 

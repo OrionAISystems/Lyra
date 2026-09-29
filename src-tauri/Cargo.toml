@@ -1,6 +1,6 @@
 [package]
 name = "lyra"
-version = "0.5.1"
+version = "0.5.2"
 description = "Local-first Windows dictation for Orion"
 authors = ["OrionAISystems"]
 edition = "2021"

@@ -2,6 +2,8 @@
 
 Lyra keeps source private in [`OrionAISystems/Lyra`](https://github.com/OrionAISystems/Lyra) and publishes release-only files plus the public [`CHANGELOG.md`](https://github.com/OrionAISystems/Lyra-Releases/blob/main/CHANGELOG.md) to the [`OrionAISystems/Lyra-Releases`](https://github.com/OrionAISystems/Lyra-Releases) repository. Installed clients therefore need no GitHub authentication. v0.3.0 was the first release whose installed v0.2.0 client exercised this path end to end; v0.3.1 kept long settings navigation anchored while the main content scrolls; v0.3.2 fixed local recognition reliability. The current published release is [v0.5.1](https://github.com/OrionAISystems/Lyra-Releases/releases/tag/v0.5.1) (2026-09-28), which adds a live microphone input-level test and fixes punctuation after the “new line” and “new paragraph” voice commands. See [ACCEPTANCE-V0.5.1.md](ACCEPTANCE-V0.5.1.md) for its release evidence and pending hands-on checks. The previous v0.5.0 release added optional local Transcript History and intentional Scratchpad capture; its evidence is in [ACCEPTANCE-V0.5.md](ACCEPTANCE-V0.5.md).
 
+v0.5.2 is prepared but not tagged or published. It contains the visible dictation bar menu and reliable paste after releasing the push-to-talk Space key. Its gate and publication status are recorded in [ACCEPTANCE-V0.5.2.md](ACCEPTANCE-V0.5.2.md).
+
 ## Release contract
 
 1. Update all version files together, add the new top `CHANGELOG.md` section, and run `npm run verify:version` plus `npm run verify:changelog`.
