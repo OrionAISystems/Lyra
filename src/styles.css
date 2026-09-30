@@ -207,6 +207,9 @@ aside footer i.ready,
   right: 24px;
   bottom: 24px;
   width: min(390px, calc(100vw - 32px));
+  --text: #f5f7fa;
+  --muted: #aeb7c3;
+  color: var(--text);
   display: flex;
   flex-direction: column;
   align-items: stretch;

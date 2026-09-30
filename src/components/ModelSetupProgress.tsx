@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, Download, X } from "lucide-react";
-import type { SetupProgress } from "../types";
+import type { SetupArtifactKind, SetupProgress } from "../types";
 
 const COMPLETION_NOTICE_MS = 2_800;
 
-function isModelKind(kind: string | null): boolean {
-  return kind === "model" || kind === "model-nemotron";
+function isModelKind(kind: SetupProgress["kind"]): boolean {
+  return kind === "model-parakeet" || kind === "model-nemotron";
 }
 
-function modelName(kind: string | null): string {
+function modelName(kind: SetupArtifactKind | null): string {
   return kind === "model-nemotron" ? "Nemotron Streaming" : "Parakeet TDT";
 }
 

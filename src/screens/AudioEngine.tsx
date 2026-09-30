@@ -318,7 +318,7 @@ export default function AudioEngine({ state }: { state: LyraState }) {
               disabled={!isTauri || busy}
               onClick={() => void startModelSetup("model-parakeet")}
             >
-              {state.setup.kind === "model" && busy
+              {state.setup.kind === "model-parakeet" && busy
                 ? `${state.setup.state[0]?.toUpperCase()}${state.setup.state.slice(1)}…`
                 : "Install"}
             </button>

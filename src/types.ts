@@ -165,8 +165,12 @@ export interface BarPlacementStatus {
   fallback: boolean;
   message: string | null;
 }
+export type SetupArtifactKind =
+  | "runtime"
+  | "model-parakeet"
+  | "model-nemotron";
 export interface SetupArtifact {
-  kind: "runtime" | "model" | "model-nemotron";
+  kind: SetupArtifactKind;
   variant: string | null;
   name: string;
   source: string;
@@ -178,7 +182,7 @@ export interface SetupArtifact {
   license: string | null;
 }
 export interface SetupProgress {
-  kind: string | null;
+  kind: SetupArtifactKind | null;
   variant: string | null;
   state:
     | "idle"

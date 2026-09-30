@@ -15,6 +15,7 @@ import type {
   SessionSnapshot,
   Settings,
   SetupArtifact,
+  SetupArtifactKind,
   SetupProgress,
   TranscriptionPartial,
   UpdateStatus,
@@ -54,7 +55,7 @@ export const getSetupArtifacts = async () =>
 export const getSetupProgress = () =>
   command<SetupProgress>("get_setup_progress");
 export const startSetupArtifact = (
-  kind: string,
+  kind: SetupArtifactKind,
   variant: string | null = null,
 ) => command<void>("start_setup_artifact", { kind, variant });
 export const cancelSetupArtifact = () => command<void>("cancel_setup_artifact");
