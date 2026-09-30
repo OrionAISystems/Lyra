@@ -8,9 +8,11 @@ The repository is intentionally standalone. Lyra does not depend on Orion's gate
 
 v0.5.3 (2026-09-28 local time) is the current published release. It groups Insights by the computer's local calendar day and migrates retained session metadata from legacy UTC daily buckets. The release and its updater feed are published in [`OrionAISystems/Lyra-Releases`](https://github.com/OrionAISystems/Lyra-Releases/releases/tag/v0.5.3). It retains the dictation bar menu, push-to-talk paste, live microphone test, optional encrypted Transcript History, and intentional Scratchpad from earlier v0.5 releases.
 
+v0.5.4 is in release preparation. It adds visible progress for application updates and Parakeet/Nemotron model downloads. The release checks are recorded in [docs/ACCEPTANCE-V0.5.4.md](docs/ACCEPTANCE-V0.5.4.md).
+
 Settings migrations through schema v4 are automatic and idempotent. The v0.5 migration keeps Transcript History Off and preserves existing microphone, ten-minute duration, startup, placement, correction, and cost preferences. Runtime and model installation remains separate and explicit; the optional Nemotron model is independently versioned and verified.
 
-Remaining installed-updater, hardware-backed recognition, and cross-application injection checks are tracked in [docs/ACCEPTANCE-V0.5.md](docs/ACCEPTANCE-V0.5.md). v0.5.3 release gates and hands-on checks are recorded in [docs/ACCEPTANCE-V0.5.3.md](docs/ACCEPTANCE-V0.5.3.md); a successful release build does not count as hardware or installed-app acceptance.
+Remaining installed-updater, hardware-backed recognition, and cross-application injection checks are tracked in [docs/ACCEPTANCE-V0.5.md](docs/ACCEPTANCE-V0.5.md). v0.5.3 release gates and hands-on checks are recorded in [docs/ACCEPTANCE-V0.5.3.md](docs/ACCEPTANCE-V0.5.3.md); v0.5.4 release checks and hands-on acceptance are in [docs/ACCEPTANCE-V0.5.4.md](docs/ACCEPTANCE-V0.5.4.md); a successful release build does not count as hardware or installed-app acceptance.
 
 ## Stack
 
