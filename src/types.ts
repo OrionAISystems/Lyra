@@ -166,7 +166,7 @@ export interface BarPlacementStatus {
   message: string | null;
 }
 export interface SetupArtifact {
-  kind: "runtime" | "model-parakeet" | "model-nemotron";
+  kind: "runtime" | "model" | "model-nemotron";
   variant: string | null;
   name: string;
   source: string;

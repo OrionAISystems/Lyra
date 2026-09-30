@@ -13,6 +13,8 @@ import {
   stopScratchpad,
 } from "./bridge";
 import { Shell } from "./components/Shell";
+import { ModelSetupProgress } from "./components/ModelSetupProgress";
+import { UpdateProgress } from "./components/UpdateProgress";
 import Home from "./screens/Home";
 import Dictation from "./screens/Dictation";
 import Personalization from "./screens/Personalization";
@@ -275,6 +277,10 @@ export default function App() {
       ready={state.runtime.runtimeVerified && state.runtime.modelVerified}
     >
       {pages[screen]}
+      <div className="activity-stack">
+        <ModelSetupProgress setup={state.setup} />
+        <UpdateProgress update={state.update} />
+      </div>
     </Shell>
   );
 }
