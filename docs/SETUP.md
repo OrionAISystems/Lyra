@@ -26,6 +26,8 @@ Lyra keeps the native runtime and model in app-managed directories:
 
 The setup flow asks for two independent approvals. It shows the official source, exact download size, target path, variant, license/checksum status, and whether CUDA hardware is available. A download is never hidden inside first launch, dependency installation, or a build script. A runtime download resumes from its `.partial` file when the server supports HTTP ranges; a model download follows the same path. Downloads cannot exceed their recorded expected size, and oversized partial artifacts are removed. Every completed artifact is checked against its pinned SHA-256 before staged installation. Failed, cancelled, or interrupted setup can be retried without treating an unverified artifact as ready.
 
+Audio & Engine provides separate install controls for the required Parakeet model and optional Nemotron model. Starting a model download opens a dismissible progress dialog; closing it keeps the download running and leaves a compact progress card at the lower-right of Settings across pages. Select the card to reopen the details. Download progress includes the transferred and expected size; checksum verification and installation use an indeterminate indicator.
+
 ## Runtime selection
 
 The first candidate is the official NeMo-Speech.cpp v0.1.0 Windows x64 CUDA archive. If a verified CUDA or Vulkan runtime fails during recognition, Lyra retries the request with an already-installed verified fallback (Vulkan first, then CPU). The user can separately approve the Vulkan archive and then the CPU archive; Lyra does not download a fallback, install a CUDA Toolkit, or modify PATH as a recovery action.
@@ -67,7 +69,7 @@ Use Scratchpad when you want to speak a thought without sending it to the curren
 
 ## Updates
 
-Lyra checks the public signed feed at startup, once per hour while running, and when `Check for updates` is pressed in General Settings. It accepts stable versions only and silently treats offline checks as an unavailable feed. The install reservation rejects listening/processing sessions and blocks new sessions as soon as installation begins. Windows launches the passive signed NSIS updater and restarts Lyra after installation.
+Lyra checks the public signed feed at startup, once per hour while running, and when `Check for updates` is pressed in Diagnostics. It accepts stable versions only and silently treats offline checks as an unavailable feed. The install reservation rejects listening/processing sessions and blocks new sessions as soon as installation begins. During larger downloads, Settings shows a non-blocking progress card with the percentage when available. Windows then launches the passive signed NSIS updater, which displays installation progress and restarts Lyra after installation.
 
 For local updater testing, run `npm run test:updater-fixture`. The harness generates an ephemeral Tauri signing key, serves a local signed manifest/artifact, exercises offline and corrupt-signature cases, and verifies a failed staged install cannot replace the existing application. It uses [src-tauri/tauri.fixture.conf.json](../src-tauri/tauri.fixture.conf.json); production configuration is not changed.
 

@@ -118,6 +118,14 @@ Runtime and model are separate approvals. The runtime setup reports source, size
 - [x] Main Windows gate passed; tagged, published, and inspected the v0.5.3 updater and installer.
 - [x] Verified the installed update, local-day migration, and a new dictation incrementing today's bucket.
 
+## Stage 11 — v0.5.4 release preparation
+
+- [x] Add visible updater progress and dismissible Parakeet/Nemotron download progress.
+- [x] Address Code Review feedback for the canonical Parakeet setup kind and light-theme readability.
+- [x] Complete and record v0.5.4 local release gates in `docs/ACCEPTANCE-V0.5.4.md`.
+- [ ] Pass the main Windows gate, then tag, publish, and inspect the v0.5.4 updater and installer.
+- [ ] Verify the installed update and model downloads in the installed application.
+
 ## Future stages
 
 - native multi-final VAD endpointing and simultaneous warm models

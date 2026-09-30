@@ -25,6 +25,7 @@ export default function AudioEngine({ state }: { state: LyraState }) {
   const busy = ["downloading", "verifying", "installing"].includes(
     state.setup.state,
   );
+  const [setupStartError, setSetupStartError] = useState<string | null>(null);
   const [benchmarkState, setBenchmarkState] = useState("idle");
   const [benchmarkError, setBenchmarkError] = useState<string | null>(null);
   const [benchmarkResult, setBenchmarkResult] =
@@ -154,6 +155,16 @@ export default function AudioEngine({ state }: { state: LyraState }) {
     } catch (error) {
       setBenchmarkState("idle");
       setBenchmarkError(error instanceof Error ? error.message : String(error));
+    }
+  };
+  const startModelSetup = async (kind: "model-parakeet" | "model-nemotron") => {
+    setSetupStartError(null);
+    try {
+      await startSetupArtifact(kind);
+    } catch (error) {
+      setSetupStartError(
+        error instanceof Error ? error.message : "Lyra couldn't start the model download.",
+      );
     }
   };
   return (
@@ -296,6 +307,25 @@ export default function AudioEngine({ state }: { state: LyraState }) {
         </Row>
         <Row
           icon={<Download />}
+          title="Parakeet TDT 0.6B"
+          description="Required local recognition model · separately downloaded and verified"
+        >
+          {state.runtime.modelVerified ? (
+            <span className="badge ok">Installed</span>
+          ) : (
+            <button
+              className="secondary"
+              disabled={!isTauri || busy}
+              onClick={() => void startModelSetup("model-parakeet")}
+            >
+              {state.setup.kind === "model-parakeet" && busy
+                ? `${state.setup.state[0]?.toUpperCase()}${state.setup.state.slice(1)}…`
+                : "Install"}
+            </button>
+          )}
+        </Row>
+        <Row
+          icon={<Download />}
           title="Nemotron Streaming 0.6B"
           description="Optional English q8 model · separately installed and verified"
         >
@@ -304,13 +334,20 @@ export default function AudioEngine({ state }: { state: LyraState }) {
           ) : (
             <button
               className="secondary"
-              disabled={busy}
-              onClick={() => void startSetupArtifact("model-nemotron")}
+              disabled={!isTauri || busy}
+              onClick={() => void startModelSetup("model-nemotron")}
             >
-              {busy ? "Installing…" : "Install"}
+              {state.setup.kind === "model-nemotron" && busy
+                ? `${state.setup.state[0]?.toUpperCase()}${state.setup.state.slice(1)}…`
+                : "Install"}
             </button>
           )}
         </Row>
+        {setupStartError && (
+          <p className="inline-error" role="alert">
+            {setupStartError}
+          </p>
+        )}
         <Row
           icon={<Cpu />}
           title="Benchmark engines"
