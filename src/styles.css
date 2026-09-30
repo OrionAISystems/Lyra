@@ -498,6 +498,9 @@ aside footer i.ready,
   border-radius: 10px;
   overflow: visible;
 }
+.audio-engine-detail-card {
+  margin-top: 14px;
+}
 .setting-row {
   min-height: 70px;
   padding: 13px 15px;
@@ -951,7 +954,7 @@ blockquote {
 .meter {
   height: 7px;
   background: #242b33;
-  margin: 0 15px 13px;
+  margin: 12px 15px 13px;
   border-radius: 7px;
   overflow: hidden;
 }

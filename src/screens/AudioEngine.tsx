@@ -265,7 +265,7 @@ export default function AudioEngine({ state }: { state: LyraState }) {
           />
         </Row>
       </Card>
-      <Card>
+      <Card className="audio-engine-detail-card">
         <Row
           icon={<Cpu />}
           title="Engine"
