@@ -1,6 +1,6 @@
 # Lyra
 
-Lyra is a Windows-first, tray-first dictation utility for the Orion ecosystem. A global shortcut or bar gesture captures microphone audio, local Parakeet or optional English Nemotron recognition processes it, and the final text is cleaned up and safely injected into the application that was active before recording began. Optional cloud fallback is explicit and credentials stay in Windows Credential Manager.
+Lyra is a Windows-first, tray-first dictation utility for the Orion ecosystem. A global shortcut or bar gesture captures microphone audio, local Parakeet or optional English Nemotron recognition processes it, and the final text is cleaned up and safely injected into the application that was active before recording began. With the default local-first cloud-fallback route, Lyra sends audio to OpenAI automatically if local recognition fails and an OpenAI credential is stored; it does not ask for confirmation per capture. Credentials stay in Windows Credential Manager.
 
 The repository is intentionally standalone. Lyra does not depend on Orion's gateway or shared UI package, and runtime/model artifacts are managed outside Git under `%LOCALAPPDATA%\Lyra\`.
 

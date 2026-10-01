@@ -57,7 +57,7 @@ The native runtime is loaded with its app-local `bin` directory as the dependenc
 
 ## Cloud credential
 
-The optional OpenAI credential is entered through the settings flow and stored in Windows Credential Manager. It is not written to the JSON settings file, logs, frontend bundle, or Git.
+The optional OpenAI credential is stored in Windows Credential Manager, not in the JSON settings file, logs, frontend bundle, or Git. This build does not expose a user-facing control for entering the credential or changing the transcription route. When the default local-first cloud-fallback route is active and a credential is present, Lyra sends audio to OpenAI automatically after local recognition fails, without per-capture confirmation.
 
 ## Usage statistics
 

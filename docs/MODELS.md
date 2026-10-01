@@ -13,7 +13,7 @@
 
 Lyra also exposes the official Windows x64 Vulkan fallback (21,967,184 bytes, SHA-256 `b5e7b04a637da4eb25a60253e2db65774998e8dfb48c08b4db763009b82ac7ac`) and CPU fallback (4,730,421 bytes, SHA-256 `5e4ea81046012edcd77fd8848de8eefb5a4ba38cc26f52eb544ab184695a75d6`). Each variant is separately approved, downloaded, verified, and stored under its own versioned runtime directory.
 
-Lyra verifies the adjacent official SHA-256 file before extracting an archive. Only an app-local, verified runtime is loadable.
+Lyra verifies downloaded archive bytes against the compile-time pinned SHA-256 above before extracting them. The adjacent official checksum file is listed as a source reference; the runtime does not fetch it. Only an app-local, verified runtime is loadable.
 
 ## Local model
 

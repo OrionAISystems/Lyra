@@ -49,7 +49,7 @@ The publisher and runtime enforce these limits:
 
 - The decoded catalog payload is at most 64 KiB.
 - A theme has eight named artwork slots and references no more than eight unique PNG assets.
-- Each PNG is at most 2 MiB, dimensions are at most 1024 × 1024, and unique assets total at most 8 MiB per theme pack. The engine keeps at most two remote packs in its bounded cache.
+- Each PNG is at most 2 MiB, dimensions are at most 1024 × 1024, and the decoded pixel buffer is at most 4 MiB. Unique assets total at most 8 MiB per theme pack. The engine keeps at most two remote packs in its bounded cache.
 - The publisher accepts legal PNG color-type/bit-depth combinations with standard compression and filters and non-interlaced rows. PNG chunk CRCs and image data are validated before signing or caching. Remote bytes must match the signed length and SHA-256 metadata before use.
 - Animated PNG chunks (`acTL`, `fcTL`, and `fdAT`) are rejected; app-level motion preferences control decorative movement.
 
