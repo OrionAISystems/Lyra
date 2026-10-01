@@ -44,6 +44,13 @@ function run(command, args, options = {}) {
   return result.stdout ?? "";
 }
 
+function assertCommandFails(command, args, pattern) {
+  const result = invoke(command, args);
+  const output = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
+  assert.notEqual(result.status, 0, `${command} ${args.join(" ")} should have failed`);
+  assert.match(output, pattern, `${command} ${args.join(" ")} failed for an unexpected reason`);
+}
+
 function runRustFixture(envelopePath, publicKeyPath, { assetDirectory, expectedInvalid = false, expectedInvalidAsset = false } = {}) {
   const result = invoke("cargo", [
     "test",
@@ -160,18 +167,95 @@ try {
   assertSharedValidationBoundary(payload);
 
   const assetManifest = JSON.parse(await readFile(join(outputDirectory, "assets.json"), "utf8"));
+  const manifestPath = join(outputDirectory, "assets.json");
+  const preparedAssetDirectory = join(outputDirectory, "assets");
+  run("node", [
+    "scripts/themes-release.mjs",
+    "compare-assets",
+    "--manifest",
+    manifestPath,
+    "--asset-directory",
+    preparedAssetDirectory,
+  ]);
+  run("node", [
+    "scripts/themes-release.mjs",
+    "compare-existing-assets",
+    "--manifest",
+    manifestPath,
+    "--asset-directory",
+    preparedAssetDirectory,
+  ]);
   const fixtureAssetDirectory = join(fixtureDirectory, "assets");
   const corruptAssetDirectory = join(fixtureDirectory, "assets-corrupt");
+  const corruptPublishedAssetDirectory = join(fixtureDirectory, "assets-published-corrupt");
   await mkdir(fixtureAssetDirectory, { recursive: true });
   await mkdir(corruptAssetDirectory, { recursive: true });
+  await mkdir(corruptPublishedAssetDirectory, { recursive: true });
   let firstFixtureAsset;
   for (const asset of assetManifest.assets) {
-    const sourcePath = join(outputDirectory, "assets", asset.fileName);
+    const sourcePath = join(preparedAssetDirectory, asset.fileName);
     const fixturePath = join(fixtureAssetDirectory, `${asset.sha256}.png`);
     await copyFile(sourcePath, fixturePath);
     await copyFile(fixturePath, join(corruptAssetDirectory, `${asset.sha256}.png`));
+    await copyFile(sourcePath, join(corruptPublishedAssetDirectory, asset.fileName));
     firstFixtureAsset ??= { path: join(corruptAssetDirectory, `${asset.sha256}.png`), bytes: await readFile(fixturePath) };
   }
+  const firstPublishedAsset = assetManifest.assets[0];
+  const corruptedPublishedBytes = await readFile(join(corruptPublishedAssetDirectory, firstPublishedAsset.fileName));
+  corruptedPublishedBytes[corruptedPublishedBytes.length - 1] ^= 1;
+  await writeFile(join(corruptPublishedAssetDirectory, firstPublishedAsset.fileName), corruptedPublishedBytes);
+  const compareAssetArgs = [
+    "scripts/themes-release.mjs",
+    "compare-assets",
+    "--manifest",
+    manifestPath,
+    "--asset-directory",
+    corruptPublishedAssetDirectory,
+  ];
+  assertCommandFails("node", compareAssetArgs, /does not match the prepared size and SHA-256/);
+  assertCommandFails("node", [
+    "scripts/themes-release.mjs",
+    "compare-existing-assets",
+    "--manifest",
+    manifestPath,
+    "--asset-directory",
+    corruptPublishedAssetDirectory,
+  ], /does not match the prepared size and SHA-256/);
+
+  const partialReleasePath = join(fixtureDirectory, "release-partial.json");
+  const releasePresentPath = join(fixtureDirectory, "release-present.txt");
+  const releaseMissingPath = join(fixtureDirectory, "release-missing.txt");
+  const partialRelease = {
+    tag_name: assetManifest.tag,
+    draft: false,
+    prerelease: true,
+    assets: [{
+      name: firstPublishedAsset.fileName,
+      size: firstPublishedAsset.sizeBytes,
+      digest: `sha256:${firstPublishedAsset.sha256}`,
+    }],
+  };
+  await writeFile(partialReleasePath, `${JSON.stringify(partialRelease)}\n`, "utf8");
+  const compareReleaseArgs = [
+    "scripts/themes-release.mjs",
+    "compare-release",
+    "--manifest",
+    manifestPath,
+    "--release-json",
+    partialReleasePath,
+    "--present-output",
+    releasePresentPath,
+    "--missing-output",
+    releaseMissingPath,
+  ];
+  run("node", compareReleaseArgs);
+  assert.equal(await readFile(releasePresentPath, "utf8"), `${firstPublishedAsset.fileName}\n`);
+  assert.equal(await readFile(releaseMissingPath, "utf8"), `${assetManifest.assets.find((asset) => asset.fileName !== firstPublishedAsset.fileName).fileName}\n`);
+  const wrongDigestRelease = structuredClone(partialRelease);
+  wrongDigestRelease.assets[0].digest = `sha256:${"0".repeat(64)}`;
+  await writeFile(partialReleasePath, `${JSON.stringify(wrongDigestRelease)}\n`, "utf8");
+  assertCommandFails("node", compareReleaseArgs, /different SHA-256 digest/);
+
   const apngCandidate = Buffer.from(firstFixtureAsset.bytes);
   apngCandidate.write("acTL", 37, "ascii");
   assert.throws(() => validatePng(apngCandidate, "APNG boundary fixture"), /APNG animation chunks/);

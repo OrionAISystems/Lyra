@@ -521,7 +521,7 @@ async function verifyCommand(options) {
 }
 
 async function compareAssetsCommand(options) {
-  if (!options.manifest || !options.asset-directory) fail("compare-assets requires --manifest and --asset-directory");
+  if (!options.manifest || !options["asset-directory"]) fail("compare-assets requires --manifest and --asset-directory");
   const manifest = parseJson(await readFile(resolve(root, options.manifest)), "theme asset manifest");
   if (!Array.isArray(manifest.assets)) fail("theme asset manifest has no assets array");
   const directory = resolve(root, options["asset-directory"]);
