@@ -42,10 +42,8 @@ export function useSeasonalTheme(settings: Settings) {
     const onVisible = () => { if (!document.hidden) void sync().catch(() => {}); };
     window.addEventListener("focus", onVisible);
     document.addEventListener("visibilitychange", onVisible);
-    // Guards clock changes/resume; the native service also schedules midnight.
-    const timer = window.setInterval(onVisible, 60_000);
     return () => {
-      disposed = true; snapshotSequence.current += 1; unsubscribe(); window.clearInterval(timer);
+      disposed = true; snapshotSequence.current += 1; unsubscribe();
       window.removeEventListener("focus", onVisible);
       document.removeEventListener("visibilitychange", onVisible);
     };

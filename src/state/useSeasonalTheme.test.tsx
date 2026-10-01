@@ -272,6 +272,27 @@ describe("useSeasonalTheme", () => {
     expect(unlisten).toHaveBeenCalledOnce();
   });
 
+  it("does not poll the full artwork status while the window stays visible", async () => {
+    const hiddenDescriptor = Object.getOwnPropertyDescriptor(document, "hidden");
+    Object.defineProperty(document, "hidden", { configurable: true, value: false });
+    bridgeState.isTauri = true;
+    bridgeState.getThemeStatus.mockResolvedValue(activeStatus());
+
+    try {
+      await mount(settings({ seasonalThemesEnabled: true }));
+      expect(bridgeState.getThemeStatus).toHaveBeenCalledOnce();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+
+      expect(bridgeState.getThemeStatus).toHaveBeenCalledOnce();
+    } finally {
+      if (hiddenDescriptor) Object.defineProperty(document, "hidden", hiddenDescriptor);
+      else Reflect.deleteProperty(document, "hidden");
+    }
+  });
+
   it("does not let a pending status read overwrite a newer native theme event", async () => {
     let onThemeChange: ((status: ThemeStatus) => void) | undefined;
     let resolveInitial!: (status: ThemeStatus) => void;

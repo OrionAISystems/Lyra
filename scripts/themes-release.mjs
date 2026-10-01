@@ -12,6 +12,7 @@ const SCHEMA_VERSION = 1;
 const ENGINE_VERSION = 1;
 const MAX_CATALOG_BYTES = 64 * 1024;
 const MAX_ASSET_BYTES = 2 * 1024 * 1024;
+const MAX_DECODED_IMAGE_BYTES = 4 * 1024 * 1024;
 const MAX_PACK_BYTES = 8 * 1024 * 1024;
 const MAX_DIMENSION = 1024;
 const MAX_THEMES = 64;
@@ -234,7 +235,11 @@ function validatePng(bytes, label) {
   if (!header || !imageDataStarted || !endSeen || offset !== bytes.length) fail(`${label} is missing a required PNG chunk`);
   if (header.colorType === 3 && !paletteSeen) fail(`${label} is indexed but has no PLTE chunk`);
 
-  const expectedLength = (header.rowBytes + 1) * header.height;
+  const decodedLength = header.rowBytes * header.height;
+  if (decodedLength > MAX_DECODED_IMAGE_BYTES) {
+    fail(`${label} decoded pixel buffer is ${decodedLength} bytes; the limit is ${MAX_DECODED_IMAGE_BYTES}`);
+  }
+  const expectedLength = decodedLength + header.height;
   const compressed = Buffer.concat(imageChunks);
   let scanlines;
   try {

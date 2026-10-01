@@ -35,6 +35,7 @@ const ENGINE_VERSION: u32 = 1;
 const MAX_CATALOG_BYTES: usize = 64 * 1024;
 const MAX_ENVELOPE_BYTES: usize = 128 * 1024;
 const MAX_IMAGE_BYTES: usize = 2 * 1024 * 1024;
+const MAX_DECODED_IMAGE_BYTES: usize = 4 * 1024 * 1024;
 const MAX_TOTAL_IMAGE_BYTES: usize = 8 * 1024 * 1024;
 const MAX_IMAGE_DIMENSION: u32 = 1024;
 const MAX_CACHED_REMOTE_THEMES: usize = 2;
@@ -679,7 +680,7 @@ fn validate_png(bytes: &[u8]) -> Result<(u32, u32), ThemeErrorCode> {
     let decoded_size = reader
         .output_buffer_size()
         .ok_or(ThemeErrorCode::AssetsUnavailable)?;
-    if decoded_size > 4 * 1024 * 1024 {
+    if decoded_size > MAX_DECODED_IMAGE_BYTES {
         return Err(ThemeErrorCode::AssetsUnavailable);
     }
     let mut output = vec![0_u8; decoded_size];
@@ -992,6 +993,22 @@ fn load_cached_snapshot_with_key(
     load_snapshot_content(root, &pointer, public_key).map(Some)
 }
 
+fn prefer_pointer_target_for_tied_snapshot(
+    current_best: &CachePointer,
+    candidate: &CachePointer,
+    preferred_pointer: Option<&CachePointer>,
+) -> bool {
+    let Some(preferred_pointer) = preferred_pointer else {
+        return false;
+    };
+    current_best.high_water_revision == candidate.high_water_revision
+        && current_best.active_payload_sha256 == candidate.active_payload_sha256
+        && candidate.high_water_revision == preferred_pointer.high_water_revision
+        && candidate.active_payload_sha256 == preferred_pointer.active_payload_sha256
+        && candidate.active_snapshot == preferred_pointer.active_snapshot
+        && current_best.active_snapshot != preferred_pointer.active_snapshot
+}
+
 fn load_snapshot_catalog(
     root: &Path,
     snapshot_name: &str,
@@ -1093,6 +1110,8 @@ fn recover_cache_pointer(
         return Err(ThemeErrorCode::CacheUnavailable);
     }
 
+    candidate_names.sort_unstable();
+    let preferred_pointer = read_cache_pointer(root).ok().flatten();
     let mut best: Option<(CachePointer, ThemeCatalogPayload)> = None;
     for name in candidate_names {
         let Ok((pointer, catalog)) = load_snapshot_catalog(root, &name, public_key) else {
@@ -1106,6 +1125,13 @@ fn recover_cache_pointer(
                         quarantine_cache_pointer(root)?;
                     }
                     return Err(ThemeErrorCode::CacheUnavailable);
+                }
+                if prefer_pointer_target_for_tied_snapshot(
+                    current,
+                    &pointer,
+                    preferred_pointer.as_ref(),
+                ) {
+                    best = Some((pointer, catalog));
                 }
             }
             _ => best = Some((pointer, catalog)),
@@ -1939,6 +1965,34 @@ impl ClockObservation {
 mod tests {
     use super::*;
 
+    #[test]
+    fn tied_snapshot_recovery_prefers_the_valid_pointer_target() {
+        let stale = CachePointer {
+            high_water_revision: 7,
+            active_snapshot: "rev-7-payload-stale".to_owned(),
+            active_payload_sha256: "payload-hash".to_owned(),
+        };
+        let repaired = CachePointer {
+            high_water_revision: 7,
+            active_snapshot: "rev-7-payload-repaired".to_owned(),
+            active_payload_sha256: "payload-hash".to_owned(),
+        };
+
+        assert!(prefer_pointer_target_for_tied_snapshot(
+            &stale,
+            &repaired,
+            Some(&repaired)
+        ));
+        assert!(!prefer_pointer_target_for_tied_snapshot(
+            &repaired,
+            &stale,
+            Some(&repaired)
+        ));
+        assert!(!prefer_pointer_target_for_tied_snapshot(
+            &stale, &repaired, None
+        ));
+    }
+
     struct TemporaryCache(PathBuf);
 
     impl TemporaryCache {
@@ -2495,7 +2549,7 @@ mod tests {
             .join(format!("{damaged_hash}.png"));
         let mut damaged_bytes = fs::read(&damaged_path).unwrap();
         damaged_bytes[0] ^= 0xff;
-        fs::write(&damaged_path, damaged_bytes).unwrap();
+        fs::write(&damaged_path, &damaged_bytes).unwrap();
         assert!(matches!(
             load_cached_snapshot_with_key(&cache.0, key),
             Err(ThemeErrorCode::CacheUnavailable)
@@ -2514,6 +2568,47 @@ mod tests {
             Some(&recovered_floor),
         )
         .expect("same signed revision should repair a corrupt image snapshot");
+        let repaired_pointer = read_cache_pointer(&cache.0)
+            .expect("repaired pointer should be readable")
+            .expect("repaired pointer should be present");
+
+        // Simulate a stale same-revision snapshot left behind by interrupted or failed cleanup.
+        let stale_name = format!(
+            "rev-{}-{}-{}",
+            catalog.revision,
+            &sha256_hex(&payload)[..16],
+            "0".repeat(32)
+        );
+        let stale_snapshot = theme_cache_root(&cache.0)
+            .join("snapshots")
+            .join(stale_name);
+        fs::create_dir_all(stale_snapshot.join("assets")).unwrap();
+        fs::write(stale_snapshot.join("catalog.json"), &fixture.envelope).unwrap();
+        let manifest_bytes = serde_json::to_vec(&SnapshotManifest {
+            selected_theme_ids: selected_ids.clone(),
+        })
+        .unwrap();
+        fs::write(stale_snapshot.join("manifest.json"), manifest_bytes).unwrap();
+        for (hash, bytes) in &assets {
+            let bytes = if hash == &damaged_hash {
+                &damaged_bytes
+            } else {
+                bytes
+            };
+            fs::write(
+                stale_snapshot.join("assets").join(format!("{hash}.png")),
+                bytes,
+            )
+            .unwrap();
+        }
+
+        let recovered_pointer = recover_cache_pointer(&cache.0, key)
+            .expect("same-revision recovery should preserve the active snapshot")
+            .expect("repaired snapshot pointer should remain present");
+        assert_eq!(
+            recovered_pointer.active_snapshot,
+            repaired_pointer.active_snapshot
+        );
         let repaired = load_cached_snapshot_with_key(&cache.0, key)
             .expect("repaired snapshot should verify offline")
             .expect("repaired snapshot should be available");

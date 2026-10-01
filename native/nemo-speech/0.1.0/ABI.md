@@ -9,4 +9,4 @@ Lyra loads the official NeMo-Speech.cpp v0.1.0 Windows runtime dynamically. The 
 - Input: mono F32 samples, with the capture layer resampling to 16 kHz.
 - Streaming: the official stream symbols remain intentionally documented as the next backend implementation; v1 uses `recognize_f32` for utterance-at-a-time recognition.
 
-The runtime manager only considers a DLL loadable after the app-local archive has been verified against the adjacent official SHA-256 file and a local `runtime.json` marker has been written. No SDK, CUDA Toolkit, compiler, or PATH modification is required.
+The runtime manager only considers a DLL loadable after the app-local archive has been verified against the compile-time pinned SHA-256 value and a local `runtime.json` marker has been written. The adjacent official checksum file is a source reference; the runtime does not fetch it. No SDK, CUDA Toolkit, compiler, or PATH modification is required.
