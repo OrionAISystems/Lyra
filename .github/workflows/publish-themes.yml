@@ -1,0 +1,209 @@
+name: Publish Lyra seasonal theme
+
+on:
+  workflow_dispatch:
+    inputs:
+      theme_id:
+        description: Theme folder and descriptor ID under themes/
+        required: true
+        default: october
+        type: string
+      catalog_revision:
+        description: New monotonically increasing signed catalog revision
+        required: true
+        default: 1
+        type: number
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lyra-seasonal-theme-catalog
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Validate, sign, and publish a theme pack
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reject non-main manual dispatches
+        if: github.ref != 'refs/heads/main'
+        run: exit 1
+
+      - name: Check out private source
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install publisher tools
+        run: npm ci --no-audit --no-fund
+
+      - name: Validate the theme signer
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        run: |
+          set -euo pipefail
+          if [[ -z "$TAURI_SIGNING_PRIVATE_KEY" ]]; then
+            echo "TAURI_SIGNING_PRIVATE_KEY must be configured before publishing theme catalogs." >&2
+            exit 1
+          fi
+          probe="$RUNNER_TEMP/lyra-theme-signing-probe.txt"
+          printf 'Lyra theme catalog signing check' > "$probe"
+          npm run tauri -- signer sign --password "" "$probe"
+          rm -f "$probe" "$probe.sig"
+
+      - name: Validate GitHub App publication credentials
+        env:
+          LYRA_RELEASES_APP_CLIENT_ID: ${{ vars.LYRA_RELEASES_APP_CLIENT_ID }}
+          LYRA_RELEASES_APP_PRIVATE_KEY: ${{ secrets.LYRA_RELEASES_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$LYRA_RELEASES_APP_CLIENT_ID" ]]; then
+            echo "LYRA_RELEASES_APP_CLIENT_ID must be configured as a repository variable." >&2
+            exit 1
+          fi
+          if [[ -z "$LYRA_RELEASES_APP_PRIVATE_KEY" ]]; then
+            echo "LYRA_RELEASES_APP_PRIVATE_KEY must be configured as a repository secret." >&2
+            exit 1
+          fi
+
+      - name: Create short-lived release repository token
+        id: release-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          client-id: ${{ vars.LYRA_RELEASES_APP_CLIENT_ID }}
+          private-key: ${{ secrets.LYRA_RELEASES_APP_PRIVATE_KEY }}
+          owner: OrionAISystems
+          repositories: Lyra-Releases
+          permission-contents: write
+
+      - name: Check out public release repository
+        uses: actions/checkout@v4
+        with:
+          repository: OrionAISystems/Lyra-Releases
+          ref: main
+          token: ${{ steps.release-token.outputs.token }}
+          path: release-repo
+
+      - name: Prepare exact catalog payload and validate artwork
+        id: prepared
+        env:
+          THEME_ID: ${{ inputs.theme_id }}
+          CATALOG_REVISION: ${{ inputs.catalog_revision }}
+        run: |
+          set -euo pipefail
+          output="$RUNNER_TEMP/lyra-seasonal-theme"
+          node scripts/themes-release.mjs prepare \
+            --theme-id "$THEME_ID" \
+            --catalog-revision "$CATALOG_REVISION" \
+            --current-envelope "$GITHUB_WORKSPACE/release-repo/themes/catalog.json" \
+            --output-dir "$output"
+          node -e 'const fs=require("node:fs"); const m=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); fs.appendFileSync(process.env.GITHUB_OUTPUT, `tag=${m.tag}\noutput=${process.argv[2]}\n`);' \
+            "$output/assets.json" "$output"
+
+      - name: Sign and wrap the exact payload bytes
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+          PUBLISH_OUTPUT: ${{ steps.prepared.outputs.output }}
+        run: |
+          set -euo pipefail
+          payload="$PUBLISH_OUTPUT/catalog.payload.json"
+          npm run tauri -- signer sign --password "" "$payload"
+          node scripts/themes-release.mjs envelope \
+            --payload "$payload" \
+            --signature "$payload.sig" \
+            --output "$PUBLISH_OUTPUT/catalog.json"
+          node scripts/themes-release.mjs verify --envelope "$PUBLISH_OUTPUT/catalog.json"
+
+      - name: Create or resume the versioned theme prerelease and verify uploaded assets
+        env:
+          GH_TOKEN: ${{ steps.release-token.outputs.token }}
+          THEME_TAG: ${{ steps.prepared.outputs.tag }}
+          PUBLISH_OUTPUT: ${{ steps.prepared.outputs.output }}
+        run: |
+          set -euo pipefail
+          latest_before="$(gh api repos/OrionAISystems/Lyra-Releases/releases/latest --jq .tag_name 2>/dev/null || true)"
+          release_json="$RUNNER_TEMP/lyra-theme-release.json"
+          if ! gh api "repos/OrionAISystems/Lyra-Releases/releases/tags/$THEME_TAG" > "$release_json" 2>/dev/null; then
+            gh api \
+              --method POST \
+              repos/OrionAISystems/Lyra-Releases/releases \
+              -f tag_name="$THEME_TAG" \
+              -f target_commitish=main \
+              -f name="Lyra seasonal theme ${THEME_TAG}" \
+              -f body="Signed Lyra theme artwork pack. The signed catalog is published in themes/catalog.json." \
+              -F draft=false \
+              -F prerelease=true \
+              -f make_latest=false > "$release_json"
+          fi
+
+          present="$PUBLISH_OUTPUT/present-assets.txt"
+          missing="$PUBLISH_OUTPUT/missing-assets.txt"
+          node scripts/themes-release.mjs compare-release \
+            --manifest "$PUBLISH_OUTPUT/assets.json" \
+            --release-json "$release_json" \
+            --present-output "$present" \
+            --missing-output "$missing"
+
+          existing="$RUNNER_TEMP/lyra-theme-existing-assets"
+          mkdir -p "$existing"
+          mapfile -t existing_names < "$present"
+          if [[ "${#existing_names[@]}" -gt 0 ]]; then
+            for asset in "${existing_names[@]}"; do
+              gh release download "$THEME_TAG" --repo OrionAISystems/Lyra-Releases --pattern "$asset" --dir "$existing"
+            done
+          fi
+          node scripts/themes-release.mjs compare-existing-assets \
+            --manifest "$PUBLISH_OUTPUT/assets.json" \
+            --asset-directory "$existing"
+
+          mapfile -t missing_names < "$missing"
+          if [[ "${#missing_names[@]}" -gt 0 ]]; then
+            mapfile -t asset_paths < <(while IFS= read -r asset; do
+              [[ -z "$asset" ]] || printf '%s\n' "$PUBLISH_OUTPUT/assets/$asset"
+            done < "$missing")
+            gh release upload "$THEME_TAG" "${asset_paths[@]}" --repo OrionAISystems/Lyra-Releases
+          fi
+
+          download="$RUNNER_TEMP/lyra-theme-uploaded-assets"
+          mkdir -p "$download"
+          gh release download "$THEME_TAG" --repo OrionAISystems/Lyra-Releases --dir "$download"
+          node scripts/themes-release.mjs compare-assets \
+            --manifest "$PUBLISH_OUTPUT/assets.json" \
+            --asset-directory "$download"
+
+          gh release view "$THEME_TAG" --repo OrionAISystems/Lyra-Releases --json isPrerelease,tagName > "$RUNNER_TEMP/lyra-theme-release-state.json"
+          node -e 'const r=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")); if(r.tagName!==process.argv[2] || !r.isPrerelease) process.exit(1);' "$RUNNER_TEMP/lyra-theme-release-state.json" "$THEME_TAG"
+          latest_after="$(gh api repos/OrionAISystems/Lyra-Releases/releases/latest --jq .tag_name 2>/dev/null || true)"
+          if [[ "$latest_before" != "$latest_after" || "$latest_after" == "$THEME_TAG" ]]; then
+            echo "The seasonal prerelease changed the stable latest release from $latest_before to $latest_after." >&2
+            exit 1
+          fi
+
+      - name: Commit only the signed public catalog envelope
+        env:
+          PUBLISH_OUTPUT: ${{ steps.prepared.outputs.output }}
+          CATALOG_REVISION: ${{ inputs.catalog_revision }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-repo/themes
+          cp "$PUBLISH_OUTPUT/catalog.json" release-repo/themes/catalog.json
+          git -C release-repo config user.name "lyra-release-bot"
+          git -C release-repo config user.email "lyra-release-bot@users.noreply.github.com"
+          git -C release-repo add -- themes/catalog.json
+          mapfile -t staged < <(git -C release-repo diff --cached --name-only)
+          if [[ "${#staged[@]}" -ne 1 || "${staged[0]}" != "themes/catalog.json" ]]; then
+            echo "The theme publisher may commit only themes/catalog.json." >&2
+            exit 1
+          fi
+          git -C release-repo commit -m "chore: publish seasonal theme catalog revision $CATALOG_REVISION"
+          git -C release-repo push origin HEAD:main

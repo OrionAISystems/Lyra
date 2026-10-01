@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Archive, Copy, Trash2 } from "lucide-react";
+import { SeasonalArtwork } from "../components/SeasonalArtwork";
 import {
   clearHistory,
   copySavedItem,
@@ -194,7 +195,7 @@ export default function History({ state }: { state: LyraState }) {
 
       {total === 0 ? (
         <Card className="saved-empty">
-          <Archive size={22} />
+          {state.seasonal.content ? <SeasonalArtwork theme={state.seasonal.content} slot="empty" className="seasonal-art--empty" /> : <Archive size={22} />}
           <strong>{retention === "off" ? "Nothing is being saved" : "No saved dictations yet"}</strong>
           <p>{retention === "off" ? "Choose a retention period above to keep future dictations here." : "Completed dictations will appear here until their retention period ends."}</p>
         </Card>

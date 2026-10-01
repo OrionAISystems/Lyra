@@ -70,6 +70,9 @@ jobs:
       - name: Verify release configuration
         run: npm run verify:release-config
 
+      - name: Verify seasonal theme feed separation
+        run: npm run verify:themes
+
       - name: Build and test frontend
         run: |
           npm run build
@@ -79,6 +82,9 @@ jobs:
         run: |
           cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
           cargo test --release --locked --manifest-path src-tauri/Cargo.toml
+
+      - name: Verify signed seasonal theme fixture through Rust
+        run: npm run test:themes-fixture
 
       - name: Import Authenticode certificate when configured
         shell: pwsh

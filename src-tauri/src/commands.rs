@@ -27,6 +27,7 @@ use crate::{
     personalization::{Personalization, PersonalizationStore},
     runtime::{RuntimeManager, RuntimeStatus, SetupArtifact, SetupArtifactKind, SetupProgress},
     saved_items::{display_app_name, SavedItemPage, SavedItemStore, SavedItemSummary},
+    seasonal_themes::{SeasonalThemeManager, ThemeContent, ThemeStatus},
     settings::{BarPlacement, LocalEngine, Settings, SettingsStore},
     streaming::StreamingResult,
     transcription::{ModelRuntimeStatus, TranscriptionRouter},
@@ -799,6 +800,29 @@ pub fn get_settings(state: State<'_, Arc<Mutex<AppState>>>) -> Result<Settings, 
 }
 
 #[tauri::command]
+pub fn get_theme_status(themes: State<'_, SeasonalThemeManager>) -> ThemeStatus {
+    themes.status()
+}
+
+#[tauri::command]
+pub fn get_theme_content(
+    theme_id: Option<String>,
+    themes: State<'_, SeasonalThemeManager>,
+) -> Result<Option<ThemeContent>, String> {
+    themes.content(theme_id.as_deref()).map_err(str::to_owned)
+}
+
+#[tauri::command]
+pub async fn refresh_themes(
+    themes: State<'_, SeasonalThemeManager>,
+) -> Result<ThemeStatus, String> {
+    let manager = themes.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || manager.refresh_now())
+        .await
+        .map_err(|_| "theme refresh unavailable".to_owned())
+}
+
+#[tauri::command]
 pub fn get_hotkey_status(state: State<'_, Arc<Mutex<AppState>>>) -> Result<HotkeyStatus, String> {
     state
         .lock()
@@ -848,6 +872,7 @@ pub fn retry_hotkey(state: State<'_, Arc<Mutex<AppState>>>) -> Result<HotkeyStat
 pub fn save_settings(
     mut settings: Settings,
     state: State<'_, Arc<Mutex<AppState>>>,
+    themes: State<'_, SeasonalThemeManager>,
 ) -> Result<Settings, String> {
     let shared_state = state.inner().clone();
     let mut state = shared_state
@@ -975,6 +1000,7 @@ pub fn save_settings(
             return Err(error.to_string());
         }
     };
+    themes.update_preferences(saved.seasonal_themes_enabled, saved.seasonal_motion_enabled);
     if previous.activation_mode != saved.activation_mode {
         state.activation.set_mode(saved.activation_mode);
         state.scratchpad_activation.set_mode(saved.activation_mode);

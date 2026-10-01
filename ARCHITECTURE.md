@@ -50,6 +50,11 @@ AudioCapture -> in-memory PCM -> TranscriptionRouter
 release tag -> private CI -> changelog sync -> NSIS + Tauri-signed updater artifact -> public Lyra-Releases
                                                                                      ^
                                                                          signed latest.json polling
+
+seasonal catalog URL -> Tauri signature verification -> bounded catalog/PNG validation -> verified theme content -> renderer
+        ^                                      |
+        |                                      +-> content-addressed artwork cache under local app data
+public Lyra-Releases theme metadata + versioned PNG prerelease assets
 ```
 
 The Rust side owns state transitions and side effects. The frontend renders events and issues intent-level commands; it does not own the recording, injection, update, or recognizer lifecycle. A capture coordinator consumes every endpoint through the same processing path, so manual stop, maximum duration, and silence cannot drift in behavior or metrics.
@@ -57,7 +62,8 @@ The Rust side owns state transitions and side effects. The frontend renders even
 ## Rust boundaries
 
 - `domain.rs`: serializable product types, state transition rules, deterministic formatting/correction processing, and routing decisions.
-- `settings.rs`: versioned schema v4, legacy migration, normalization, and persistence. Secrets are not settings.
+- `settings.rs`: versioned schema v5, legacy migration, normalization, and persistence. Secrets are not settings.
+- `seasonal_themes.rs`: signed catalog validation, bounded PNG downloads and SHA-256 checks, annual date selection, verified artwork cache, and renderer content. Seasonal release assets never use the app updater manifest.
 - `audio.rs`: device enumeration, format conversion, mono downmix, in-memory dictation capture, RMS speech arming, silence/max/manual endpoints, dynamic duration control, level events, an explicit sample-free input-level monitor, and ephemeral WAV encoding.
 - `transcription.rs`: `TranscriptionBackend` contract, local/cloud implementations, route/fallback policy, streaming partial drains that preserve the active native session, and recognizer lifecycle status.
 - `native/nemo.rs`: app-local dynamic loading boundary for the pinned NeMo-Speech.cpp C ABI. No machine-wide SDK or PATH dependency.
@@ -72,7 +78,7 @@ The Rust side owns state transitions and side effects. The frontend renders even
 
 ## v0.5 settings and lifecycle contracts
 
-Schema v4 adds History retention, its last non-Off choice, and the Scratchpad shortcut while preserving existing user settings. Processing order is normalize → explicit-cue backtracking → spoken formatting → corrections → snippets. Each capture has an immutable request destination: Dictation follows its original target and optional History save; Scratchpad stores a deliberate thought and never auto-pastes or copies it. Both use the same microphone, recognition, fallback, and text-processing pipeline. Audio & Engine also provides an explicit microphone test: it opens the selected device and reports throttled RMS levels without creating a capture buffer or invoking recognition. History and Scratchpad use separate local stores; only their text payloads are DPAPI-protected, and only explicitly requested item details cross the Rust/frontend bridge. The usage ledger retains daily aggregates indefinitely plus metadata-only sessions up to one year; it never receives raw samples or recognized text. Model artifacts have isolated paths and markers, and the experimental Nemotron path emits request-scoped partial events while only a final result can enter text processing or a saved-item store. Partial-result drains do not finish the native session; the router explicitly finishes and drains after the final audio chunk.
+Schema v5 adds saved seasonality and seasonal-motion preferences while preserving existing user settings. Processing order is normalize → explicit-cue backtracking → spoken formatting → corrections → snippets. Each capture has an immutable request destination: Dictation follows its original target and optional History save; Scratchpad stores a deliberate thought and never auto-pastes or copies it. Both use the same microphone, recognition, fallback, and text-processing pipeline. Audio & Engine also provides an explicit microphone test: it opens the selected device and reports throttled RMS levels without creating a capture buffer or invoking recognition. History and Scratchpad use separate local stores; only their text payloads are DPAPI-protected, and only explicitly requested item details cross the Rust/frontend bridge. The usage ledger retains daily aggregates indefinitely plus metadata-only sessions up to one year; it never receives raw samples or recognized text. Model artifacts have isolated paths and markers, and the experimental Nemotron path emits request-scoped partial events while only a final result can enter text processing or a saved-item store. Partial-result drains do not finish the native session; the router explicitly finishes and drains after the final audio chunk.
 
 Recovery shortcuts are registered as a set with duplicate validation and rollback. Tray hiding requires a valid Open Settings shortcut. Target identity is reduced to an executable basename and built-in category before profile matching; full paths and window titles never cross into persistence.
 
@@ -110,6 +116,8 @@ The updater reserves installation before the async download begins. The reservat
 
 Capture and endpointing remain utterance-oriented. The optional Nemotron backend already streams each captured request through the native recognizer and emits request-scoped partials; only its final result enters text processing or paste. Native multi-final VAD/endpointing and simultaneous warm models remain future work. Backend results include model, language metadata when available, duration, latency, and fallback reason so the UI and diagnostics do not need backend-specific knowledge.
 
-The installer deliberately contains only the Lyra application. Runtime and model installation is an explicit bootstrapper flow under `%LOCALAPPDATA%\Lyra`, so application upgrades do not overwrite user-managed recognition artifacts. The local updater fixture lives outside production configuration and uses an ephemeral signing key plus an HTTP endpoint only for tests; production continues to use the committed public key and HTTPS release-only feed.
+The installer deliberately contains only the Lyra application. Runtime and model installation is an explicit bootstrapper flow under `%LOCALAPPDATA%\Lyra`, so application upgrades do not overwrite user-managed recognition artifacts. Seasonal artwork uses a separate bounded cache. The local updater fixture lives outside production configuration and uses an ephemeral signing key plus an HTTP endpoint only for tests; the theme fixture generates an ephemeral signed catalog and passes it through the Rust production verification path. Production continues to use the committed public key and HTTPS release-only feeds.
 
 `CHANGELOG.md` is the canonical source-repository release history. The tagged release workflow validates that its newest section matches the application version, mirrors it to the public release-only repository, and uses that section as the release body shown alongside the updater artifacts.
+
+The manual seasonal publishing workflow creates a versioned prerelease for PNG assets with `make_latest=false`, verifies their bytes, and then commits only the signed `themes/catalog.json` envelope to `Lyra-Releases/main`. The app updater remains pinned to `releases/latest/download/latest.json`; theme tags use the `themes-<id>-v<revision>` form and cannot trigger the app release workflow. See [docs/THEMES.md](docs/THEMES.md) for the signed catalog contract and publication gates.

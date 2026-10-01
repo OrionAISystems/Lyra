@@ -7,6 +7,7 @@ mod native_nemo;
 mod personalization;
 mod runtime;
 mod saved_items;
+mod seasonal_themes;
 mod settings;
 pub(crate) mod streaming;
 mod transcription;
@@ -25,6 +26,7 @@ use crate::commands::AppState;
 use crate::personalization::PersonalizationStore;
 use crate::runtime::RuntimeManager;
 use crate::saved_items::SavedItemStore;
+use crate::seasonal_themes::SeasonalThemeManager;
 use crate::settings::SettingsStore;
 use crate::transcription::TranscriptionRouter;
 use crate::updater::UpdateManager;
@@ -50,6 +52,11 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .on_window_event(|window, event| {
+            if matches!(event, WindowEvent::Focused(true)) {
+                if let Some(theme_manager) = window.try_state::<SeasonalThemeManager>() {
+                    theme_manager.on_resume();
+                }
+            }
             if window.label() == "settings" {
                 if let WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
@@ -64,6 +71,8 @@ pub fn run() {
         })
         .setup(|app| {
             let settings = SettingsStore::load(app.handle());
+            let theme_manager = SeasonalThemeManager::new(app.handle(), &settings.get());
+            app.manage(theme_manager.clone());
             let runtime = RuntimeManager::new(app.handle());
             let personalization =
                 PersonalizationStore::load(app.handle(), settings.get().corrections);
@@ -85,6 +94,7 @@ pub fn run() {
             );
             app.manage(Arc::new(Mutex::new(state)));
             commands::initialize(app.handle())?;
+            theme_manager.start();
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -93,6 +103,9 @@ pub fn run() {
             commands::get_scratchpad_hotkey_status,
             commands::retry_hotkey,
             commands::save_settings,
+            commands::get_theme_status,
+            commands::get_theme_content,
+            commands::refresh_themes,
             commands::get_runtime_status,
             commands::get_model_runtime_status,
             commands::list_displays,
@@ -142,12 +155,18 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("error while building Lyra")
-        .run(|app_handle, event| {
-            if let RunEvent::ExitRequested { .. } = event {
+        .run(|app_handle, event| match event {
+            RunEvent::ExitRequested { .. } => {
                 let state = app_handle.state::<Arc<Mutex<AppState>>>().inner().clone();
                 if let Ok(mut guard) = state.lock() {
                     guard.shutdown();
                 };
             }
+            RunEvent::Resumed => {
+                if let Some(theme_manager) = app_handle.try_state::<SeasonalThemeManager>() {
+                    theme_manager.on_resume();
+                }
+            }
+            _ => {}
         });
 }

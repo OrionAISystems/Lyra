@@ -102,6 +102,8 @@ export interface Settings {
   typingWpm: number;
   theme: "dark" | "light" | "system";
   accent: "purple" | "blue" | "teal" | "rose";
+  seasonalThemesEnabled: boolean;
+  seasonalMotionEnabled: boolean;
   compactMode: boolean;
   showTrayIcon: boolean;
   localEngine: LocalEngine;
@@ -344,7 +346,7 @@ export interface SavedItemDetail {
   text: string;
 }
 export const defaultSettings: Settings = {
-  schemaVersion: 4,
+  schemaVersion: 5,
   activationMode: "push_to_talk",
   hotkey: "Ctrl+Alt+Space",
   showBar: true,
@@ -372,6 +374,8 @@ export const defaultSettings: Settings = {
   typingWpm: 40,
   theme: "dark",
   accent: "purple",
+  seasonalThemesEnabled: true,
+  seasonalMotionEnabled: true,
   compactMode: false,
   showTrayIcon: true,
   localEngine: "parakeet_tdt",
