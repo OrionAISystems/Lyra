@@ -43,15 +43,15 @@ Private source descriptors live at `themes/<id>/theme.json`. Their palette token
 
 The renderer has eight named PNG slots: `idle`, `listening`, `processing`, `success`, `error`, `bar`, `empty`, and `ambience`. A bundled descriptor points to paths relative to its theme folder, such as `assets/pumpkin.png`; the engine loads and packages those files as data URLs. Remote catalog entries have the same metadata and palettes, but each artwork slot is an object with `url`, lowercase SHA-256 `sha256`, and `sizeBytes` fields. Multiple slots may share one image.
 
-The accepted annual date interval is start-inclusive and end-exclusive, using `MM-DD` values. Lyra previews seasonal art throughout the year; automatic decoration follows the local calendar and saved seasonality preference. Reduced motion is a separate saved preference and also respects the operating-system motion preference.
+The accepted annual date interval is start-inclusive and end-exclusive, using `MM-DD` values. For recurring boundaries on February 29, Lyra uses March 1 in non-leap years. Lyra previews seasonal art throughout the year; automatic decoration follows the local calendar and saved seasonality preference. Reduced motion is a separate saved preference and also respects the operating-system motion preference.
 
 The publisher and runtime enforce these limits:
 
 - The decoded catalog payload is at most 64 KiB.
 - A theme has eight named artwork slots and references no more than eight unique PNG assets.
 - Each PNG is at most 2 MiB, dimensions are at most 1024 × 1024, and unique assets total at most 8 MiB per theme pack. The engine keeps at most two remote packs in its bounded cache.
-- PNG chunk CRCs and image data are validated before signing or caching. Remote bytes must match the signed length and SHA-256 metadata before use.
-- Animated PNG chunks are rejected; app-level motion preferences control decorative movement.
+- The publisher accepts legal PNG color-type/bit-depth combinations with standard compression and filters and non-interlaced rows. PNG chunk CRCs and image data are validated before signing or caching. Remote bytes must match the signed length and SHA-256 metadata before use.
+- Animated PNG chunks (`acTL`, `fcTL`, and `fdAT`) are rejected; app-level motion preferences control decorative movement.
 
 The cache pointer is recoverable state, not the source of the rollback floor. If it is damaged, Lyra scans retained snapshots and restores the highest catalog revision whose signature and payload still verify, even when a cached PNG in that snapshot is corrupt. A same-revision refresh can then repair the damaged artwork. If no authenticated catalog revision survives, Lyra quarantines the bad pointer, starts fresh from a newly fetched signed catalog, and logs `cache-reset-no-authenticated-revision`. In that last case there is no authenticated local revision to compare against, so the prior rollback floor cannot be recovered.
 
