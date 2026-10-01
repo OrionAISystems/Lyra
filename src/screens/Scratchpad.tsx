@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { SeasonalArtwork } from "../components/SeasonalArtwork";
 import { Copy, Mic, Pin, PinOff, Trash2 } from "lucide-react";
 import {
   copySavedItem,
@@ -193,7 +194,7 @@ export default function Scratchpad({ state }: { state: LyraState }) {
 
       {total === 0 ? (
         <Card className="saved-empty">
-          <Mic size={22} />
+          {state.seasonal.content ? <SeasonalArtwork theme={state.seasonal.content} slot="empty" className="seasonal-art--empty" /> : <Mic size={22} />}
           <strong>Your Scratchpad is empty</strong>
           <p>Hold the shortcut or record button, speak a thought, and release. Lyra won't paste it anywhere.</p>
           <small>Shortcut: {state.settings.scratchpadHotkey}</small>

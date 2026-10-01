@@ -24,11 +24,11 @@ import History from "./screens/History";
 import Scratchpad from "./screens/Scratchpad";
 import Appearance from "./screens/Appearance";
 import Diagnostics from "./screens/Diagnostics";
-import { useLyra } from "./state/useLyra";
+import { useLyra, type LyraState } from "./state/useLyra";
+import { SeasonalArtwork } from "./components/SeasonalArtwork";
 import { isPrimaryPointerButton, primaryBarGesture } from "./barActivation";
 import type { Screen } from "./types";
-function DictationBar() {
-  const state = useLyra();
+export function DictationBar({ state }: { state: LyraState }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [displayDurationMs, setDisplayDurationMs] = useState(0);
   const pttActive = useRef(false);
@@ -168,13 +168,16 @@ function DictationBar() {
         onLostPointerCapture={pushToTalk ? () => void end() : undefined}
       >
         <span className="bar-leading" aria-hidden="true">
+          {state.seasonal.content && !error && !processing && (
+            <SeasonalArtwork theme={state.seasonal.content} state={state.session.state} slot="bar" className="seasonal-art--bar" />
+          )}
           {active ? (
             <span className="recording-dot" />
           ) : processing ? (
             <span className="mini-spinner" />
           ) : error ? (
             <X size={11} />
-          ) : (
+          ) : state.seasonal.content ? null : (
             <Mic size={11} />
           )}
         </span>
@@ -258,7 +261,7 @@ export default function App() {
     setBar(isBar);
     document.documentElement.classList.toggle("bar-window", isBar);
   }, []);
-  if (bar) return <DictationBar />;
+  if (bar) return <DictationBar state={state} />;
   const pages = {
     home: <Home state={state} navigate={setScreen} />,
     dictation: <Dictation state={state} />,

@@ -98,6 +98,8 @@ export function Shell({
           {nav.map(([id, label, icon]) => (
             <button
               key={id}
+              aria-label={label}
+              title={label}
               className={screen === id ? "active" : ""}
               onClick={() => setScreen(id)}
             >

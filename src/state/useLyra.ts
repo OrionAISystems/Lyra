@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../bridge";
+import { useSeasonalTheme } from "./useSeasonalTheme";
+import packageJson from "../../package.json";
 import {
   defaultPersonalization,
   defaultSettings,
@@ -88,6 +90,7 @@ const usage0: UsageStats = {
 export function useLyra() {
   const activeRequestId = useRef<string | null>(null);
   const [settings, setSettings] = useState(defaultSettings);
+  const seasonal = useSeasonalTheme(settings);
   const [personalization, setPersonalization] = useState(
     defaultPersonalization,
   );
@@ -134,7 +137,7 @@ export function useLyra() {
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [update, setUpdate] = useState<UpdateStatus>({
     state: "idle",
-    currentVersion: "0.5.4",
+    currentVersion: packageJson.version,
     availableVersion: null,
     notes: null,
     publishedAt: null,
@@ -244,6 +247,7 @@ export function useLyra() {
   return useMemo(
     () => ({
       settings,
+      seasonal,
       updateSettings,
       personalization,
       updatePersonalization,
@@ -267,6 +271,7 @@ export function useLyra() {
     }),
     [
       settings,
+      seasonal,
       updateSettings,
       personalization,
       updatePersonalization,

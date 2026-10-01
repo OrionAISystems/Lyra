@@ -1,0 +1,52 @@
+{
+  "id": "october",
+  "name": "October Hearth",
+  "description": "Warm pumpkin tones with quiet autumn leaf artwork.",
+  "startMonthDay": "10-01",
+  "endMonthDay": "11-01",
+  "revision": 1,
+  "palettes": {
+    "dark": {
+      "bg": "#14100f",
+      "panel": "#1c1714",
+      "panel2": "#241d18",
+      "panel3": "#2d241e",
+      "line": "#3d3027",
+      "text": "#fff4e7",
+      "muted": "#bca898",
+      "chrome": "#171210",
+      "sidebar": "#191410",
+      "surface": "#241d18",
+      "control": "#30251d",
+      "accent": "#f4a45c",
+      "accent2": "#cb7d3f",
+      "glow": "#ee933f"
+    },
+    "light": {
+      "bg": "#fbf7ef",
+      "panel": "#fffaf3",
+      "panel2": "#f3e9db",
+      "panel3": "#eaddca",
+      "line": "#d9c5af",
+      "text": "#302219",
+      "muted": "#705b48",
+      "chrome": "#f6ede0",
+      "sidebar": "#f5ebde",
+      "surface": "#fffaf3",
+      "control": "#eee0cd",
+      "accent": "#984410",
+      "accent2": "#87410d",
+      "glow": "#df934e"
+    }
+  },
+  "artwork": {
+    "idle": "assets/pumpkin.png",
+    "listening": "assets/pumpkin.png",
+    "processing": "assets/pumpkin.png",
+    "success": "assets/pumpkin.png",
+    "error": "assets/pumpkin.png",
+    "bar": "assets/pumpkin.png",
+    "empty": "assets/pumpkin.png",
+    "ambience": "assets/leaf.png"
+  }
+}

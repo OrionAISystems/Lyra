@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { SeasonalArtwork } from "../components/SeasonalArtwork";
 import { Activity, FileText, Timer, Zap } from "lucide-react";
 import { Card, Page, Select } from "../components/Controls";
 import { formatUsageDay } from "../insights";
@@ -91,6 +92,10 @@ export default function Insights({ state }: { state: LyraState }) {
           role="img"
           aria-label="Daily dictated words chart, split by engine"
         >
+          {chartDaily.length === 0 && <div className="insights-empty">
+            {state.seasonal.content && <SeasonalArtwork theme={state.seasonal.content} slot="empty" className="seasonal-art--empty" />}
+            <span>Your dictations will appear here.</span>
+          </div>}
           {chartDaily.map((d, i) => {
             const parakeet = d.parakeetWords || (d.nemotronWords ? 0 : d.words);
             const nemotron = d.nemotronWords;

@@ -48,6 +48,7 @@ jobs:
           npm run verify:version
           npm run verify:changelog
           npm run verify:release-config
+          npm run verify:themes
 
       - name: Build and test frontend
         run: |
@@ -58,6 +59,9 @@ jobs:
         run: |
           cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
           cargo test --release --locked --manifest-path src-tauri/Cargo.toml
+
+      - name: Verify signed seasonal theme fixture through Rust
+        run: npm run test:themes-fixture
 
       - name: Warm the release Tauri build cache
         if: github.event_name == 'push'

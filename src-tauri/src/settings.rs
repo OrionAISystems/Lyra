@@ -6,7 +6,7 @@ use tracing::{info, warn};
 
 use crate::domain::{ActivationMode, CorrectionEntry, LanguagePreference, TranscriptionRoute};
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 4;
+pub const CURRENT_SCHEMA_VERSION: u32 = 5;
 
 const DEFAULT_CLOUD_COST_PER_MINUTE_USD: f64 = 0.003;
 const DEFAULT_TYPING_WPM: u32 = 40;
@@ -160,6 +160,10 @@ pub struct Settings {
     pub typing_wpm: u32,
     #[serde(default = "default_theme")]
     pub theme: String,
+    #[serde(default = "default_true")]
+    pub seasonal_themes_enabled: bool,
+    #[serde(default = "default_true")]
+    pub seasonal_motion_enabled: bool,
     #[serde(default = "default_accent")]
     pub accent: String,
     #[serde(default)]
@@ -250,6 +254,8 @@ impl Default for Settings {
             cloud_cost_per_minute_usd: default_cloud_cost_per_minute_usd(),
             typing_wpm: default_typing_wpm(),
             theme: default_theme(),
+            seasonal_themes_enabled: true,
+            seasonal_motion_enabled: true,
             accent: default_accent(),
             compact_mode: false,
             show_tray_icon: true,
@@ -442,6 +448,8 @@ mod tests {
         assert_eq!(settings.model_warm_policy, ModelWarmPolicy::AlwaysWarm);
         assert_eq!(settings.corrections.len(), 3);
         assert!(settings.formatting_commands_enabled);
+        assert!(settings.seasonal_themes_enabled);
+        assert!(settings.seasonal_motion_enabled);
     }
 
     #[test]
@@ -527,6 +535,48 @@ mod tests {
         );
         assert_eq!(migrated.activation_mode, ActivationMode::Toggle);
         assert!(!migrated.auto_paste);
+    }
+
+    #[test]
+    fn v4_settings_migrate_to_v5_and_preserve_existing_preferences() {
+        let legacy = serde_json::json!({
+            "schemaVersion": 4,
+            "hotkey": "Ctrl+Alt+K",
+            "theme": "light",
+            "accent": "teal",
+            "autoPaste": false,
+            "maxDurationSeconds": 90,
+            "transcriptHistoryRetention": "thirty_days"
+        });
+
+        let migrated = migrate_settings_value(legacy).unwrap().normalized();
+
+        assert_eq!(migrated.schema_version, 5);
+        assert!(migrated.seasonal_themes_enabled);
+        assert!(migrated.seasonal_motion_enabled);
+        assert_eq!(migrated.hotkey, "Ctrl+Alt+K");
+        assert_eq!(migrated.theme, "light");
+        assert_eq!(migrated.accent, "teal");
+        assert!(!migrated.auto_paste);
+        assert_eq!(migrated.max_duration_seconds, 90);
+        assert_eq!(
+            migrated.transcript_history_retention,
+            TranscriptHistoryRetention::ThirtyDays
+        );
+    }
+
+    #[test]
+    fn saved_seasonal_theme_preferences_survive_migration() {
+        let current = serde_json::json!({
+            "schemaVersion": 5,
+            "seasonalThemesEnabled": false,
+            "seasonalMotionEnabled": false
+        });
+
+        let migrated = migrate_settings_value(current).unwrap().normalized();
+
+        assert!(!migrated.seasonal_themes_enabled);
+        assert!(!migrated.seasonal_motion_enabled);
     }
 
     #[test]

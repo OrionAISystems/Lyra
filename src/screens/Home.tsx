@@ -3,6 +3,7 @@ import { startDictation, stopDictation } from "../bridge";
 import { Card, Page, Shortcut } from "../components/Controls";
 import type { LyraState } from "../state/useLyra";
 import type { Screen } from "../types";
+import { SeasonalAmbience, SeasonalArtwork } from "../components/SeasonalArtwork";
 export default function Home({
   state,
   navigate,
@@ -11,6 +12,7 @@ export default function Home({
   navigate: (s: Screen) => void;
 }) {
   const active = state.session.state === "listening";
+  const theme = state.seasonal.content;
   const labels = {
     idle: ["Ready to dictate", "Lyra is ready when you are."],
     listening: [
@@ -31,6 +33,7 @@ export default function Home({
   return (
     <Page title="" subtitle="">
       <div className="hero">
+        {theme && <SeasonalAmbience theme={theme} />}
         <h1>{copy[0]}</h1>
         <p>
           {active ? (
@@ -42,11 +45,11 @@ export default function Home({
           )}
         </p>
         <button
-          className={`mic-orb ${active ? "active" : ""}`}
+          className={`mic-orb ${active ? "active" : ""}${theme ? " mic-orb--seasonal" : ""}`}
           aria-label={active ? "Stop dictation" : "Start dictation"}
           onClick={() => void (active ? stopDictation() : startDictation())}
         >
-          <Mic size={34} />
+          {theme ? <SeasonalArtwork theme={theme} state={state.session.state} inputLevel={state.session.inputLevel} /> : <Mic size={34} />}
           <i
             style={{
               transform: `scaleX(${Math.max(0.18, state.session.inputLevel)})`,

@@ -2,7 +2,7 @@
 
 ## Installed application
 
-The [v0.5.3 Windows x64 release](https://github.com/OrionAISystems/Lyra-Releases/releases/tag/v0.5.3) is a per-user NSIS installer. It creates the Lyra Start Menu entry and offers the desktop shortcut during setup. It does not require administrator elevation and does not bundle the native speech runtime or the 714 MB (about 681 MiB) Parakeet model. Existing debug builds remain separate under `src-tauri\target\debug`.
+The [v0.5.4 Windows x64 release](https://github.com/OrionAISystems/Lyra-Releases/releases/tag/v0.5.4) is a per-user NSIS installer. It creates the Lyra Start Menu entry and offers the desktop shortcut during setup. It does not require administrator elevation and does not bundle the native speech runtime or the 714 MB (about 681 MiB) Parakeet model. Existing debug builds remain separate under `src-tauri\target\debug`.
 
 The installer uses Tauri's WebView2 download bootstrapper. On a machine without a suitable WebView2 runtime, the installer obtains the standard Microsoft runtime; Lyra itself never changes `PATH`, installs the CUDA Toolkit, or installs CMake/Ninja.
 
@@ -12,7 +12,7 @@ Development requires Node.js, Rust with the MSVC Windows target, and the Tauri p
 
 ## Settings and dictation policy
 
-Settings are persisted as schema v4 under the app configuration directory. Existing settings migrate on first load; legacy Corrections move into the separate local personalization store, which also holds Words, Snippets, app profiles, and self-correction preferences. Transcript History migrates as Off, and existing shortcuts and other preferences are preserved.
+Settings are persisted as schema v5 under the app configuration directory. Existing settings migrate on first load; legacy Corrections move into the separate local personalization store, which also holds Words, Snippets, app profiles, and self-correction preferences. Transcript History migrates as Off, and existing shortcuts and other preferences are preserved. Seasonal theme and motion preferences migrate with safe defaults.
 
 Push-to-talk on the bar starts on primary-pointer down and stops on pointer up, cancellation, or lost pointer capture. Toggle mode starts and stops on clicks. Silence endpointing is off by default, is available at 1.0, 1.5, 2.0, or 3.0 seconds, and applies only after a short voiced interval has crossed Lyra's fixed conservative RMS threshold. Maximum duration changes are applied to the persistent bar and active capture without restarting Lyra.
 

@@ -1,7 +1,7 @@
 {
   "name": "lyra",
   "private": true,
-  "version": "0.5.4",
+  "version": "0.5.5",
   "description": "Lightweight local-first Windows dictation for the Orion ecosystem",
   "type": "module",
   "scripts": {
@@ -10,11 +10,15 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:themes-fixture": "node scripts/themes-fixture.mjs",
     "test:updater-fixture": "node scripts/updater-fixture.mjs",
     "test:watch": "vitest",
     "verify:changelog": "node scripts/changelog.mjs verify",
     "verify:version": "node scripts/verify-version.mjs",
     "verify:release-config": "node scripts/verify-release-config.mjs",
+    "verify:public-release": "node scripts/verify-public-release.mjs",
+    "verify:public-themes": "node scripts/verify-public-release.mjs --themes-only",
+    "verify:themes": "node scripts/themes-release.mjs verify-feed-separation",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"

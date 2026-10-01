@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { ThemeContent, ThemeStatus } from "./themes";
 import type {
   AudioDeviceInfo,
   BenchmarkResult,
@@ -30,6 +31,11 @@ export async function command<T>(
   return invoke<T>(name, args);
 }
 export const getSettings = () => command<Settings>("get_settings");
+export const getThemeStatus = () => command<ThemeStatus>("get_theme_status");
+export const getThemeContent = (themeId?: string) => command<ThemeContent>("get_theme_content", { themeId: themeId ?? null });
+export const refreshThemes = () => command<ThemeStatus>("refresh_themes");
+export const listenToThemeChanges = async (onChange: (status: ThemeStatus) => void) =>
+  isTauri ? listen<ThemeStatus>("lyra://theme-changed", (event) => onChange(event.payload)) : () => {};
 export const saveSettings = (settings: Settings) =>
   command<Settings>("save_settings", { settings });
 export const getPersonalization = () =>
