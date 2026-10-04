@@ -22,6 +22,8 @@ Release date: 2026-10-04 (America/New_York). This maintenance release ships the 
 | Existing public theme channel before application tag | Pass | Local `npm run verify:public-themes -- --latest-version 0.5.5`: catalog revision 1, one theme, two PNGs (322,765 bytes); stable latest stayed v0.5.5 |
 | Exact release commit Windows verification and unbundled Tauri build | Pass | [Run 37236294270](https://github.com/OrionAISystems/Lyra/actions/runs/37236294270) at `bb2da5272eabb5c2b88c51ab9b3cb2a822fa8c4f` |
 | Tagged NSIS/updater publication | Pass | [Run 37238037304](https://github.com/OrionAISystems/Lyra/actions/runs/37238037304); annotated `v0.5.6` points to `bb2da5272eabb5c2b88c51ab9b3cb2a822fa8c4f`; [stable release](https://github.com/OrionAISystems/Lyra-Releases/releases/tag/v0.5.6) published 2026-10-04 at 18:03:58 EDT |
+| Default-feature release Rust suite in tagged workflow | Pass | 129 passed, 2 explicitly ignored; the internal regression harness is not enabled in the shipping build |
+| Windows Authenticode signing | Not configured | The workflow reported no Windows certificate and produced an installer without Authenticode signing; its separate Tauri updater signature was verified below |
 | Public changelog, installer/signature, latest.json and existing theme assets | Pass | `npm run verify:public-release -- --version 0.5.6`: stable latest v0.5.6, `Lyra_0.5.6_x64-setup.exe` (3,024,849 bytes), pinned-key Tauri signature, matching manifest/platform URLs, signed theme revision 1 and two PNGs |
 | Exact public changelog mirror | Pass | Public `CHANGELOG.md` Git blob equals tagged canonical source: `fb1eec53f335beb8f164858a39caebea83e70f9f` |
 
