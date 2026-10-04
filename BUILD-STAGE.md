@@ -1,6 +1,6 @@
 # Lyra build stage
 
-The current published version is v0.5.3 (2026-09-28 local time). It groups Insights by the computer's local calendar day and migrates retained UTC usage metadata. The release workflow, public artifacts, installed update, and first new local-day dictation succeeded; evidence is in [docs/ACCEPTANCE-V0.5.3.md](docs/ACCEPTANCE-V0.5.3.md). Earlier v0.5 acceptance remains in [docs/ACCEPTANCE-V0.5.2.md](docs/ACCEPTANCE-V0.5.2.md), [docs/ACCEPTANCE-V0.5.1.md](docs/ACCEPTANCE-V0.5.1.md), and [docs/ACCEPTANCE-V0.5.md](docs/ACCEPTANCE-V0.5.md).
+The current published version is v0.5.6 (2026-10-04 local time). It ships dictation reliability, quantity/punctuation cleanup and seasonal cache hardening from PRs #7, #8 and #9. Automated release gates, the Windows release workflow, public assets and updater signature passed; installed updater, microphone and cross-application paste checks remain pending in [docs/ACCEPTANCE-V0.5.6.md](docs/ACCEPTANCE-V0.5.6.md). Earlier installed v0.5.3 evidence remains in [docs/ACCEPTANCE-V0.5.3.md](docs/ACCEPTANCE-V0.5.3.md), with earlier acceptance in [docs/ACCEPTANCE-V0.5.2.md](docs/ACCEPTANCE-V0.5.2.md), [docs/ACCEPTANCE-V0.5.1.md](docs/ACCEPTANCE-V0.5.1.md), and [docs/ACCEPTANCE-V0.5.md](docs/ACCEPTANCE-V0.5.md).
 
 ## Stage 0 — foundation
 
