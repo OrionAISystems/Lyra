@@ -167,6 +167,13 @@ fn expected_empty_recording(case: &Case, error: &BackendError) -> bool {
         && matches!(error, BackendError::EmptyRecording)
 }
 
+fn score_passes(case: &Case, score: &Score) -> bool {
+    score
+        .wer
+        .map_or(score.edits == 0, |wer| wer <= case.max_wer)
+        && (!(case.require_exact || score.reference_words == 0) || score.exact_match)
+}
+
 type Recognition = (Result<TranscriptionResult, BackendError>, f64, usize);
 
 fn recognize(router: &TranscriptionRouter, engine: &str, samples: &[f32], id: &str) -> Recognition {
@@ -702,11 +709,7 @@ pub fn run(args: Vec<String>) -> Result<(), String> {
         let median_latency_ms = percentile(&timings, 0.5);
         let audio_ms = samples.len() as u64 * 1000 / 16000;
         let passed = trials.iter().all(|t| {
-            t.expected_empty_recording
-                || t.score.as_ref().is_some_and(|s| {
-                    s.wer.map_or(s.edits == 0, |wer| wer <= case.max_wer)
-                        && (!case.require_exact || s.exact_match)
-                })
+            t.expected_empty_recording || t.score.as_ref().is_some_and(|s| score_passes(case, s))
         });
         println!(
             "  {} median {:.1} ms",
@@ -769,6 +772,22 @@ pub fn run(args: Vec<String>) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn zero_word_references_require_exact_output_without_optional_flag() {
+        let mut case: Case = serde_json::from_value(serde_json::json!({"id":"silence","category":"test","provenance":"synthetic","audio":"silence.wav","expected":"","max_wer":0})).unwrap();
+        assert!(!case.require_exact);
+        assert!(score_passes(&case, &score("", "")));
+        assert!(!score_passes(&case, &score("", "...")));
+        assert!(!score_passes(&case, &score("", "hello")));
+        case.expected = ".".into();
+        assert!(score_passes(&case, &score(".", ".")));
+        assert!(!score_passes(&case, &score(".", "!")));
+        case.expected = "Hello".into();
+        assert!(score_passes(&case, &score("Hello", "hello.")));
+        case.require_exact = true;
+        assert!(!score_passes(&case, &score("Hello", "hello.")));
+    }
 
     #[test]
     fn warmup_uses_expected_speech_not_audio_gain() {

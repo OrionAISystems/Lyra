@@ -408,6 +408,11 @@ fn minor_amount(
     while end < tokens.len()
         && gap(text, &tokens[end - 1], &tokens[end])
         && (number_component(&lower[end])
+            || (end == start + 1
+                && lower[end] == "a"
+                && lower
+                    .get(end + 1)
+                    .is_some_and(|word| word == "hundred" || scale(word).is_some()))
             || lower[end] == "and"
             || (lower[end] == "-"
                 && tokens[end - 1].end == tokens[end].start
@@ -689,6 +694,10 @@ pub(crate) fn normalize(text: &str) -> String {
                     && tokens
                         .get(number_end + 1)
                         .is_some_and(|tail| tail.start == next.end))
+                    || (next.text == "%"
+                        && text.get(next.end..next.end + 2).is_some_and(|escape| {
+                            escape.bytes().all(|byte| byte.is_ascii_hexdigit())
+                        }))
                     || (next.text == "."
                         && tokens.get(number_end + 1).is_some_and(|tail| {
                             tail.start == next.end && tail.text.starts_with(char::is_alphanumeric)
@@ -771,6 +780,32 @@ pub(crate) fn normalize(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn percent_encoded_suffixes_preserve_literal_components() {
+        for source in [
+            "twenty-five%20items",
+            "twenty-five%2Fitems",
+            "twenty-five%abitems",
+        ] {
+            assert_eq!(normalize(source), source, "{source}");
+        }
+        assert_eq!(normalize("twenty five%"), "25%");
+        assert_eq!(normalize("five%"), "5%");
+    }
+
+    #[test]
+    fn article_led_unsupported_minor_clauses_remain_wholly_literal() {
+        for source in [
+            "one dollar and a hundred cents",
+            "one pound sterling and a hundred cents",
+            "$1 and a thousand cents",
+            "£1 and a million pence",
+        ] {
+            assert_eq!(normalize(source), source, "{source}");
+        }
+        assert_eq!(normalize("a hundred dollars"), "$100");
+    }
 
     #[test]
     fn structured_suffixes_preserve_number_components() {
