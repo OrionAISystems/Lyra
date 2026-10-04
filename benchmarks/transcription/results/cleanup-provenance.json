@@ -1,0 +1,15 @@
+﻿{
+    "provenance":  "synthetic",
+    "generator":  "Windows System.Speech",
+    "voice":  "Microsoft David Desktop",
+    "rate":  0,
+    "generatedUtc":  "2026-10-04T05:28:01.4936797Z",
+    "generatedCaseIds":  [
+                             "decimal",
+                             "currency",
+                             "percentage",
+                             "standalone-numbers",
+                             "number-prose"
+                         ],
+    "interruptedPauseMs":  1500
+}

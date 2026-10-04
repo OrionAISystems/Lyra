@@ -240,7 +240,7 @@ impl RuntimeManager {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "regression-bench"))]
     pub fn for_tests(root: PathBuf) -> Self {
         let status = Arc::new(Mutex::new(Self::inspect(&root)));
         Self {

@@ -62,6 +62,7 @@ The Rust side owns state transitions and side effects. The frontend renders even
 ## Rust boundaries
 
 - `domain.rs`: serializable product types, state transition rules, deterministic formatting/correction processing, and routing decisions.
+- `quantities.rs`: deterministic English cardinal, decimal, percentage and currency formatting, with exact arithmetic, explicit quantity contexts and conservative guards for prose and identifiers.
 - `settings.rs`: versioned schema v5, legacy migration, normalization, and persistence. Secrets are not settings.
 - `seasonal_themes.rs`: signed catalog validation, bounded PNG downloads and SHA-256 checks, annual date selection, verified artwork cache, and renderer content. Seasonal release assets never use the app updater manifest.
 - `audio.rs`: device enumeration, format conversion, mono downmix, in-memory dictation capture, RMS speech arming, silence/max/manual endpoints, dynamic duration control, level events, an explicit sample-free input-level monitor, and ephemeral WAV encoding.
@@ -84,6 +85,8 @@ Recovery shortcuts are registered as a set with duplicate validation and rollbac
 
 The benchmark records one phrase, retains its PCM only in memory, replays it through installed eligible engines, and persists numeric scores plus environment metadata. A recommendation is informational until the user explicitly applies it.
 
+The separate internal fixture regression harness under `benchmarks/transcription` is compiled only with the `regression-bench` feature. It uses the same router and text processing without app commands, microphone capture, injection, cloud routing, or settings writes. Its local fixture files and reports are developer inputs, excluded from public release packaging. Parakeet is measured warm after a load replay; Nemotron's per-request model load is measured in isolated native workers to contain library aborts and preserve the suite report. See the benchmark README for scoring, baseline compatibility and hardware limits.
+
 ## v0.3 settings and lifecycle contracts
 
 `Settings` is persisted as schema v2. `autoStopAfterSilenceMs` is either null or one of 1000, 1500, 2000, or 3000; it is passed only to toggle captures. The bar and capture worker both use `maxDurationSeconds`, and an active `CaptureControl` receives an atomic update when that value changes. A lowered limit is observed by the capture worker within its polling interval.
@@ -92,7 +95,7 @@ The primary bar gesture is derived from the durable activation mode: toggle uses
 
 On Windows, the global shortcut library reports release of its trigger key. Releasing Space ends the default push-to-talk chord; releasing only Ctrl or Alt while Space remains held does not. Paste input checks held modifier state and temporarily lifts unrelated modifiers in one `SendInput` batch so Ctrl+Alt held after Space release does not turn Ctrl+V into Ctrl+Alt+V.
 
-Text processing is deterministic and ordered: normalize line endings, replace whole formatting phrases, normalize punctuation/quote spacing, apply enabled whole-word corrections longest-source-first, then run conservative insertion cleanup. Corrections are case-insensitive unless an entry opts into case sensitivity.
+Text processing is deterministic and ordered: normalize line endings, apply explicit self-correction, replace whole formatting phrases, normalize punctuation/quote spacing and English quantities, apply enabled whole-word corrections longest-source-first and snippets, then run conservative insertion cleanup. Corrections are case-insensitive unless an entry opts into case sensitivity. Spoken punctuation cues consume adjacent recognizer marks without globally collapsing literal dots; a spoken period capitalizes the next lowercase word while preserving mixed-case names. Self-correction preserves the discarded clause's initial sentence casing. Quantity formatting follows the existing spoken-formatting and app-profile switches, so developer/terminal profiles can opt out; personalization runs afterward and can override canonical output. No settings migration or additional UI is required. See [docs/TEXT-FORMATTING.md](docs/TEXT-FORMATTING.md) for the number grammar and ambiguity boundaries.
 
 The bar is placed at startup and at session start. Follow-active-window resolves the target window's monitor at those points; fixed placement resolves the saved monitor identity first and ordinal second. Missing fixed monitors fall back to primary and emit a non-blocking placement status.
 

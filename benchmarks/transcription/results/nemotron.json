@@ -1,0 +1,719 @@
+{
+  "schema": 1,
+  "source_revision": "v0.5.5-2-g5e4f820-dirty",
+  "timestamp_ms": 1791089794268,
+  "context": {
+    "engine": "nemotron",
+    "machine": "Ryzen2600X-RTX2060-AC",
+    "os": "windows",
+    "arch": "x86_64",
+    "runtime_version": "0.1.0",
+    "runtime_variant": "cuda",
+    "runtime_sha256": "ba024204e76ca2fa4eefa8787506c3c49e418147f627f60cf9206a582b60089c",
+    "model_sha256": "d9a01898d2a611c8764e23a1c2f45e70bbd5a425dc4de93692ac951dd603812d",
+    "gpu": "NVIDIA GeForce RTX 2060",
+    "repetitions": 3,
+    "normalization": "unicode-lowercase-alphanumeric-tokens-v1",
+    "processing": "formatting-on-self-correction-on-no-personalization-v1"
+  },
+  "warmup_latency_ms": 1490.9311,
+  "warmup_error": null,
+  "cases": [
+    {
+      "id": "silence",
+      "category": "silence",
+      "provenance": "synthetic",
+      "fingerprint": "6694aa46acca2549bab16b84605452144a275ebd5f0d045adba630c4b8c9403f",
+      "expected": "",
+      "audio_ms": 2000,
+      "trials": [
+        {
+          "latency_ms": 954.1074,
+          "raw": "",
+          "processed": "",
+          "backend": "local_nemotron_streaming_cuda",
+          "runtime_variant": "cuda",
+          "raw_score": {
+            "edits": 0,
+            "reference_words": 0,
+            "wer": null,
+            "normalized_match": true,
+            "exact_match": true
+          },
+          "score": {
+            "edits": 0,
+            "reference_words": 0,
+            "wer": null,
+            "normalized_match": true,
+            "exact_match": true
+          },
+          "partial_count": 0,
+          "error": null,
+          "expected_empty_recording": false
+        },
+        {
+          "latency_ms": 975.4315,
+          "raw": "",
+          "processed": "",
+          "backend": "local_nemotron_streaming_cuda",
+          "runtime_variant": "cuda",
+          "raw_score": {
+            "edits": 0,
+            "reference_words": 0,
+            "wer": null,
+            "normalized_match": true,
+            "exact_match": true
+          },
+          "score": {
+            "edits": 0,
+            "reference_words": 0,
+            "wer": null,
+            "normalized_match": true,
+            "exact_match": true
+          },
+          "partial_count": 0,
+          "error": null,
+          "expected_empty_recording": false
+        },
+        {
+          "latency_ms": 829.586,
+          "raw": "",
+          "processed": "",
+          "backend": "local_nemotron_streaming_cuda",
+          "runtime_variant": "cuda",
+          "raw_score": {
+            "edits": 0,
+            "reference_words": 0,
+            "wer": null,
+            "normalized_match": true,
+            "exact_match": true
+          },
+          "score": {
+            "edits": 0,
+            "reference_words": 0,
+            "wer": null,
+            "normalized_match": true,
+            "exact_match": true
+          },
+          "partial_count": 0,
+          "error": null,
+          "expected_empty_recording": false
+        }
+      ],
+      "median_latency_ms": 954.1074,
+      "p95_latency_ms": 975.4315,
+      "real_time_factor": 0.47705369999999997,
+      "passed": true
+    },
+    {
+      "id": "short",
+      "category": "short_dictation",
+      "provenance": "synthetic",
+      "fingerprint": "bf4bb9943eef13c7210020a7a89addcd231d60d7f6b13043ee623f336736ff79",
+      "expected": "The meeting starts after lunch.",
+      "audio_ms": 2540,
+      "trials": [
+        {
+          "latency_ms": 997.049,
+          "raw": "The meeting starts after lunch.",
+          "processed": "The meeting starts after lunch.",
+          "backend": "local_nemotron_streaming_cuda",
+          "runtime_variant": "cuda",
+          "raw_score": {
+            "edits": 0,
+            "reference_words": 5,
+            "wer": 0.0,
+            "normalized_match": true,
+            "exact_match": true
+          },
+          "score": {
+            "edits": 0,
+            "reference_words": 5,
+            "wer": 0.0,
+            "normalized_match": true,
+            "exact_match": true
+          },
+          "partial_count": 23,
+          "error": null,
+          "expected_empty_recording": false
+        },
+        {
+          "latency_ms": 875.1333999999999,
+          "raw": "The meeting starts after lunch.",
+          "processed": "The meeting starts after lunch.",
+          "backend": "local_nemotron_streaming_cuda",
+          "runtime_variant": "cuda",
+          "raw_score": {
+            "edits": 0,
+            "reference_words": 5,
+            "wer": 0.0,
+            "normalized_match": true,
+            "exact_match": true
+          },
+          "score": {
+            "edits": 0,
+            "reference_words": 5,
+            "wer": 0.0,
+            "normalized_match": true,
+            "exact_match": true
+          },
+          "partial_count": 23,
+          "error": null,
+          "expected_empty_recording": false
+        },
+        {
+          "latency_ms": 954.1732,
+          "raw": "The meeting starts after lunch.",
+          "processed": "The meeting starts after lunch.",
+          "backend": "local_nemotron_streaming_cuda",
+          "runtime_variant": "cuda",
+          "raw_score": {
+            "edits": 0,
+            "reference_words": 5,
+            "wer": 0.0,
+            "normalized_match": true,
+            "exact_match": true
+          },
+          "score": {
+            "edits": 0,
+            "reference_words": 5,
+            "wer": 0.0,
+            "normalized_match": true,
+            "exact_match": true
+          },
+          "partial_count": 23,
+          "error": null,
+          "expected_empty_recording": false
+        }
+      ],
+      "median_latency_ms": 954.1732,
+      "p95_latency_ms": 997.049,
+      "real_time_factor": 0.3756587401574803,
+      "passed": true
+    },
+    {
+      "id": "punctuation",
+      "category": "spoken_punctuation",
+      "provenance": "synthetic",
+      "fingerprint": "738667ece8debbefe4ec288f849f89359a870e3669683ff57fbff331d31c2dd6",
+      "expected": "Hello, Orion.\nPlease send the report.",
+      "audio_ms": 4445,
+      "trials": [
+        {
+          "latency_ms": 1055.7327,
+          "raw": "Hello comma Orion period new line. Please send the report period.",
+          "processed": "Hello, Orion.\nPlease send the report..",
+          "backend": "local_nemotron_streaming_cuda",
+          "runtime_variant": "cuda",
+          "raw_score": {
+            "edits": 5,
+            "reference_words": 6,
+            "wer": 0.8333333333333334,
+            "normalized_match": false,
+            "exact_match": false
+          },
+          "score": {
+            "edits": 0,
+            "reference_words": 6,
+            "wer": 0.0,
+            "normalized_match": true,
+            "exact_match": false
+          },
+          "partial_count": 37,
+          "error": null,
+          "expected_empty_recording": false
+        },
+        {
+          "latency_ms": 1045.6917,
+          "raw": "Hello comma Orion period new line. Please send the report period.",
+          "processed": "Hello, Orion.\nPlease send the report..",
+          "backend": "local_nemotron_streaming_cuda",
+          "runtime_variant": "cuda",
+          "raw_score": {
+            "edits": 5,
+            "reference_words": 6,
+            "wer": 0.8333333333333334,
+            "normalized_match": false,
+            "exact_match": false
+          },
+          "score": {
+            "edits": 0,
+            "reference_words": 6,
+            "wer": 0.0,
+            "normalized_match": true,
+            "exact_match": false
+          },
+          "partial_count": 37,
+          "error": null,
+          "expected_empty_recording": false
+        },
+        {
+          "latency_ms": 910.9379,
+          "raw": "Hello comma Orion period new line. Please send the report period.",
+          "processed": "Hello, Orion.\nPlease send the report..",
+          "backend": "local_nemotron_streaming_cuda",
+          "runtime_variant": "cuda",
+          "raw_score": {
+            "edits": 5,
+            "reference_words": 6,
+            "wer": 0.8333333333333334,
+            "normalized_match": false,
+            "exact_match": false
+          },
+          "score": {
+            "edits": 0,
+            "reference_words": 6,
+            "wer": 0.0,
+            "normalized_match": true,
+            "exact_match": false
+          },
+          "partial_count": 37,
+          "error": null,
+          "expected_empty_recording": false
+        }
+      ],
+      "median_latency_ms": 1045.6917,
+      "p95_latency_ms": 1055.7327,
+      "real_time_factor": 0.23525122609673793,
+      "passed": false
+    },
+    {
+      "id": "numbers",
+      "category": "numbers",
+      "provenance": "synthetic",
+      "fingerprint": "3867e6eb4b115ef69f07ca20efc3074b52f3f77c4787c64dd84037033b230fb0",
+      "expected": "The order contains 12 boxes and costs 45 dollars.",
+      "audio_ms": 4605,
+      "trials": [
+        {
+          "latency_ms": 962.9041,
+          "raw": "The order contains twelve boxes and costs forty five dollars.",
+          "processed": "The order contains twelve boxes and costs forty five dollars.",
+          "backend": "local_nemotron_streaming_cuda",
+          "runtime_variant": "cuda",
+          "raw_score": {
+            "edits": 3,
+            "reference_words": 9,
+            "wer": 0.3333333333333333,
+            "normalized_match": false,
+            "exact_match": false
+          },
+          "score": {
+            "edits": 3,
+            "reference_words": 9,
+            "wer": 0.3333333333333333,
+            "normalized_match": false,
+            "exact_match": false
+          },
+          "partial_count": 44,
+          "error": null,
+          "expected_empty_recording": false
+        },
+        {
+          "latency_ms": 997.7226,
+          "raw": "The order contains twelve boxes and costs forty five dollars.",
+          "processed": "The order contains twelve boxes and costs forty five dollars.",
+          "backend": "local_nemotron_streaming_cuda",
+          "runtime_variant": "cuda",
+          "raw_score": {
+            "edits": 3,
+            "reference_words": 9,
+            "wer": 0.3333333333333333,
+            "normalized_match": false,
+            "exact_match": false
+          },
+          "score": {
+            "edits": 3,
+            "reference_words": 9,
+            "wer": 0.3333333333333333,
+            "normalized_match": false,
+            "exact_match": false
+          },
+          "partial_count": 44,
+          "error": null,
+          "expected_empty_recording": false
+        },
+        {
+          "latency_ms": 1258.5088,
+          "raw": "The order contains twelve boxes and costs forty five dollars.",
+          "processed": "The order contains twelve boxes and costs forty five dollars.",
+          "backend": "local_nemotron_streaming_cuda",
+          "runtime_variant": "cuda",
+          "raw_score": {
+            "edits": 3,
+            "reference_words": 9,
+            "wer": 0.3333333333333333,
+            "normalized_match": false,
+            "exact_match": false
+          },
+          "score": {
+            "edits": 3,
+            "reference_words": 9,
+            "wer": 0.3333333333333333,
+            "normalized_match": false,
+            "exact_match": false
+          },
+          "partial_count": 44,
+          "error": null,
+          "expected_empty_recording": false
+        }
+      ],
+      "median_latency_ms": 997.7226,
+      "p95_latency_ms": 1258.5088,
+      "real_time_factor": 0.21666071661237787,
+      "passed": false
+    },
+    {
+      "id": "names",
+      "category": "proper_names",
+      "provenance": "synthetic",
+      "fingerprint": "4b65717e0f6975485e9e5cb2de815e18bec3f8510d2927b68165711adeeef9dd",
+      "expected": "Send the Lyra report to Orion and NVIDIA in Seattle.",
+      "audio_ms": 3940,
+      "trials": [
+        {
+          "latency_ms": 909.4773,
+          "raw": "Send the Lyra report to Orion and Nvidia in Seattle.",
+          "processed": "Send the Lyra report to Orion and Nvidia in Seattle.",
+          "backend": "local_nemotron_streaming_cuda",
+          "runtime_variant": "cuda",
+          "raw_score": {
+            "edits": 0,
+            "reference_words": 10,
+            "wer": 0.0,
+            "normalized_match": true,
+            "exact_match": false
+          },
+          "score": {
+            "edits": 0,
+            "reference_words": 10,
+            "wer": 0.0,
+            "normalized_match": true,
+            "exact_match": false
+          },
+          "partial_count": 34,
+          "error": null,
+          "expected_empty_recording": false
+        },
+        {
+          "latency_ms": 868.1389,
+          "raw": "Send the Lyra report to Orion and Nvidia in Seattle.",
+          "processed": "Send the Lyra report to Orion and Nvidia in Seattle.",
+          "backend": "local_nemotron_streaming_cuda",
+          "runtime_variant": "cuda",
+          "raw_score": {
+            "edits": 0,
+            "reference_words": 10,
+            "wer": 0.0,
+            "normalized_match": true,
+            "exact_match": false
+          },
+          "score": {
+            "edits": 0,
+            "reference_words": 10,
+            "wer": 0.0,
+            "normalized_match": true,
+            "exact_match": false
+          },
+          "partial_count": 34,
+          "error": null,
+          "expected_empty_recording": false
+        },
+        {
+          "latency_ms": 812.5592,
+          "raw": "Send the Lyra report to Orion and Nvidia in Seattle.",
+          "processed": "Send the Lyra report to Orion and Nvidia in Seattle.",
+          "backend": "local_nemotron_streaming_cuda",
+          "runtime_variant": "cuda",
+          "raw_score": {
+            "edits": 0,
+            "reference_words": 10,
+            "wer": 0.0,
+            "normalized_match": true,
+            "exact_match": false
+          },
+          "score": {
+            "edits": 0,
+            "reference_words": 10,
+            "wer": 0.0,
+            "normalized_match": true,
+            "exact_match": false
+          },
+          "partial_count": 34,
+          "error": null,
+          "expected_empty_recording": false
+        }
+      ],
+      "median_latency_ms": 868.1389,
+      "p95_latency_ms": 909.4773,
+      "real_time_factor": 0.2203398223350254,
+      "passed": true
+    },
+    {
+      "id": "long",
+      "category": "long_dictation",
+      "provenance": "synthetic",
+      "fingerprint": "9b1f939a0d7c0aaa121c915861626fc76168a756c21823ce3043ff7db2e174c8",
+      "expected": "Today we reviewed the transcription service and agreed on a practical plan for the next release. First we will collect representative recordings from several microphones in a quiet room. Then we will repeat the same sentences with background noise and compare the results against an approved baseline. Every recording should include a carefully checked reference transcript and a clear description of the environment. We will track accuracy and recognition time separately so that a faster engine does not hide a loss of quality. Finally we will review the failed cases, document the limitations, and decide whether the release is ready for everyday dictation.",
+      "audio_ms": 39790,
+      "trials": [
+        {
+          "latency_ms": 3434.6338,
+          "raw": "Today we reviewed the transcription service and agreed on a practical plan for the next release. First we will collect representative recordings from several microphones in a quiet room, then we will repeat the same sentences with background noise and compare the results against an approved baseline. Every recording should include a carefully checked reference transcript and a cleared description of the environment. We will track accuracy and recognition time separately so that a faster engine does not hide a loss of quality. Finally, we will review the failed cases, document the limitations, and decide whether the release is ready for everyday dictation.",
+          "processed": "Today we reviewed the transcription service and agreed on a practical plan for the next release. First we will collect representative recordings from several microphones in a quiet room, then we will repeat the same sentences with background noise and compare the results against an approved baseline. Every recording should include a carefully checked reference transcript and a cleared description of the environment. We will track accuracy and recognition time separately so that a faster engine does not hide a loss of quality. Finally, we will review the failed cases, document the limitations, and decide whether the release is ready for everyday dictation.",
+          "backend": "local_nemotron_streaming_cuda",
+          "runtime_variant": "cuda",
+          "raw_score": {
+            "edits": 1,
+            "reference_words": 103,
+            "wer": 0.009708737864077669,
+            "normalized_match": false,
+            "exact_match": false
+          },
+          "score": {
+            "edits": 1,
+            "reference_words": 103,
+            "wer": 0.009708737864077669,
+            "normalized_match": false,
+            "exact_match": false
+          },
+          "partial_count": 394,
+          "error": null,
+          "expected_empty_recording": false
+        },
+        {
+          "latency_ms": 3635.8795,
+          "raw": "Today we reviewed the transcription service and agreed on a practical plan for the next release. First we will collect representative recordings from several microphones in a quiet room, then we will repeat the same sentences with background noise and compare the results against an approved baseline. Every recording should include a carefully checked reference transcript and a cleared description of the environment. We will track accuracy and recognition time separately so that a faster engine does not hide a loss of quality. Finally, we will review the failed cases, document the limitations, and decide whether the release is ready for everyday dictation.",
+          "processed": "Today we reviewed the transcription service and agreed on a practical plan for the next release. First we will collect representative recordings from several microphones in a quiet room, then we will repeat the same sentences with background noise and compare the results against an approved baseline. Every recording should include a carefully checked reference transcript and a cleared description of the environment. We will track accuracy and recognition time separately so that a faster engine does not hide a loss of quality. Finally, we will review the failed cases, document the limitations, and decide whether the release is ready for everyday dictation.",
+          "backend": "local_nemotron_streaming_cuda",
+          "runtime_variant": "cuda",
+          "raw_score": {
+            "edits": 1,
+            "reference_words": 103,
+            "wer": 0.009708737864077669,
+            "normalized_match": false,
+            "exact_match": false
+          },
+          "score": {
+            "edits": 1,
+            "reference_words": 103,
+            "wer": 0.009708737864077669,
+            "normalized_match": false,
+            "exact_match": false
+          },
+          "partial_count": 394,
+          "error": null,
+          "expected_empty_recording": false
+        },
+        {
+          "latency_ms": 3349.7383,
+          "raw": "Today we reviewed the transcription service and agreed on a practical plan for the next release. First we will collect representative recordings from several microphones in a quiet room, then we will repeat the same sentences with background noise and compare the results against an approved baseline. Every recording should include a carefully checked reference transcript and a cleared description of the environment. We will track accuracy and recognition time separately so that a faster engine does not hide a loss of quality. Finally, we will review the failed cases, document the limitations, and decide whether the release is ready for everyday dictation.",
+          "processed": "Today we reviewed the transcription service and agreed on a practical plan for the next release. First we will collect representative recordings from several microphones in a quiet room, then we will repeat the same sentences with background noise and compare the results against an approved baseline. Every recording should include a carefully checked reference transcript and a cleared description of the environment. We will track accuracy and recognition time separately so that a faster engine does not hide a loss of quality. Finally, we will review the failed cases, document the limitations, and decide whether the release is ready for everyday dictation.",
+          "backend": "local_nemotron_streaming_cuda",
+          "runtime_variant": "cuda",
+          "raw_score": {
+            "edits": 1,
+            "reference_words": 103,
+            "wer": 0.009708737864077669,
+            "normalized_match": false,
+            "exact_match": false
+          },
+          "score": {
+            "edits": 1,
+            "reference_words": 103,
+            "wer": 0.009708737864077669,
+            "normalized_match": false,
+            "exact_match": false
+          },
+          "partial_count": 394,
+          "error": null,
+          "expected_empty_recording": false
+        }
+      ],
+      "median_latency_ms": 3434.6338,
+      "p95_latency_ms": 3635.8795,
+      "real_time_factor": 0.08631901985423474,
+      "passed": true
+    },
+    {
+      "id": "interrupted",
+      "category": "pause_and_resume",
+      "provenance": "synthetic",
+      "fingerprint": "41fa5522c97efc1dd33d37010f76e57afac3580fd2241010dbb9bf11602edbb9",
+      "expected": "We should finish the review tomorrow after the team meeting.",
+      "audio_ms": 5220,
+      "trials": [
+        {
+          "latency_ms": 950.2793,
+          "raw": "We should finish the review tomorrow after the team meeting.",
+          "processed": "We should finish the review tomorrow after the team meeting.",
+          "backend": "local_nemotron_streaming_cuda",
+          "runtime_variant": "cuda",
+          "raw_score": {
+            "edits": 0,
+            "reference_words": 10,
+            "wer": 0.0,
+            "normalized_match": true,
+            "exact_match": true
+          },
+          "score": {
+            "edits": 0,
+            "reference_words": 10,
+            "wer": 0.0,
+            "normalized_match": true,
+            "exact_match": true
+          },
+          "partial_count": 50,
+          "error": null,
+          "expected_empty_recording": false
+        },
+        {
+          "latency_ms": 929.2323,
+          "raw": "We should finish the review tomorrow after the team meeting.",
+          "processed": "We should finish the review tomorrow after the team meeting.",
+          "backend": "local_nemotron_streaming_cuda",
+          "runtime_variant": "cuda",
+          "raw_score": {
+            "edits": 0,
+            "reference_words": 10,
+            "wer": 0.0,
+            "normalized_match": true,
+            "exact_match": true
+          },
+          "score": {
+            "edits": 0,
+            "reference_words": 10,
+            "wer": 0.0,
+            "normalized_match": true,
+            "exact_match": true
+          },
+          "partial_count": 50,
+          "error": null,
+          "expected_empty_recording": false
+        },
+        {
+          "latency_ms": 967.2748,
+          "raw": "We should finish the review tomorrow after the team meeting.",
+          "processed": "We should finish the review tomorrow after the team meeting.",
+          "backend": "local_nemotron_streaming_cuda",
+          "runtime_variant": "cuda",
+          "raw_score": {
+            "edits": 0,
+            "reference_words": 10,
+            "wer": 0.0,
+            "normalized_match": true,
+            "exact_match": true
+          },
+          "score": {
+            "edits": 0,
+            "reference_words": 10,
+            "wer": 0.0,
+            "normalized_match": true,
+            "exact_match": true
+          },
+          "partial_count": 50,
+          "error": null,
+          "expected_empty_recording": false
+        }
+      ],
+      "median_latency_ms": 950.2793,
+      "p95_latency_ms": 967.2748,
+      "real_time_factor": 0.1820458429118774,
+      "passed": true
+    },
+    {
+      "id": "self-correction",
+      "category": "explicit_self_correction",
+      "provenance": "synthetic",
+      "fingerprint": "d8a4a184e497f1d4f4e2efc90de6edd16cdc71f4afb34284073951f7e9569ea0",
+      "expected": "Send the report on Friday.",
+      "audio_ms": 4880,
+      "trials": [
+        {
+          "latency_ms": 885.0867999999999,
+          "raw": "Send the report on Thursday scratch that send the report on Friday period.",
+          "processed": "send the report on Friday..",
+          "backend": "local_nemotron_streaming_cuda",
+          "runtime_variant": "cuda",
+          "raw_score": {
+            "edits": 8,
+            "reference_words": 5,
+            "wer": 1.6,
+            "normalized_match": false,
+            "exact_match": false
+          },
+          "score": {
+            "edits": 0,
+            "reference_words": 5,
+            "wer": 0.0,
+            "normalized_match": true,
+            "exact_match": false
+          },
+          "partial_count": 43,
+          "error": null,
+          "expected_empty_recording": false
+        },
+        {
+          "latency_ms": 927.1383,
+          "raw": "Send the report on Thursday scratch that send the report on Friday period.",
+          "processed": "send the report on Friday..",
+          "backend": "local_nemotron_streaming_cuda",
+          "runtime_variant": "cuda",
+          "raw_score": {
+            "edits": 8,
+            "reference_words": 5,
+            "wer": 1.6,
+            "normalized_match": false,
+            "exact_match": false
+          },
+          "score": {
+            "edits": 0,
+            "reference_words": 5,
+            "wer": 0.0,
+            "normalized_match": true,
+            "exact_match": false
+          },
+          "partial_count": 43,
+          "error": null,
+          "expected_empty_recording": false
+        },
+        {
+          "latency_ms": 903.4651,
+          "raw": "Send the report on Thursday scratch that send the report on Friday period.",
+          "processed": "send the report on Friday..",
+          "backend": "local_nemotron_streaming_cuda",
+          "runtime_variant": "cuda",
+          "raw_score": {
+            "edits": 8,
+            "reference_words": 5,
+            "wer": 1.6,
+            "normalized_match": false,
+            "exact_match": false
+          },
+          "score": {
+            "edits": 0,
+            "reference_words": 5,
+            "wer": 0.0,
+            "normalized_match": true,
+            "exact_match": false
+          },
+          "partial_count": 43,
+          "error": null,
+          "expected_empty_recording": false
+        }
+      ],
+      "median_latency_ms": 903.4651,
+      "p95_latency_ms": 927.1383,
+      "real_time_factor": 0.18513629098360657,
+      "passed": true
+    }
+  ],
+  "comparison": [],
+  "baseline_deltas": [],
+  "comparison_policy": {
+    "wer_delta": 0.0,
+    "latency_ratio": 0.25,
+    "latency_ms": 50.0
+  },
+  "passed": false
+}

@@ -5,6 +5,14 @@ description = "Local-first Windows dictation for Orion"
 authors = ["OrionAISystems"]
 edition = "2021"
 
+[features]
+regression-bench = []
+
+[[example]]
+name = "transcription-bench"
+path = "../benchmarks/transcription/main.rs"
+required-features = ["regression-bench"]
+
 [lib]
 name = "lyra_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]

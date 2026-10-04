@@ -46,6 +46,10 @@ app-data/
 *.partial
 *.installing
 
+# Internal benchmark audio metadata and local reports may contain private transcripts.
+benchmarks/transcription/audio/
+benchmarks/transcription/local/
+
 # Locally staged release output (public release assets are uploaded by CI).
 release-artifacts/
 

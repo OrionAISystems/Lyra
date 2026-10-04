@@ -384,15 +384,13 @@ pub fn process_transcription_text(
 
     if options.formatting_commands_enabled {
         text = replace_line_break_commands(&text, &[("new paragraph", "\n\n"), ("new line", "\n")]);
-        let mut formatting = vec![
-            ("open quote", "\""),
-            ("close quote", "\""),
-            ("comma", ","),
-            ("period", "."),
-        ];
+        let mut formatting = vec![("open quote", "\""), ("close quote", "\"")];
         formatting.sort_by_key(|(source, _)| std::cmp::Reverse(source.len()));
         text = replace_phrases(&text, &formatting, true);
+        text = replace_spoken_punctuation(&text, "comma", ',');
+        text = replace_spoken_punctuation(&text, "period", '.');
         text = normalize_formatting_spacing(&text);
+        text = crate::quantities::normalize(&text);
     }
 
     let mut corrections = options
@@ -448,7 +446,18 @@ fn apply_explicit_self_correction(text: &str) -> String {
     if !output.is_empty() && !output.ends_with([' ', '\n']) {
         output.push(' ');
     }
-    output.push_str(replacement);
+    // Preserve sentence casing when the recognizer lowercases the replacement
+    // after a correction cue. Mixed-case names remain the speaker's text.
+    let original_clause = &prefix[clause_start..];
+    if original_clause[sentence_content_start(original_clause)..]
+        .chars()
+        .next()
+        .is_some_and(char::is_uppercase)
+    {
+        output.push_str(&capitalize_sentence_start(replacement));
+    } else {
+        output.push_str(replacement);
+    }
     output.trim().to_owned()
 }
 
@@ -573,6 +582,89 @@ fn consume_following_punctuation(text: &str, end: usize) -> usize {
         cursor += character.len_utf8();
     }
     cursor
+}
+
+fn sentence_content_start(text: &str) -> usize {
+    text.char_indices()
+        .find(|(_, c)| {
+            !c.is_whitespace()
+                && !matches!(
+                    c,
+                    '\'' | '"' | '“' | '”' | '‘' | '’' | '(' | ')' | '[' | ']' | '{' | '}'
+                )
+        })
+        .map(|(index, _)| index)
+        .unwrap_or(text.len())
+}
+
+fn capitalize_sentence_start(text: &str) -> String {
+    let start = sentence_content_start(text);
+    let word = text[start..]
+        .split(|c: char| !c.is_alphabetic() && !matches!(c, '\'' | '’' | '-'))
+        .next()
+        .unwrap_or("");
+    let Some(first) = word.chars().next().filter(|c| c.is_lowercase()) else {
+        return text.to_owned();
+    };
+    if word.chars().any(char::is_uppercase) {
+        return text.to_owned();
+    }
+    format!(
+        "{}{}{}",
+        &text[..start],
+        first.to_uppercase(),
+        &text[start + first.len_utf8()..]
+    )
+}
+
+// A spoken punctuation cue owns adjacent ASR punctuation, rather than globally
+// collapsing dots/commas (which would damage decimals, versions and ellipses).
+fn replace_spoken_punctuation(text: &str, source: &str, punctuation: char) -> String {
+    let mut result = String::with_capacity(text.len());
+    let mut cursor = 0;
+    let mut sentence_start = false;
+    while let Some((start, end)) = find_phrase(text, cursor, source, false) {
+        let prefix = &text[cursor..start];
+        if sentence_start {
+            result.push_str(&capitalize_sentence_start(prefix));
+        } else {
+            result.push_str(prefix);
+        }
+        while result.ends_with([' ', '\t', '.', ',', ';', ':', '!', '?']) {
+            result.pop();
+        }
+        result.push(punctuation);
+
+        // Like line-break cues, consume ASR punctuation attached to the cue.
+        // Retain trailing whitespace: punctuation alone must not join words.
+        let mut scan = end;
+        let mut punctuation_end = end;
+        while let Some(c) = text[scan..].chars().next() {
+            if !matches!(c, ' ' | '\t' | '.' | ',' | ';' | ':' | '!' | '?') {
+                break;
+            }
+            scan += c.len_utf8();
+            if !matches!(c, ' ' | '\t') {
+                punctuation_end = scan;
+            }
+        }
+        cursor = punctuation_end;
+        if text[cursor..]
+            .chars()
+            .next()
+            .is_some_and(char::is_alphanumeric)
+        {
+            result.push(' ');
+        }
+        sentence_start = punctuation == '.';
+    }
+    let suffix = &text[cursor..];
+    if sentence_start {
+        result.push_str(&capitalize_sentence_start(suffix));
+    } else {
+        result.push_str(suffix);
+    }
+    result
 }
 
 fn normalize_formatting_spacing(text: &str) -> String {
@@ -772,6 +864,132 @@ mod tests {
     }
 
     #[test]
+    fn spoken_punctuation_owns_asr_marks_and_sentence_casing() {
+        let options = TextProcessingOptions {
+            formatting_commands_enabled: true,
+            self_correction_enabled: true,
+            corrections: &[],
+            snippets: &[],
+        };
+        for (raw, expected) in [
+            (
+                "Hello comma Orion period new line please send the report period.",
+                "Hello, Orion.\nPlease send the report.",
+            ),
+            (
+                "Hello comma Orion period new line. Please send the report period.",
+                "Hello, Orion.\nPlease send the report.",
+            ),
+            (
+                "Hello, comma, Orion period. next sentence period .",
+                "Hello, Orion. Next sentence.",
+            ),
+            ("Hello comma,world period.next", "Hello, world. Next"),
+            ("Hello, period.", "Hello."),
+            ("Hello. comma,", "Hello,"),
+            ("Hello?! period. next", "Hello. Next"),
+            (
+                "hello period open quote welcome close quote period.",
+                "hello. \"Welcome\".",
+            ),
+            ("hello period new paragraph élève", "hello.\n\nÉlève"),
+            ("hello period iPhone and eBay", "hello. iPhone and eBay"),
+            (
+                "Send the report on Thursday scratch that send the report on Friday period.",
+                "Send the report on Friday.",
+            ),
+        ] {
+            assert_eq!(
+                process_transcription_text(raw, None, options),
+                expected,
+                "{raw}"
+            );
+        }
+    }
+
+    #[test]
+    fn punctuation_cleanup_preserves_literal_text_and_user_overrides() {
+        let options = TextProcessingOptions {
+            formatting_commands_enabled: true,
+            self_correction_enabled: true,
+            corrections: &[],
+            snippets: &[],
+        };
+        for raw in [
+            "Wait... then continue.",
+            "Value 12.5, version v0.5.5, example.com.",
+            "https://example.com/path?x=12.5",
+            "commawheel periodical",
+            "Already punctuated. next stays as recognized.",
+        ] {
+            assert_eq!(process_transcription_text(raw, None, options), raw);
+        }
+        assert_eq!(
+            process_transcription_text("new line item", None, options),
+            "item"
+        );
+        assert_eq!(
+            process_transcription_text("notes new line item", None, options),
+            "notes\nitem"
+        );
+        let disabled = TextProcessingOptions {
+            formatting_commands_enabled: false,
+            self_correction_enabled: false,
+            ..options
+        };
+        assert_eq!(
+            process_transcription_text("hello period. next", None, disabled),
+            "hello period. next"
+        );
+        let corrections = [CorrectionEntry::new("next", "eBay")];
+        let personalized = TextProcessingOptions {
+            corrections: &corrections,
+            ..options
+        };
+        assert_eq!(
+            process_transcription_text("hello period next", None, personalized),
+            "hello. eBay"
+        );
+        assert_eq!(
+            process_transcription_text("Use Amazon scratch that eBay", None, options),
+            "eBay"
+        );
+    }
+
+    #[test]
+    fn quantity_formatting_obeys_the_existing_toggle_and_personalization_order() {
+        let options = TextProcessingOptions {
+            formatting_commands_enabled: true,
+            self_correction_enabled: true,
+            corrections: &[],
+            snippets: &[],
+        };
+        let raw = "The order contains twelve boxes and costs forty five dollars.";
+        assert_eq!(
+            process_transcription_text(raw, None, options),
+            "The order contains 12 boxes and costs $45."
+        );
+        let disabled = TextProcessingOptions {
+            formatting_commands_enabled: false,
+            ..options
+        };
+        assert_eq!(process_transcription_text(raw, None, disabled), raw);
+        let corrections = [CorrectionEntry::new("$45", "USD 45")];
+        let personalized = TextProcessingOptions {
+            corrections: &corrections,
+            ..options
+        };
+        assert_eq!(
+            process_transcription_text(raw, None, personalized),
+            "The order contains 12 boxes and costs USD 45."
+        );
+        let text =
+            process_transcription_text("hello period twelve point five kilograms", None, options);
+        assert_eq!(text, "hello. 12.5 kilograms");
+        assert_eq!(process_transcription_text(&text, None, options), text);
+    }
+
+    #[test]
     fn explicit_self_correction_replaces_only_the_current_clause() {
         let options = TextProcessingOptions {
             formatting_commands_enabled: false,
@@ -787,6 +1005,108 @@ mod tests {
             ),
             "We agreed yesterday. Friday"
         );
+    }
+
+    #[test]
+    fn self_correction_casing_skips_opening_delimiters() {
+        let options = TextProcessingOptions {
+            formatting_commands_enabled: false,
+            self_correction_enabled: true,
+            corrections: &[],
+            snippets: &[],
+        };
+        for (source, expected) in [
+            ("\"Send it scratch that send this", "Send this"),
+            ("(Send it scratch that send this", "Send this"),
+            ("[Send it scratch that send this", "Send this"),
+            ("“Écris ceci scratch that écris cela", "Écris cela"),
+            ("(send it scratch that send this", "send this"),
+            ("(Send it scratch that eBay", "eBay"),
+            ("Done. (Send it scratch that send this", "Done. Send this"),
+            ("(Send it scratch that \"send this\"", "\"Send this\""),
+        ] {
+            assert_eq!(
+                process_transcription_text(source, None, options),
+                expected,
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn sentence_casing_preserves_names_with_curly_apostrophes() {
+        let options = TextProcessingOptions {
+            formatting_commands_enabled: true,
+            self_correction_enabled: true,
+            corrections: &[],
+            snippets: &[],
+        };
+        for (source, expected) in [
+            (
+                "hello period d’Artagnan arrived",
+                "hello. d’Artagnan arrived",
+            ),
+            (
+                "hello period d'Artagnan arrived",
+                "hello. d'Artagnan arrived",
+            ),
+            (
+                "Send this scratch that d’Artagnan arrived",
+                "d’Artagnan arrived",
+            ),
+            ("hello period l’esprit", "hello. L’esprit"),
+            ("‘five boxes’", "‘5 boxes’"),
+        ] {
+            assert_eq!(
+                process_transcription_text(source, None, options),
+                expected,
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn sentence_casing_preserves_hyphenated_mixed_case_names() {
+        let options = TextProcessingOptions {
+            formatting_commands_enabled: true,
+            self_correction_enabled: true,
+            corrections: &[],
+            snippets: &[],
+        };
+        for (source, expected) in [
+            ("hello period i-Ready is open", "hello. i-Ready is open"),
+            ("Send this scratch that i-Ready is open", "i-Ready is open"),
+            ("hello period well-known names", "hello. Well-known names"),
+        ] {
+            assert_eq!(
+                process_transcription_text(source, None, options),
+                expected,
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn spoken_punctuation_owns_interleaved_horizontal_marks() {
+        let options = TextProcessingOptions {
+            formatting_commands_enabled: true,
+            self_correction_enabled: true,
+            corrections: &[],
+            snippets: &[],
+        };
+        for (source, expected) in [
+            ("Hello. , period next", "Hello. Next"),
+            ("Hello period. , next", "Hello. Next"),
+            ("Hello.\t, period.\t, next", "Hello. Next"),
+            ("Hello! ; comma next", "Hello, next"),
+            ("Hello... next", "Hello... next"),
+        ] {
+            assert_eq!(
+                process_transcription_text(source, None, options),
+                expected,
+                "{source}"
+            );
+        }
     }
 
     #[test]

@@ -13,6 +13,11 @@ Lyra releases are published from the private source repository to the public [Ly
 ### Changed
 
 - Advance settings to schema v5 while preserving existing user preferences.
+- Canonicalize English quantities while spoken formatting is enabled: multiword numbers, quantities with known units, decimals, percentages, and explicit currency amounts.
+
+### Fixed
+
+- Avoid doubled punctuation when recognition adds marks to spoken comma or period commands, and restore sentence casing after spoken periods and explicit self-correction.
 
 ## [0.5.4] - 2026-09-30
 

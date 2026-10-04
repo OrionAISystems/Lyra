@@ -5,6 +5,7 @@
   "description": "Lightweight local-first Windows dictation for the Orion ecosystem",
   "type": "module",
   "scripts": {
+    "bench:transcription": "cargo run --release --locked --manifest-path src-tauri/Cargo.toml --features regression-bench --example transcription-bench --",
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
