@@ -24,6 +24,7 @@ The chosen policy converts standalone **multiword** English cardinal/decimal phr
 | `twelve point five percent` / `per cent` | `12.5%` |
 | `forty five dollars` / `$45` | `$45` |
 | `one dollar and five cents` | `$1.05` |
+| `$1 and five cents` / `£1 and five pence` | `$1.05` / `£1.05` |
 | `two euros and ninety nine cents` | `€2.99` |
 | `costs five pounds` / `five pounds sterling` | `costs £5` / `£5` |
 | `weighs five pounds` | `weighs 5 pounds` |
@@ -36,7 +37,7 @@ Currency rendering removes grouping commas, removes an all-zero fractional part,
 
 ## Ambiguity and opt-out boundaries
 
-Identifier-like adjacency, existing versions, URLs, written dates, repeated digit sequences, mixed-case names and non-English number words are protected by deterministic checks. Attached dotted components remain literal (`twenty-five.com`, `version twenty five.1`), while a terminal sentence period permits conversion (`twenty five.` → `25.`). Hyphens join number words only when attached on both sides; spaced subtraction is not combined into a cardinal. Number phrases and monetary context never join across a newline. A following capitalized name token protects titles such as `Twenty One Pilots`.
+Identifier-like adjacency, existing versions, URLs, written dates, repeated digit sequences, mixed-case names and non-English number words are protected by deterministic checks. Attached dotted components remain literal (`twenty-five.com`, `version twenty five.1`), while a terminal sentence period permits conversion (`twenty five.` → `25.`). Hyphens join number words only when attached on both sides; spaced subtraction is not combined into a cardinal. Number phrases and monetary context never join across a newline. A following capitalized name token protects titles such as `Twenty One Pilots`, including titles whose next word is also a unit (`Five Seconds of Summer`, `Seven Pounds`, `One Hundred Years of Solitude`). Lowercase unit quantities still convert. Conflicting currency names remain literal whether the first annotation is a symbol or a named denomination (`$five pounds`, `five dollars euros`).
 
 Converting standalone multiword numbers still carries the explicitly chosen tradeoff: a lowercase name or idiom that is also a valid English number phrase can be converted. The formatter cannot recover a name that a recognizer already emitted as digits. Calendar/date layout, telephone/PIN formatting, ordinals, fractions, scientific notation and non-English grammars are outside this pass. Disable spoken formatting for literal/code-oriented dictation; profile overrides and later personalization remain available.
 

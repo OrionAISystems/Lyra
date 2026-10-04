@@ -474,6 +474,15 @@ pub(crate) fn normalize(text: &str) -> String {
                 if !gap(text, &tokens[i - 1], &tokens[i]) {
                     break;
                 }
+                // A symbol already establishes the major currency unit. Keep
+                // an explicit minor-unit clause out of the cardinal grammar.
+                if lower[i] == "and"
+                    && symbol.is_some_and(|symbol| {
+                        minor_amount(text, &tokens, &lower, i, symbol).is_some()
+                    })
+                {
+                    break;
+                }
                 let is_connector = lower[i] == "and"
                     && tokens.get(i + 1).is_some_and(|_| {
                         number_component(&lower[i + 1]) && gap(text, &tokens[i], &tokens[i + 1])
@@ -528,12 +537,20 @@ pub(crate) fn normalize(text: &str) -> String {
                         | "owes"
                 )
             });
-        let money = next.and_then(currency).filter(|currency| {
-            unit_gap && (*currency != "£" || symbol == Some("£") || sterling || money_cue)
+        let named_currency = next.and_then(currency).filter(|_| unit_gap);
+        let money = named_currency
+            .filter(|currency| *currency != "£" || symbol == Some("£") || sterling || money_cue);
+        let annotation_end = i + 1 + usize::from(sterling);
+        let conflicting_suffix = named_currency.is_some_and(|first| {
+            lower.get(annotation_end).is_some_and(|word| {
+                currency(word).is_some_and(|second| first != second)
+                    && gap(text, &tokens[annotation_end - 1], &tokens[annotation_end])
+            })
         });
         let conflicting_currency = symbol
-            .zip(money)
-            .is_some_and(|(prefix, suffix)| prefix != suffix);
+            .zip(named_currency)
+            .is_some_and(|(prefix, suffix)| prefix != suffix)
+            || conflicting_suffix;
         if symbol.is_none() {
             symbol = money;
         }
@@ -546,8 +563,7 @@ pub(crate) fn normalize(text: &str) -> String {
         let multiword = number_end - number_start > 1;
         // An initial title/name such as "Twenty One Pilots" has no quantity
         // context. Do not guess that it denotes a number.
-        let title = !unit
-            && symbol.is_none()
+        let title = symbol.is_none()
             && !percent
             && tokens
                 .get(number_end)
@@ -597,18 +613,17 @@ pub(crate) fn normalize(text: &str) -> String {
                 if sterling {
                     i += 1;
                 }
-                if !amount.contains('.')
+            }
+            if let Some(symbol) = symbol.filter(|_| {
+                !amount.contains('.')
                     && tokens
                         .get(i)
                         .is_some_and(|next| gap(text, &tokens[i - 1], next))
-                {
-                    if let Some((minor, end)) =
-                        minor_amount(text, &tokens, &lower, i, symbol.unwrap())
-                    {
-                        amount.push('.');
-                        amount.push_str(&minor);
-                        i = end;
-                    }
+            }) {
+                if let Some((minor, end)) = minor_amount(text, &tokens, &lower, i, symbol) {
+                    amount.push('.');
+                    amount.push_str(&minor);
+                    i = end;
                 }
             }
             if percent {
@@ -642,6 +657,59 @@ pub(crate) fn normalize(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn symbol_prefixed_major_amounts_combine_minor_units() {
+        for (source, expected) in [
+            ("$1 and five cents", "$1.05"),
+            ("€2 and ninety nine cents", "€2.99"),
+            ("£1 and five pence", "£1.05"),
+            ("$-1 and five cents", "-$1.05"),
+            ("$1 dollars and five cents", "$1.05"),
+            ("$one hundred and five dollars", "$105"),
+            ("$1 and five pence", "$1 and five pence"),
+            ("£1 and five cents", "£1 and five cents"),
+            ("$1\nand five cents", "$1\nand five cents"),
+        ] {
+            let result = normalize(source);
+            assert_eq!(result, expected, "{source}");
+            assert_eq!(normalize(&result), result, "not idempotent: {source}");
+        }
+    }
+
+    #[test]
+    fn capitalized_unit_titles_remain_names() {
+        for (source, expected) in [
+            ("Five Seconds of Summer", "Five Seconds of Summer"),
+            ("Seven Pounds", "Seven Pounds"),
+            (
+                "One Hundred Years of Solitude",
+                "One Hundred Years of Solitude",
+            ),
+            ("wait five seconds", "wait 5 seconds"),
+            ("Five seconds remain", "5 seconds remain"),
+            ("weighs seven pounds", "weighs 7 pounds"),
+            ("one hundred years", "100 years"),
+        ] {
+            assert_eq!(normalize(source), expected, "{source}");
+        }
+    }
+
+    #[test]
+    fn conflicting_trailing_currency_names_remain_literal() {
+        for source in [
+            "five dollars euros",
+            "five euros dollars",
+            "five pounds sterling dollars",
+            "$5 dollars euros",
+            "$five pounds",
+            "five pounds dollars",
+        ] {
+            assert_eq!(normalize(source), source, "{source}");
+        }
+        assert_eq!(normalize("five dollars, euros later"), "$5, euros later");
+        assert_eq!(normalize("five dollars\neuros later"), "$5\neuros later");
+    }
 
     #[test]
     fn review_preservation_boundaries() {
