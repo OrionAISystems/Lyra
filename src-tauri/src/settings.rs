@@ -349,7 +349,7 @@ impl SettingsStore {
         };
 
         let store = Self { path, settings };
-        if let Err(error) = store.persist() {
+        if let Err(error) = store.persist(&store.settings) {
             warn!(error = %error, "could not persist initial settings");
         }
         store
@@ -368,8 +368,9 @@ impl SettingsStore {
     }
 
     pub fn set(&mut self, settings: Settings) -> Result<Settings, SettingsError> {
-        self.settings = settings.normalized();
-        self.persist()?;
+        let settings = settings.normalized();
+        self.persist(&settings)?;
+        self.settings = settings;
         info!(
             schema_version = self.settings.schema_version,
             "settings updated"
@@ -377,17 +378,12 @@ impl SettingsStore {
         Ok(self.settings.clone())
     }
 
-    fn persist(&self) -> Result<(), SettingsError> {
+    fn persist(&self, settings: &Settings) -> Result<(), SettingsError> {
         if let Some(parent) = self.path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let json = serde_json::to_vec_pretty(&self.settings)?;
-        let temp_path = self.path.with_extension("json.tmp");
-        fs::write(&temp_path, json)?;
-        if self.path.exists() {
-            fs::remove_file(&self.path)?;
-        }
-        fs::rename(temp_path, &self.path)?;
+        let json = serde_json::to_vec_pretty(settings)?;
+        crate::saved_items::atomic_write(&self.path, &json)?;
         Ok(())
     }
 }
@@ -437,6 +433,61 @@ pub enum SettingsError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn failed_settings_save_preserves_memory_and_existing_file() {
+        let root = std::env::temp_dir().join(format!("lyra-settings-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let mut store = SettingsStore {
+            path: root.join("settings.json"),
+            settings: Settings::default(),
+        };
+        store.persist(&store.settings).unwrap();
+        let before = fs::read(&store.path).unwrap();
+        // Deterministic write failure: the temporary path cannot be opened as a file.
+        fs::create_dir(store.path.with_extension("json.tmp")).unwrap();
+        let mut candidate = store.get();
+        candidate.auto_paste = false;
+        assert!(store.set(candidate).is_err());
+        assert!(store.get().auto_paste);
+        assert_eq!(fs::read(&store.path).unwrap(), before);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn failed_settings_replacement_preserves_the_previous_file() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let root = std::env::temp_dir().join(format!("lyra-settings-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let mut store = SettingsStore {
+            path: root.join("settings.json"),
+            settings: Settings::default(),
+        };
+        store.persist(&store.settings).unwrap();
+        let before = fs::read(&store.path).unwrap();
+        let locked = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&store.path)
+            .unwrap();
+        let mut candidate = store.get();
+        candidate.auto_paste = false;
+        assert!(store.set(candidate).is_err());
+        assert!(store.get().auto_paste);
+        drop(locked);
+        assert_eq!(fs::read(&store.path).unwrap(), before);
+        assert!(!store.path.with_extension("json.tmp").exists());
+        store
+            .set(Settings {
+                auto_paste: false,
+                ..Default::default()
+            })
+            .unwrap();
+        let persisted: Settings = serde_json::from_slice(&fs::read(&store.path).unwrap()).unwrap();
+        assert!(!persisted.auto_paste);
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn defaults_match_v2_product_defaults() {
