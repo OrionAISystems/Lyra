@@ -254,6 +254,15 @@ fn currency(word: &str) -> Option<&'static str> {
     }
 }
 
+fn currency_annotation(word: &str) -> Option<&'static str> {
+    match word {
+        "$" => Some("$"),
+        "€" => Some("€"),
+        "£" => Some("£"),
+        _ => currency(word),
+    }
+}
+
 fn monetary_cue(word: &str) -> bool {
     matches!(
         word,
@@ -402,7 +411,9 @@ fn minor_amount(
         end += 1;
     }
     let unit = lower.get(end)?.as_str();
-    if !matches!(unit, "cents" | "pence") || !gap(text, &tokens[end - 1], &tokens[end]) {
+    if !matches!(unit, "cent" | "cents" | "penny" | "pence")
+        || !gap(text, &tokens[end - 1], &tokens[end])
+    {
         return None;
     }
     let minor = if end == start + 2
@@ -425,7 +436,7 @@ fn minor_amount(
     Some(MinorAmount {
         fraction: format!("{minor:02}"),
         end: end + 1,
-        pence: unit == "pence",
+        pence: matches!(unit, "penny" | "pence"),
     })
 }
 
@@ -577,14 +588,18 @@ pub(crate) fn normalize(text: &str) -> String {
         let annotation_end = i + 1 + usize::from(sterling);
         let conflicting_suffix = named_currency.is_some_and(|first| {
             lower.get(annotation_end).is_some_and(|word| {
-                currency(word).is_some_and(|second| first != second)
+                currency_annotation(word).is_some_and(|second| first != second)
                     && gap(text, &tokens[annotation_end - 1], &tokens[annotation_end])
             })
         });
         let conflicting_currency = symbol
             .zip(named_currency)
             .is_some_and(|(prefix, suffix)| prefix != suffix)
-            || conflicting_suffix;
+            || conflicting_suffix
+            || (unit_gap
+                && symbol
+                    .zip(next.and_then(currency_annotation))
+                    .is_some_and(|(first, second)| first != second));
         if symbol.is_none() {
             symbol = money;
         }
@@ -601,7 +616,8 @@ pub(crate) fn normalize(text: &str) -> String {
         if let (Some(symbol), Some(minor)) = (symbol, minor.as_ref()) {
             let conflicting_minor = minor.pence != (symbol == "£")
                 || tokens.get(minor.end).is_some_and(|next| {
-                    currency(&lower[minor.end]).is_some_and(|currency| currency != symbol)
+                    currency_annotation(&lower[minor.end])
+                        .is_some_and(|currency| currency != symbol)
                         && gap(text, &tokens[minor.end - 1], next)
                 });
             if conflicting_minor {
@@ -638,7 +654,7 @@ pub(crate) fn normalize(text: &str) -> String {
             });
         let identifier_tail = tokens.get(number_end).is_some_and(|next| {
             next.start == tokens[number_end - 1].end
-                && (matches!(next.text, "/" | ":" | "_" | "-" | "@")
+                && (matches!(next.text, "/" | "\\" | ":" | "_" | "-" | "@")
                     || (next.text == "."
                         && tokens.get(number_end + 1).is_some_and(|tail| {
                             tail.start == next.end && tail.text.starts_with(char::is_alphanumeric)
@@ -670,6 +686,11 @@ pub(crate) fn normalize(text: &str) -> String {
                             .any(|word| number_word(word))))
         }) {
             let mut amount = amount;
+            // All-zero fractions denote an integer major amount; normalize
+            // before deciding whether a minor clause can supply its fraction.
+            if symbol.is_some() {
+                amount = money_amount(&amount);
+            }
             if money.is_some() {
                 i += 1;
                 if sterling {
@@ -714,6 +735,58 @@ pub(crate) fn normalize(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn conflicting_currency_symbols_remain_literal() {
+        for source in [
+            "five dollars £",
+            "five euros $",
+            "$five €",
+            "one dollar and five cents £",
+        ] {
+            assert_eq!(normalize(source), source, "{source}");
+        }
+        assert_eq!(normalize("five dollars, £ later"), "$5, £ later");
+        assert_eq!(normalize("five dollars\n£ later"), "$5\n£ later");
+    }
+
+    #[test]
+    fn zero_fraction_major_amounts_combine_minor_units() {
+        for (source, expected) in [
+            ("$1.00 and five cents", "$1.05"),
+            ("1.00 dollars and five cents", "$1.05"),
+            ("€2.000 and 50 cents", "€2.50"),
+            ("£0.00 and five pence", "£0.05"),
+        ] {
+            assert_eq!(normalize(source), expected, "{source}");
+        }
+    }
+
+    #[test]
+    fn windows_path_components_remain_literal() {
+        for source in [
+            r"twenty five\report",
+            r"C:\twenty five\report",
+            r"twenty-five\report",
+        ] {
+            assert_eq!(normalize(source), source, "{source}");
+        }
+    }
+
+    #[test]
+    fn singular_minor_currency_units_are_supported() {
+        for (source, expected) in [
+            ("one dollar and one cent", "$1.01"),
+            ("€1 and one cent", "€1.01"),
+            ("£1 and one penny", "£1.01"),
+            ("one pound sterling and 1 penny", "£1.01"),
+        ] {
+            assert_eq!(normalize(source), expected, "{source}");
+        }
+        for source in ["one dollar and one penny", "£1 and one cent"] {
+            assert_eq!(normalize(source), source, "{source}");
+        }
+    }
 
     #[test]
     fn monetary_cues_allow_short_copulas_but_stop_at_content_boundaries() {
