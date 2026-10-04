@@ -45,11 +45,13 @@ Final reports: [Parakeet comparison](results/parakeet-cleanup-comparison.json), 
 
 Saved candidate baselines are [Parakeet](results/parakeet-cleanup.json) and [Nemotron](results/nemotron-cleanup.json). The [historical seven-case comparison](results/cleanup-historical-comparison.json) also passed with current code. These are development baselines for this hardware/corpus, not approval of a public release or real microphone quality.
 
-Replay the current corpus against either saved baseline:
+Historical baselines above retain the earlier amplitude-based warmup context. Current comparison rejects them rather than comparing potentially different startup inputs; see the warmup policy contract in [benchmark usage](README.md). Establish a new reviewed report under `expected-transcript-v1` before current comparisons.
+
+Replay the current corpus against either new candidate baseline (review these candidates before adopting them):
 
 ```powershell
-npm run bench:transcription -- --manifest benchmarks/transcription/suite.json --output benchmarks/transcription/local/parakeet-review.json --machine Ryzen2600X-RTX2060-AC --baseline benchmarks/transcription/results/parakeet-cleanup.json
-npm run bench:transcription -- --manifest benchmarks/transcription/suite.json --output benchmarks/transcription/local/nemotron-review.json --machine Ryzen2600X-RTX2060-AC --engine nemotron --baseline benchmarks/transcription/results/nemotron-cleanup.json
+npm run bench:transcription -- --manifest benchmarks/transcription/suite.json --output benchmarks/transcription/local/parakeet-review.json --machine Ryzen2600X-RTX2060-AC --baseline benchmarks/transcription/results/parakeet-warmup-v1-candidate.json
+npm run bench:transcription -- --manifest benchmarks/transcription/suite.json --output benchmarks/transcription/local/nemotron-review.json --machine Ryzen2600X-RTX2060-AC --engine nemotron --baseline benchmarks/transcription/results/nemotron-warmup-v1-candidate.json
 ```
 
 ## Saved-baseline precision fix
@@ -66,6 +68,8 @@ The repeat run exposed a harness defect: JSON parsing changed `1/103` from `0.00
 Live microphone capture, accents/noise, silence endpointing, actual stop/restart/cancellation and cross-application paste still need the existing hardware-backed app acceptance checks. The existing Nemotron repeated-model-load abort remains contained by benchmark workers; this pass does not fix the desktop native lifecycle. The frontend was unchanged. The formatting switches/profile preferences provide the existing opt-out for literal dictation, and standalone multiword conversions retain the documented risk for lowercase number-like names/idioms.
 
 ## PR review follow-up
+
+The eighth review identified missing versioning for semantic warmup selection and URL queries exposed by punctuation adjacency. Reports now carry `expected-transcript-v1` in their context, rejecting historical or different warmup policies while retaining their evidence. Attached structured URL/domain/path/identifier prefixes preserve query and path punctuation. The full feature-enabled release suite passed **127 tests, 0 failed, 2 ignored**, plus default-feature release check and formatting. Tests cover legacy/current policy compatibility and URL/query/path counterexamples.
 
 The seventh review identified repeated minor annotations, missing spaces after clause punctuation, amplitude-dependent warmup selection, and mutable fixture rereads in Nemotron workers. Cleanup now preserves repeated minor denominations and permits quantities after unambiguous clause punctuation while protecting dot/colon identifier prefixes. Warmup uses the first expected speech case, with explicit typed no-speech acceptance for silence-only suites. Workers stage snapshots of the exact fingerprinted bytes and remove them after success/failure. Tests cover source mutation and create-new protection as well as semantic warmup selection. The full feature-enabled release suite passed **125 tests, 0 failed, 2 ignored**, plus default-feature release check and formatting. A fresh native replay on preceding revision `35b26ff` passed all 13 synthetic cases / 39 trials per engine, zero WER deltas, including the new warmup latency gate; those ignored local reports supplement the historical committed reports without replacing baselines.
 

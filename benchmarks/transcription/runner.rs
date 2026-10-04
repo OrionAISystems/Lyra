@@ -15,6 +15,7 @@ use crate::{
 
 const SCHEMA: u32 = 1;
 const NORMALIZATION: &str = "unicode-lowercase-alphanumeric-tokens-v1";
+const WARMUP_POLICY: &str = "expected-transcript-v1";
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -52,6 +53,8 @@ struct Context {
     repetitions: usize,
     normalization: String,
     processing: String,
+    #[serde(default)]
+    warmup_policy: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -346,7 +349,11 @@ fn compare(
     latency_ms: f64,
 ) -> Vec<String> {
     let mut failures = vec![];
-    if baseline.schema != SCHEMA || current.context != baseline.context || !baseline.passed {
+    if baseline.schema != SCHEMA
+        || current.context != baseline.context
+        || !baseline.passed
+        || current.context.warmup_policy.as_deref() != Some(WARMUP_POLICY)
+    {
         failures.push(
             "baseline schema, context or acceptance incompatible; establish an approved baseline"
                 .into(),
@@ -601,6 +608,7 @@ pub fn run(args: Vec<String>) -> Result<(), String> {
         repetitions,
         normalization: NORMALIZATION.into(),
         processing: "formatting-on-self-correction-on-no-personalization-v1".into(),
+        warmup_policy: Some(WARMUP_POLICY.into()),
     };
     let router = TranscriptionRouter::new(runtime);
     let transcribe = |samples: &[f32], id: &str, bytes: &[u8]| {
@@ -804,7 +812,7 @@ mod tests {
     fn baseline() -> Report {
         serde_json::from_value(serde_json::json!({
             "schema":1,"source_revision":"test","timestamp_ms":0,
-            "context":{"engine":"parakeet","machine":"test","os":"windows","arch":"x86_64","runtime_version":"0.1.0","runtime_variant":"cuda","runtime_sha256":"runtime","model_sha256":"model","gpu":"test","repetitions":1,"normalization":NORMALIZATION,"processing":"test"},
+            "context":{"engine":"parakeet","machine":"test","os":"windows","arch":"x86_64","runtime_version":"0.1.0","runtime_variant":"cuda","runtime_sha256":"runtime","model_sha256":"model","gpu":"test","repetitions":1,"normalization":NORMALIZATION,"processing":"test","warmup_policy":WARMUP_POLICY},
             "warmup_latency_ms":200,"warmup_error":null,
             "cases":[{"id":"one","category":"test","provenance":"synthetic","fingerprint":"abc","expected":"hello","audio_ms":1000,
                 "trials":[{"latency_ms":100,"raw":"hello","processed":"hello","backend":"local_nemo","runtime_variant":"cuda","raw_score":null,"score":{"edits":0,"reference_words":1,"wer":0,"normalized_match":true,"exact_match":true},"partial_count":0,"error":null}],
@@ -865,6 +873,18 @@ mod tests {
         assert!(compare(&now, &old, 0.0, 0.25, 50.0)
             .iter()
             .any(|f| f.contains("ordered warmup fixture corpus")));
+    }
+
+    #[test]
+    fn legacy_and_changed_warmup_policies_are_incompatible() {
+        let current = baseline();
+        let mut legacy = baseline();
+        legacy.context.warmup_policy = None;
+        assert!(compare(&current, &legacy, 0.0, 0.25, 50.0)[0].contains("incompatible"));
+        assert!(compare(&legacy, &legacy, 0.0, 0.25, 50.0)[0].contains("incompatible"));
+        legacy.context.warmup_policy = Some("other-policy".into());
+        assert!(compare(&current, &legacy, 0.0, 0.25, 50.0)[0].contains("incompatible"));
+        assert!(compare(&current, &current, 0.0, 0.25, 50.0).is_empty());
     }
 
     #[test]

@@ -657,16 +657,25 @@ pub(crate) fn normalize(text: &str) -> String {
             && tokens
                 .get(number_end)
                 .is_some_and(|next| next.text.chars().next().is_some_and(char::is_uppercase));
-        let attached = text[..tokens[start].start]
-            .chars()
-            .next_back()
-            .is_some_and(|c| {
-                !c.is_whitespace()
-                    && !matches!(
+        let prefix = &text[..tokens[start].start];
+        // Clause punctuation can also occur inside URLs and other structured
+        // tokens. Preserve the entire attached token when its prefix has an
+        // identifier marker, rather than treating its query as prose.
+        let structured_prefix = prefix
+            .rsplit(char::is_whitespace)
+            .next()
+            .is_some_and(|word| {
+                word.chars()
+                    .any(|c| matches!(c, ':' | '/' | '\\' | '.' | '@' | '=' | '&' | '#' | '_'))
+            });
+        let attached = prefix.chars().next_back().is_some_and(|c| {
+            !c.is_whitespace()
+                && (structured_prefix
+                    || !matches!(
                         c,
                         '(' | '[' | '{' | '"' | '\'' | '“' | '‘' | ',' | ';' | '!' | '?'
-                    )
-            });
+                    ))
+        });
         let identifier_tail = tokens.get(number_end).is_some_and(|next| {
             next.start == tokens[number_end - 1].end
                 && (matches!(next.text, "/" | "\\" | ":" | "_" | "-" | "@")
@@ -750,6 +759,22 @@ pub(crate) fn normalize(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn clause_marks_inside_structured_tokens_remain_literal() {
+        for source in [
+            "https://x.test?twenty-five",
+            "www.x.test?twenty-five",
+            "/search?twenty-five",
+            "https://x.test/folder,five",
+            "https://x.test/path;twenty-five",
+            "https://x.test/path!twenty-five",
+            "id_name?twenty-five",
+        ] {
+            assert_eq!(normalize(source), source, "{source}");
+        }
+        assert_eq!(normalize("why?twenty five boxes"), "why?25 boxes");
+    }
 
     #[test]
     fn repeated_minor_annotations_remain_literal() {

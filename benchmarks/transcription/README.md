@@ -53,6 +53,8 @@ The thirteen cases cover short speech, silence hallucinations, spoken punctuatio
 
 Nemotron workers receive temporary WAV snapshots of the same bytes used for fingerprints and audio duration, so source-file edits during a run cannot alter later trials. Snapshots use unique, create-new paths and are removed after each worker finishes, including failed workers; file staging is outside successful recognition timing. An abrupt process termination can leave a temporary snapshot requiring manual cleanup.
 
+Report context records `warmup_policy: expected-transcript-v1`. Historical reports without this policy are readable but incompatible with current baseline comparison: their amplitude-selected warmup may have replayed a different fixture. Establish a separately reviewed passing baseline under the current policy; retain historical reports rather than editing their context to claim new semantics.
+
 Runtime/model hashes describe the app's pinned, verified installation markers, not a fresh full-file integrity audit. The benchmark uses Lyra's readiness checks and does not modify installation state.
 
 ## Verification and hardware checks
