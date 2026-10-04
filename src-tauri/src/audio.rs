@@ -339,7 +339,7 @@ impl AudioCapture for CpalAudioCapture {
                 let mut endpoint = CaptureEndpoint::Manual;
                 let mut silence_detector = SilenceDetector::default();
                 loop {
-                    if cancel.load(Ordering::SeqCst) || stop.load(Ordering::SeqCst) {
+                    if capture_should_stop(&stop, &cancel, &stream_error) {
                         break;
                     }
                     if started.elapsed().as_millis() as u64
@@ -524,6 +524,16 @@ impl AudioCapture for CpalAudioCapture {
 
 fn format_device_id(name: &str, index: usize) -> String {
     format!("{name}::{index}")
+}
+
+fn capture_should_stop(
+    stop: &AtomicBool,
+    cancel: &AtomicBool,
+    error: &Mutex<Option<String>>,
+) -> bool {
+    stop.load(Ordering::SeqCst)
+        || cancel.load(Ordering::SeqCst)
+        || error.lock().map(|error| error.is_some()).unwrap_or(true)
 }
 
 fn set_stream_error(target: &Mutex<Option<String>>, error: String) {
@@ -818,6 +828,27 @@ pub fn encode_pcm_wav(samples: &[f32], sample_rate: u32) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn capture_stops_on_device_error_without_waiting_for_the_duration_limit() {
+        let stop = AtomicBool::new(false);
+        let cancel = AtomicBool::new(false);
+        let error = Mutex::new(None);
+        assert!(!capture_should_stop(&stop, &cancel, &error));
+        set_stream_error(&error, "device disconnected".to_owned());
+        assert!(capture_should_stop(&stop, &cancel, &error));
+    }
+
+    #[test]
+    fn rapid_stop_and_cancel_both_endpoint_capture() {
+        let stop = AtomicBool::new(true);
+        let cancel = AtomicBool::new(false);
+        let error = Mutex::new(None);
+        assert!(capture_should_stop(&stop, &cancel, &error));
+        stop.store(false, Ordering::SeqCst);
+        cancel.store(true, Ordering::SeqCst);
+        assert!(capture_should_stop(&stop, &cancel, &error));
+    }
 
     #[test]
     fn resampler_changes_length_and_keeps_endpoints() {
