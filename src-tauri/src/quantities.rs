@@ -354,13 +354,18 @@ fn money_amount(amount: &str) -> String {
     }
 }
 
+struct MinorAmount {
+    fraction: String,
+    end: usize,
+    pence: bool,
+}
+
 fn minor_amount(
     text: &str,
     tokens: &[Token<'_>],
     lower: &[String],
     start: usize,
-    symbol: &str,
-) -> Option<(String, usize)> {
+) -> Option<MinorAmount> {
     if lower.get(start)?.as_str() != "and" {
         return None;
     }
@@ -379,10 +384,7 @@ fn minor_amount(
         end += 1;
     }
     let unit = lower.get(end)?.as_str();
-    if (symbol == "£" && unit != "pence")
-        || (symbol != "£" && unit != "cents")
-        || !gap(text, &tokens[end - 1], &tokens[end])
-    {
+    if !matches!(unit, "cents" | "pence") || !gap(text, &tokens[end - 1], &tokens[end]) {
         return None;
     }
     let minor = if end == start + 2
@@ -402,7 +404,11 @@ fn minor_amount(
     if minor >= 100 {
         return None;
     }
-    Some((format!("{minor:02}"), end + 1))
+    Some(MinorAmount {
+        fraction: format!("{minor:02}"),
+        end: end + 1,
+        pence: unit == "pence",
+    })
 }
 
 /// Convert quantities before personalization, only when spoken formatting is on.
@@ -477,9 +483,8 @@ pub(crate) fn normalize(text: &str) -> String {
                 // A symbol already establishes the major currency unit. Keep
                 // an explicit minor-unit clause out of the cardinal grammar.
                 if lower[i] == "and"
-                    && symbol.is_some_and(|symbol| {
-                        minor_amount(text, &tokens, &lower, i, symbol).is_some()
-                    })
+                    && symbol.is_some()
+                    && minor_amount(text, &tokens, &lower, i).is_some()
                 {
                     break;
                 }
@@ -554,17 +559,45 @@ pub(crate) fn normalize(text: &str) -> String {
         if symbol.is_none() {
             symbol = money;
         }
+        // Parse the complete minor clause before changing its major amount.
+        // A conflicting unit/annotation must preserve the whole source span,
+        // including multiword minor quantities that might otherwise convert later.
+        let minor_start = if money.is_some() { annotation_end } else { i };
+        let minor = symbol.and_then(|_| {
+            tokens
+                .get(minor_start)
+                .filter(|next| gap(text, &tokens[minor_start - 1], next))
+                .and_then(|_| minor_amount(text, &tokens, &lower, minor_start))
+        });
+        if let (Some(symbol), Some(minor)) = (symbol, minor.as_ref()) {
+            let conflicting_minor = minor.pence != (symbol == "£")
+                || tokens.get(minor.end).is_some_and(|next| {
+                    currency(&lower[minor.end]).is_some_and(|currency| currency != symbol)
+                        && gap(text, &tokens[minor.end - 1], next)
+                });
+            if conflicting_minor {
+                i = minor.end;
+                continue;
+            }
+        }
         let per_cent = next == Some("per")
             && lower
                 .get(i + 1)
                 .is_some_and(|word| word == "cent" && gap(text, &tokens[i], &tokens[i + 1]));
         let percent = (next.is_some_and(|w| matches!(w, "%" | "percent")) || per_cent) && unit_gap;
         let unit = next.is_some_and(quantity_unit) && unit_gap;
+        let uppercase_unit_abbreviation = unit
+            && next.is_some_and(|word| word.len() <= 2)
+            && tokens[number_end]
+                .text
+                .bytes()
+                .all(|c| c.is_ascii_uppercase());
         let multiword = number_end - number_start > 1;
         // An initial title/name such as "Twenty One Pilots" has no quantity
         // context. Do not guess that it denotes a number.
         let title = symbol.is_none()
             && !percent
+            && !uppercase_unit_abbreviation
             && tokens
                 .get(number_end)
                 .is_some_and(|next| next.text.chars().next().is_some_and(char::is_uppercase));
@@ -614,16 +647,11 @@ pub(crate) fn normalize(text: &str) -> String {
                     i += 1;
                 }
             }
-            if let Some(symbol) = symbol.filter(|_| {
-                !amount.contains('.')
-                    && tokens
-                        .get(i)
-                        .is_some_and(|next| gap(text, &tokens[i - 1], next))
-            }) {
-                if let Some((minor, end)) = minor_amount(text, &tokens, &lower, i, symbol) {
+            if !amount.contains('.') {
+                if let Some(minor) = minor {
                     amount.push('.');
-                    amount.push_str(&minor);
-                    i = end;
+                    amount.push_str(&minor.fraction);
+                    i = minor.end;
                 }
             }
             if percent {
@@ -657,6 +685,44 @@ pub(crate) fn normalize(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn conflicting_minor_currency_clauses_remain_wholly_literal() {
+        for source in [
+            "one dollar and five pence",
+            "one dollar and twenty five pence",
+            "one pound sterling and five cents",
+            "$1 and five cents euros",
+            "one dollar and five cents euros",
+            "two euros and ninety nine cents dollars",
+            "£1 and five pence dollars",
+        ] {
+            assert_eq!(normalize(source), source, "{source}");
+        }
+        assert_eq!(
+            normalize("one dollar and five cents, euros later"),
+            "$1.05, euros later"
+        );
+        assert_eq!(
+            normalize("one dollar and five cents\neuros later"),
+            "$1.05\neuros later"
+        );
+    }
+
+    #[test]
+    fn uppercase_unit_abbreviations_remain_quantity_context() {
+        for (source, expected) in [
+            ("five GB", "5 GB"),
+            ("twelve MB", "12 MB"),
+            ("twenty five KB", "25 KB"),
+            ("one TB", "1 TB"),
+            ("five KG", "5 KG"),
+            ("Five Seconds of Summer", "Five Seconds of Summer"),
+            ("Seven Pounds", "Seven Pounds"),
+        ] {
+            assert_eq!(normalize(source), expected, "{source}");
+        }
+    }
 
     #[test]
     fn symbol_prefixed_major_amounts_combine_minor_units() {

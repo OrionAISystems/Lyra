@@ -448,8 +448,8 @@ fn apply_explicit_self_correction(text: &str) -> String {
     }
     // Preserve sentence casing when the recognizer lowercases the replacement
     // after a correction cue. Mixed-case names remain the speaker's text.
-    if prefix[clause_start..]
-        .trim_start()
+    let original_clause = &prefix[clause_start..];
+    if original_clause[sentence_content_start(original_clause)..]
         .chars()
         .next()
         .is_some_and(char::is_uppercase)
@@ -584,9 +584,8 @@ fn consume_following_punctuation(text: &str, end: usize) -> usize {
     cursor
 }
 
-fn capitalize_sentence_start(text: &str) -> String {
-    let start = text
-        .char_indices()
+fn sentence_content_start(text: &str) -> usize {
+    text.char_indices()
         .find(|(_, c)| {
             !c.is_whitespace()
                 && !matches!(
@@ -595,7 +594,11 @@ fn capitalize_sentence_start(text: &str) -> String {
                 )
         })
         .map(|(index, _)| index)
-        .unwrap_or(text.len());
+        .unwrap_or(text.len())
+}
+
+fn capitalize_sentence_start(text: &str) -> String {
+    let start = sentence_content_start(text);
     let word = text[start..]
         .split(|c: char| !c.is_alphabetic() && c != '\'')
         .next()
@@ -1009,6 +1012,32 @@ mod tests {
             ),
             "We agreed yesterday. Friday"
         );
+    }
+
+    #[test]
+    fn self_correction_casing_skips_opening_delimiters() {
+        let options = TextProcessingOptions {
+            formatting_commands_enabled: false,
+            self_correction_enabled: true,
+            corrections: &[],
+            snippets: &[],
+        };
+        for (source, expected) in [
+            ("\"Send it scratch that send this", "Send this"),
+            ("(Send it scratch that send this", "Send this"),
+            ("[Send it scratch that send this", "Send this"),
+            ("“Écris ceci scratch that écris cela", "Écris cela"),
+            ("(send it scratch that send this", "send this"),
+            ("(Send it scratch that eBay", "eBay"),
+            ("Done. (Send it scratch that send this", "Done. Send this"),
+            ("(Send it scratch that \"send this\"", "\"Send this\""),
+        ] {
+            assert_eq!(
+                process_transcription_text(source, None, options),
+                expected,
+                "{source}"
+            );
+        }
     }
 
     #[test]
