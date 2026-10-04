@@ -47,6 +47,8 @@ Saved candidate baselines are [Parakeet](results/parakeet-cleanup.json) and [Nem
 
 Historical baselines above retain the earlier amplitude-based warmup context. Current comparison rejects them rather than comparing potentially different startup inputs; see the warmup policy contract in [benchmark usage](README.md). Establish a new reviewed report under `expected-transcript-v1` before current comparisons.
 
+New semantic-warmup candidates are [Parakeet](results/parakeet-warmup-v1-candidate.json) and [Nemotron](results/nemotron-warmup-v1-candidate.json), recorded on `a49987b`. These are explicit review candidates, not automatic replacement of historical baselines. All 39 processed transcripts per engine match the historical reports. Sequential idle comparison runs passed **13/13 cases and 39 trials each**, zero WER deltas, no comparison failures, and unchanged latency tolerances. Warmup measured 512.0 ms against the 523.8 ms Parakeet candidate and 694.6 ms against the 710.6 ms Nemotron candidate. Ignored local comparison reports are `parakeet-review-8-idle-comparison.json` and `nemotron-review-8-idle-comparison.json`. An earlier overlapped run failed the Parakeet warmup gate; those GPU-contended measurements are retained in `local/` and excluded from the idle candidates. No tolerance was loosened.
+
 Replay the current corpus against either new candidate baseline (review these candidates before adopting them):
 
 ```powershell
