@@ -12,8 +12,8 @@ From the repository root on Windows, generate the starter corpus once:
 
 ```powershell
 powershell.exe -NoProfile -File benchmarks/transcription/generate-synthetic.ps1
-npm run bench:transcription -- --manifest benchmarks/transcription/suite.json --output benchmarks/transcription/local/parakeet-1.json --machine Ryzen2600X-RTX2060-AC
-npm run bench:transcription -- --manifest benchmarks/transcription/suite.json --output benchmarks/transcription/local/nemotron-1.json --machine Ryzen2600X-RTX2060-AC --engine nemotron
+npm run bench:transcription -- --manifest benchmarks/transcription/suite.json --output benchmarks/transcription/local/parakeet-1.json --machine Ryzen2600X-RTX2060-NVIDIA616.64-AC
+npm run bench:transcription -- --manifest benchmarks/transcription/suite.json --output benchmarks/transcription/local/nemotron-1.json --machine Ryzen2600X-RTX2060-NVIDIA616.64-AC --engine nemotron
 ```
 
 Use an installed Windows desktop voice with `-Voice 'Microsoft David Desktop'`. The generator uses Windows PowerShell 5.1/.NET Framework `System.Speech`; it fails rather than overwriting fixtures. It emits PCM16 mono 16 kHz WAVs plus `audio/provenance.json`. Voice/runtime changes can alter generated audio; retain the same bytes for comparisons. All starter speech is **synthetic**, not microphone audio. Silence is two seconds of digitally generated zeros. The interrupted case contains a 1.5-second pause and continuation; it does not simulate cancellation or capture endpointing.
@@ -22,7 +22,7 @@ Approve a **passing** report after reviewing its transcripts, then copy it to an
 
 ```powershell
 Copy-Item benchmarks/transcription/local/parakeet-1.json benchmarks/transcription/local/parakeet-baseline.json
-npm run bench:transcription -- --manifest benchmarks/transcription/suite.json --output benchmarks/transcription/local/parakeet-2.json --machine Ryzen2600X-RTX2060-AC --baseline benchmarks/transcription/local/parakeet-baseline.json
+npm run bench:transcription -- --manifest benchmarks/transcription/suite.json --output benchmarks/transcription/local/parakeet-2.json --machine Ryzen2600X-RTX2060-NVIDIA616.64-AC --baseline benchmarks/transcription/local/parakeet-baseline.json
 ```
 
 The process exits 1 on any case failure, warmup failure, incompatible baseline, or regression; JSON is still written for recognition/gate failures. Missing fixtures or invalid CLI/manifest/WAV inputs fail before recognition. Run `npm run bench:transcription -- --help` for options. Required `--machine` should identify CPU, GPU, power mode and relevant driver configuration; compare on the same idle machine with Lyra closed. Default repetitions: 3; range: 1–20. Use release builds for meaningful timings.

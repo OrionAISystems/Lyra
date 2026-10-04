@@ -52,8 +52,8 @@ New semantic-warmup candidates are [Parakeet](results/parakeet-warmup-v1-candida
 Replay the current corpus against either new candidate baseline (review these candidates before adopting them):
 
 ```powershell
-npm run bench:transcription -- --manifest benchmarks/transcription/suite.json --output benchmarks/transcription/local/parakeet-review.json --machine Ryzen2600X-RTX2060-AC --baseline benchmarks/transcription/results/parakeet-warmup-v1-candidate.json
-npm run bench:transcription -- --manifest benchmarks/transcription/suite.json --output benchmarks/transcription/local/nemotron-review.json --machine Ryzen2600X-RTX2060-AC --engine nemotron --baseline benchmarks/transcription/results/nemotron-warmup-v1-candidate.json
+npm run bench:transcription -- --manifest benchmarks/transcription/suite.json --output benchmarks/transcription/local/parakeet-review.json --machine Ryzen2600X-RTX2060-NVIDIA616.64-AC --baseline benchmarks/transcription/results/parakeet-warmup-v1-candidate.json
+npm run bench:transcription -- --manifest benchmarks/transcription/suite.json --output benchmarks/transcription/local/nemotron-review.json --machine Ryzen2600X-RTX2060-NVIDIA616.64-AC --engine nemotron --baseline benchmarks/transcription/results/nemotron-warmup-v1-candidate.json
 ```
 
 ## Saved-baseline precision fix
@@ -70,6 +70,8 @@ The repeat run exposed a harness defect: JSON parsing changed `1/103` from `0.00
 Live microphone capture, accents/noise, silence endpointing, actual stop/restart/cancellation and cross-application paste still need the existing hardware-backed app acceptance checks. The existing Nemotron repeated-model-load abort remains contained by benchmark workers; this pass does not fix the desktop native lifecycle. The frontend was unchanged. The formatting switches/profile preferences provide the existing opt-out for literal dictation, and standalone multiword conversions retain the documented risk for lowercase number-like names/idioms.
 
 ## PR review follow-up
+
+The ninth review identified attached structured suffixes, interleaved punctuation marks, unsupported complete minor clauses, repeated cardinal connectors, and incomplete environment labels. Focused tests reproduced the three quantity failures before fixing complete-span preservation and query/fragment suffix guards. Spoken cues now consume alternating horizontal whitespace/marks on both sides, preserving literal punctuation without cues. The full feature-enabled release suite passed **131 tests, 0 failed, 2 ignored**, plus default-feature release check and formatting. `nvidia-smi` verified RTX 2060 / driver **616.64** in the same environment; the two not-yet-adopted candidate labels were amended to include that driver, without changing recorded timings, transcripts or acceptance policy. Historical reports remain untouched, and current replay commands include driver identity.
 
 The eighth review identified missing versioning for semantic warmup selection and URL queries exposed by punctuation adjacency. Reports now carry `expected-transcript-v1` in their context, rejecting historical or different warmup policies while retaining their evidence. Attached structured URL/domain/path/identifier prefixes preserve query and path punctuation. The full feature-enabled release suite passed **127 tests, 0 failed, 2 ignored**, plus default-feature release check and formatting. Tests cover legacy/current policy compatibility and URL/query/path counterexamples.
 

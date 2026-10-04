@@ -630,32 +630,25 @@ fn replace_spoken_punctuation(text: &str, source: &str, punctuation: char) -> St
         } else {
             result.push_str(prefix);
         }
-        while result.ends_with([' ', '\t']) {
-            result.pop();
-        }
-        while result.ends_with(['.', ',', ';', ':', '!', '?']) {
+        while result.ends_with([' ', '\t', '.', ',', ';', ':', '!', '?']) {
             result.pop();
         }
         result.push(punctuation);
 
         // Like line-break cues, consume ASR punctuation attached to the cue.
         // Retain trailing whitespace: punctuation alone must not join words.
-        let mut following = end;
-        while text[following..].starts_with([' ', '\t']) {
-            following += 1;
-        }
-        let mut punctuation_end = following;
-        while let Some(c) = text[punctuation_end..].chars().next() {
-            if !matches!(c, '.' | ',' | ';' | ':' | '!' | '?') {
+        let mut scan = end;
+        let mut punctuation_end = end;
+        while let Some(c) = text[scan..].chars().next() {
+            if !matches!(c, ' ' | '\t' | '.' | ',' | ';' | ':' | '!' | '?') {
                 break;
             }
-            punctuation_end += c.len_utf8();
+            scan += c.len_utf8();
+            if !matches!(c, ' ' | '\t') {
+                punctuation_end = scan;
+            }
         }
-        cursor = if punctuation_end > following {
-            punctuation_end
-        } else {
-            end
-        };
+        cursor = punctuation_end;
         if text[cursor..]
             .chars()
             .next()
@@ -1084,6 +1077,29 @@ mod tests {
             ("hello period i-Ready is open", "hello. i-Ready is open"),
             ("Send this scratch that i-Ready is open", "i-Ready is open"),
             ("hello period well-known names", "hello. Well-known names"),
+        ] {
+            assert_eq!(
+                process_transcription_text(source, None, options),
+                expected,
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn spoken_punctuation_owns_interleaved_horizontal_marks() {
+        let options = TextProcessingOptions {
+            formatting_commands_enabled: true,
+            self_correction_enabled: true,
+            corrections: &[],
+            snippets: &[],
+        };
+        for (source, expected) in [
+            ("Hello. , period next", "Hello. Next"),
+            ("Hello period. , next", "Hello. Next"),
+            ("Hello.\t, period.\t, next", "Hello. Next"),
+            ("Hello! ; comma next", "Hello, next"),
+            ("Hello... next", "Hello... next"),
         ] {
             assert_eq!(
                 process_transcription_text(source, None, options),

@@ -382,7 +382,7 @@ fn money_amount(amount: &str) -> String {
 }
 
 struct MinorAmount {
-    fraction: String,
+    fraction: Option<String>,
     end: usize,
     pence: bool,
 }
@@ -428,20 +428,19 @@ fn minor_amount(
             .text
             .starts_with(|c: char| c.is_ascii_digit())
     {
-        tokens[start + 1].text.parse::<u64>().ok()?
+        tokens[start + 1].text.parse::<u64>().ok()
     } else {
         let words: Vec<_> = lower[start + 1..end]
             .iter()
             .filter(|word| word.as_str() != "-")
             .map(String::as_str)
             .collect();
-        cardinal(&words)?
+        cardinal(&words)
     };
-    if minor >= 100 {
-        return None;
-    }
     Some(MinorAmount {
-        fraction: format!("{minor:02}"),
+        fraction: minor
+            .filter(|value| *value < 100)
+            .map(|minor| format!("{minor:02}")),
         end: end + 1,
         pence,
     })
@@ -526,7 +525,8 @@ pub(crate) fn normalize(text: &str) -> String {
                 }
                 let is_connector = lower[i] == "and"
                     && tokens.get(i + 1).is_some_and(|_| {
-                        number_component(&lower[i + 1]) && gap(text, &tokens[i], &tokens[i + 1])
+                        (number_component(&lower[i + 1]) || lower[i + 1] == "and")
+                            && gap(text, &tokens[i], &tokens[i + 1])
                     });
                 if !number_component(&lower[i]) && !is_connector {
                     break;
@@ -625,7 +625,11 @@ pub(crate) fn normalize(text: &str) -> String {
                 .and_then(|_| minor_amount(text, &tokens, &lower, minor_start))
         });
         if let (Some(symbol), Some(minor)) = (symbol, minor.as_ref()) {
-            let conflicting_minor = minor.pence != (symbol == "£")
+            let conflicting_minor = minor.fraction.is_none()
+                || amount
+                    .as_ref()
+                    .is_some_and(|amount| money_amount(amount).contains('.'))
+                || minor.pence != (symbol == "£")
                 || tokens.get(minor.end).is_some_and(|next| {
                     (currency_annotation(&lower[minor.end]).is_some()
                         || minor_unit(&lower[minor.end]).is_some())
@@ -678,7 +682,13 @@ pub(crate) fn normalize(text: &str) -> String {
         });
         let identifier_tail = tokens.get(number_end).is_some_and(|next| {
             next.start == tokens[number_end - 1].end
-                && (matches!(next.text, "/" | "\\" | ":" | "_" | "-" | "@")
+                && (matches!(
+                    next.text,
+                    "/" | "\\" | ":" | "_" | "-" | "@" | "#" | "&" | "="
+                ) || (next.text == "?"
+                    && tokens
+                        .get(number_end + 1)
+                        .is_some_and(|tail| tail.start == next.end))
                     || (next.text == "."
                         && tokens.get(number_end + 1).is_some_and(|tail| {
                             tail.start == next.end && tail.text.starts_with(char::is_alphanumeric)
@@ -723,9 +733,11 @@ pub(crate) fn normalize(text: &str) -> String {
             }
             if !amount.contains('.') {
                 if let Some(minor) = minor {
-                    amount.push('.');
-                    amount.push_str(&minor.fraction);
-                    i = minor.end;
+                    if let Some(fraction) = minor.fraction {
+                        amount.push('.');
+                        amount.push_str(&fraction);
+                        i = minor.end;
+                    }
                 }
             }
             if percent {
@@ -759,6 +771,49 @@ pub(crate) fn normalize(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn structured_suffixes_preserve_number_components() {
+        for source in [
+            "twenty-five?mode=full",
+            "twenty-five#section",
+            "twenty-five=value",
+            "twenty-five&mode=full",
+        ] {
+            assert_eq!(normalize(source), source, "{source}");
+        }
+        assert_eq!(normalize("twenty five?"), "25?");
+        assert_eq!(normalize("twenty five? next"), "25? next");
+    }
+
+    #[test]
+    fn unsupported_complete_minor_clauses_remain_literal() {
+        for source in [
+            "one dollar and one hundred pence",
+            "one pound sterling and one hundred cents",
+            "one dollar and one hundred cents",
+            "$1 and 100 cents",
+            "one point five dollars and five cents",
+        ] {
+            assert_eq!(normalize(source), source, "{source}");
+        }
+    }
+
+    #[test]
+    fn repeated_cardinal_connectors_preserve_the_complete_phrase() {
+        for source in [
+            "one hundred and and five boxes",
+            "one thousand and and twenty five users",
+            "one hundred and and and five boxes",
+        ] {
+            assert_eq!(normalize(source), source, "{source}");
+        }
+        assert_eq!(
+            normalize("five boxes and five users"),
+            "5 boxes and 5 users"
+        );
+        assert_eq!(normalize("one hundred and five boxes"), "105 boxes");
+    }
 
     #[test]
     fn clause_marks_inside_structured_tokens_remain_literal() {

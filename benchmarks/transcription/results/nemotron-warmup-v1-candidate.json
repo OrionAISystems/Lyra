@@ -4,7 +4,7 @@
   "timestamp_ms": 1791111186576,
   "context": {
     "engine": "nemotron",
-    "machine": "Ryzen2600X-RTX2060-AC",
+    "machine": "Ryzen2600X-RTX2060-NVIDIA616.64-AC",
     "os": "windows",
     "arch": "x86_64",
     "runtime_version": "0.1.0",
