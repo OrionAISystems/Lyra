@@ -33,4 +33,9 @@ The ignored Rust tests require separately installed Nemotron runtime/model artif
 
 ## Installed Windows and hardware checks
 
-Physical microphone rapid start/stop, device disconnect/recovery, cancellation during native/cloud recognition, repeated hotkeys, cross-application paste and clipboard contention, and the installed v0.5.5-to-v0.5.6 updater remain **pending**. No running user installation, settings or model artifacts are changed by these gates. Cancellation suppresses results; it does not interrupt a running native call or cloud request. The full checklist and remaining resource/concurrency limits are recorded in [RELIABILITY-PASS.md](RELIABILITY-PASS.md).
+| Check | Result | Evidence |
+| --- | --- | --- |
+| Installed update and running version | Pass (user-reported) | On 2026-10-04, the user confirmed local Lyra running v0.5.6 with no updater issues. The source version and individual update stages were not independently observed. |
+| Microphone dictation and paste smoke check | Pass (user-reported) | On 2026-10-04, the user reported using the microphone successfully and that dictation and paste appeared to work. Target applications and detailed lifecycle scenarios were not specified. |
+
+Physical microphone rapid start/stop, device disconnect/recovery, cancellation during native/cloud recognition, repeated hotkeys, detailed cross-application paste and clipboard contention checks remain **pending**. No running user installation, settings or model artifacts were changed by the automated gates. Cancellation suppresses results; it does not interrupt a running native call or cloud request. The full checklist and remaining resource/concurrency limits are recorded in [RELIABILITY-PASS.md](RELIABILITY-PASS.md).
