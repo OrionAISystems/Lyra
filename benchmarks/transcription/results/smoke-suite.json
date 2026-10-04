@@ -1,0 +1,63 @@
+{
+  "schema": 1,
+  "cases": [
+    {
+      "id": "silence",
+      "category": "silence",
+      "provenance": "synthetic",
+      "audio": "../audio/silence.wav",
+      "expected": "",
+      "max_wer": 0,
+      "require_exact": true,
+      "accept_empty_recording": true
+    },
+    {
+      "id": "short",
+      "category": "short_dictation",
+      "provenance": "synthetic",
+      "audio": "../audio/short.wav",
+      "expected": "The meeting starts after lunch.",
+      "max_wer": 0.1
+    },
+    {
+      "id": "numbers",
+      "category": "numbers",
+      "provenance": "synthetic",
+      "audio": "../audio/numbers.wav",
+      "expected": "The order contains 12 boxes and costs 45 dollars.",
+      "max_wer": 0.15
+    },
+    {
+      "id": "names",
+      "category": "proper_names",
+      "provenance": "synthetic",
+      "audio": "../audio/names.wav",
+      "expected": "Send the Lyra report to Orion and NVIDIA in Seattle.",
+      "max_wer": 0.2
+    },
+    {
+      "id": "long",
+      "category": "long_dictation",
+      "provenance": "synthetic",
+      "audio": "../audio/long.wav",
+      "expected": "Today we reviewed the transcription service and agreed on a practical plan for the next release. First we will collect representative recordings from several microphones in a quiet room. Then we will repeat the same sentences with background noise and compare the results against an approved baseline. Every recording should include a carefully checked reference transcript and a clear description of the environment. We will track accuracy and recognition time separately so that a faster engine does not hide a loss of quality. Finally we will review the failed cases, document the limitations, and decide whether the release is ready for everyday dictation.",
+      "max_wer": 0.1
+    },
+    {
+      "id": "interrupted",
+      "category": "pause_and_resume",
+      "provenance": "synthetic",
+      "audio": "../audio/interrupted.wav",
+      "expected": "We should finish the review tomorrow after the team meeting.",
+      "max_wer": 0.1
+    },
+    {
+      "id": "self-correction",
+      "category": "explicit_self_correction",
+      "provenance": "synthetic",
+      "audio": "../audio/self-correction.wav",
+      "expected": "Send the report on Friday.",
+      "max_wer": 0.1
+    }
+  ]
+}

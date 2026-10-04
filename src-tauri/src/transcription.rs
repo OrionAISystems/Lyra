@@ -600,6 +600,13 @@ impl TranscriptionRouter {
         &self.credentials
     }
 
+    #[cfg(feature = "regression-bench")]
+    pub(crate) fn benchmark_runtime_variant(&self) -> Option<String> {
+        self.model_controller
+            .as_ref()
+            .and_then(|local| local.loaded_variant())
+    }
+
     /// Runs the optional English streaming model against the retained in-memory
     /// PCM. The caller owns fallback routing, so a streaming failure can always
     /// replay the exact same samples through Parakeet before any permitted

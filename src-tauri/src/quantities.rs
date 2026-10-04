@@ -1,0 +1,745 @@
+//! Conservative English quantity formatting. No floating-point arithmetic,
+//! rewriting service, language guessing, or changes to ordinary single words.
+
+struct Token<'a> {
+    start: usize,
+    end: usize,
+    text: &'a str,
+}
+
+fn tokens(text: &str) -> Vec<Token<'_>> {
+    let mut result = vec![];
+    let mut cursor = 0;
+    while cursor < text.len() {
+        let start = cursor;
+        let c = text[cursor..].chars().next().unwrap();
+        cursor += c.len_utf8();
+        if c.is_whitespace() {
+            continue;
+        }
+        if c.is_alphanumeric() || c == '_' {
+            while let Some(next) = text[cursor..].chars().next() {
+                let decimal_separator = c.is_ascii_digit()
+                    && matches!(next, '.' | ',')
+                    && text[cursor + 1..].starts_with(|c: char| c.is_ascii_digit());
+                if !next.is_alphanumeric() && next != '_' && !decimal_separator {
+                    break;
+                }
+                cursor += next.len_utf8();
+            }
+        }
+        result.push(Token {
+            start,
+            end: cursor,
+            text: &text[start..cursor],
+        });
+    }
+    result
+}
+
+fn small(word: &str) -> Option<u64> {
+    match word {
+        "zero" | "oh" => Some(0),
+        "one" => Some(1),
+        "two" => Some(2),
+        "three" => Some(3),
+        "four" => Some(4),
+        "five" => Some(5),
+        "six" => Some(6),
+        "seven" => Some(7),
+        "eight" => Some(8),
+        "nine" => Some(9),
+        "ten" => Some(10),
+        "eleven" => Some(11),
+        "twelve" => Some(12),
+        "thirteen" => Some(13),
+        "fourteen" => Some(14),
+        "fifteen" => Some(15),
+        "sixteen" => Some(16),
+        "seventeen" => Some(17),
+        "eighteen" => Some(18),
+        "nineteen" => Some(19),
+        "twenty" => Some(20),
+        "thirty" => Some(30),
+        "forty" => Some(40),
+        "fifty" => Some(50),
+        "sixty" => Some(60),
+        "seventy" => Some(70),
+        "eighty" => Some(80),
+        "ninety" => Some(90),
+        _ => None,
+    }
+}
+
+fn scale(word: &str) -> Option<u64> {
+    match word {
+        "thousand" => Some(1_000),
+        "million" => Some(1_000_000),
+        "billion" => Some(1_000_000_000),
+        "trillion" => Some(1_000_000_000_000),
+        _ => None,
+    }
+}
+
+fn number_word(word: &str) -> bool {
+    small(word).is_some() || scale(word).is_some() || matches!(word, "hundred" | "point")
+}
+
+fn number_component(word: &str) -> bool {
+    number_word(word) || word.starts_with(|c: char| c.is_ascii_digit())
+}
+
+fn atom(word: &str) -> Option<u64> {
+    if word == "oh" {
+        return None;
+    }
+    small(word).or_else(|| word.parse::<u64>().ok().filter(|value| *value < 1000))
+}
+
+fn group(words: &[&str]) -> Option<(u64, usize)> {
+    let first = if words.first() == Some(&"a")
+        && words
+            .get(1)
+            .is_some_and(|word| *word == "hundred" || scale(word).is_some())
+    {
+        1
+    } else {
+        atom(words.first()?)?
+    };
+    // "oh" is supported only in decimal digit sequences.
+    if words[0] == "oh" {
+        return None;
+    }
+    let (mut value, mut cursor) = if (1..=9).contains(&first) && words.get(1) == Some(&"hundred") {
+        (first * 100, 2)
+    } else {
+        (0, 0)
+    };
+    if cursor != 0 && words.get(cursor) == Some(&"and") {
+        cursor += 1;
+        if cursor == words.len() {
+            return None;
+        }
+    }
+    let tail = if cursor == 0 {
+        Some(first)
+    } else {
+        words
+            .get(cursor)
+            .and_then(|word| atom(word))
+            .filter(|value| *value < 100)
+    };
+    if let Some(next) = tail {
+        value += next;
+        cursor += 1;
+        if words
+            .get(cursor - 1)
+            .is_some_and(|word| small(word).is_some_and(|value| value >= 20))
+        {
+            if let Some(unit) = words
+                .get(cursor)
+                .and_then(|word| atom(word))
+                .filter(|unit| (1..=9).contains(unit))
+            {
+                value += unit;
+                cursor += 1;
+            }
+        }
+    }
+    (cursor != 0).then_some((value, cursor))
+}
+
+fn cardinal(words: &[&str]) -> Option<u64> {
+    if words.is_empty() {
+        return None;
+    }
+    let mut total = 0_u64;
+    let mut cursor = 0;
+    let mut previous_scale = u64::MAX;
+    while cursor < words.len() {
+        let (value, length) = group(&words[cursor..])?;
+        cursor += length;
+        if let Some(magnitude) = words.get(cursor).and_then(|word| scale(word)) {
+            if value == 0 || magnitude >= previous_scale {
+                return None;
+            }
+            total = total.checked_add(value.checked_mul(magnitude)?)?;
+            previous_scale = magnitude;
+            cursor += 1;
+            if words.get(cursor) == Some(&"and") {
+                cursor += 1;
+                if cursor == words.len() {
+                    return None;
+                }
+            }
+        } else {
+            if cursor != words.len() {
+                return None;
+            }
+            total = total.checked_add(value)?;
+        }
+    }
+    Some(total)
+}
+
+fn spoken(words: &[&str]) -> Option<String> {
+    let point = words.iter().position(|word| *word == "point");
+    if let Some(point) = point {
+        let whole = if point == 0 {
+            "0".to_owned()
+        } else if point == 1 && words[0].starts_with(|c: char| c.is_ascii_digit()) {
+            literal(words[0]).filter(|value| !value.contains('.'))?
+        } else {
+            cardinal(&words[..point])?.to_string()
+        };
+        let fraction = &words[point + 1..];
+        if fraction.is_empty() || fraction.len() > 12 {
+            return None;
+        }
+        let mut digits = String::new();
+        for word in fraction {
+            if word.bytes().all(|c| c.is_ascii_digit()) {
+                digits.push_str(word);
+            } else {
+                let digit = small(word).filter(|digit| *digit < 10)?;
+                digits.push(char::from(b'0' + digit as u8));
+            }
+        }
+        if digits.len() > 12 {
+            return None;
+        }
+        Some(format!("{whole}.{digits}"))
+    } else if words.len() == 1 && words[0].starts_with(|c: char| c.is_ascii_digit()) {
+        literal(words[0])
+    } else {
+        cardinal(words).map(|value| value.to_string())
+    }
+}
+
+fn literal(text: &str) -> Option<String> {
+    let (whole, fraction) = text
+        .split_once('.')
+        .map_or((text, None), |(a, b)| (a, Some(b)));
+    if whole.contains(',') {
+        let groups: Vec<_> = whole.split(',').collect();
+        if groups[0].is_empty() || groups[0].len() > 3 || groups[1..].iter().any(|g| g.len() != 3) {
+            return None;
+        }
+    }
+    let whole = whole.replace(',', "");
+    if whole.is_empty() || whole.len() > 18 || !whole.bytes().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    let whole = whole.trim_start_matches('0');
+    let whole = if whole.is_empty() { "0" } else { whole };
+    if let Some(fraction) = fraction {
+        if fraction.is_empty()
+            || fraction.len() > 12
+            || !fraction.bytes().all(|c| c.is_ascii_digit())
+        {
+            return None;
+        }
+        Some(format!("{whole}.{fraction}"))
+    } else {
+        Some(whole.to_owned())
+    }
+}
+
+fn currency(word: &str) -> Option<&'static str> {
+    match word {
+        "dollar" | "dollars" => Some("$"),
+        "euro" | "euros" => Some("€"),
+        "pound" | "pounds" => Some("£"),
+        _ => None,
+    }
+}
+
+fn quantity_unit(word: &str) -> bool {
+    matches!(
+        word,
+        "box"
+            | "boxes"
+            | "item"
+            | "items"
+            | "file"
+            | "files"
+            | "user"
+            | "users"
+            | "person"
+            | "people"
+            | "page"
+            | "pages"
+            | "word"
+            | "words"
+            | "second"
+            | "seconds"
+            | "minute"
+            | "minutes"
+            | "hour"
+            | "hours"
+            | "day"
+            | "days"
+            | "week"
+            | "weeks"
+            | "month"
+            | "months"
+            | "year"
+            | "years"
+            | "millisecond"
+            | "milliseconds"
+            | "ms"
+            | "meter"
+            | "meters"
+            | "metre"
+            | "metres"
+            | "centimeter"
+            | "centimeters"
+            | "centimetre"
+            | "centimetres"
+            | "cm"
+            | "km"
+            | "kilometer"
+            | "kilometers"
+            | "kilometre"
+            | "kilometres"
+            | "kilogram"
+            | "kilograms"
+            | "kg"
+            | "gram"
+            | "grams"
+            | "g"
+            | "liter"
+            | "liters"
+            | "litre"
+            | "litres"
+            | "ml"
+            | "milliliter"
+            | "milliliters"
+            | "degree"
+            | "degrees"
+            | "byte"
+            | "bytes"
+            | "kb"
+            | "mb"
+            | "gb"
+            | "tb"
+            | "inch"
+            | "inches"
+            | "foot"
+            | "feet"
+            | "mile"
+            | "miles"
+            | "ounce"
+            | "ounces"
+            | "pound"
+            | "pounds"
+    )
+}
+
+fn gap(text: &str, left: &Token<'_>, right: &Token<'_>) -> bool {
+    text[left.end..right.start]
+        .chars()
+        .all(|c| matches!(c, ' ' | '\t'))
+}
+
+fn money_amount(amount: &str) -> String {
+    let Some((whole, fraction)) = amount.split_once('.') else {
+        return amount.to_owned();
+    };
+    let fraction = fraction.trim_end_matches('0');
+    match fraction.len() {
+        0 => whole.to_owned(),
+        1 => format!("{whole}.{fraction}0"),
+        _ => format!("{whole}.{fraction}"),
+    }
+}
+
+fn minor_amount(
+    text: &str,
+    tokens: &[Token<'_>],
+    lower: &[String],
+    start: usize,
+    symbol: &str,
+) -> Option<(String, usize)> {
+    if lower.get(start)?.as_str() != "and" {
+        return None;
+    }
+    let mut end = start + 1;
+    while end < tokens.len()
+        && gap(text, &tokens[end - 1], &tokens[end])
+        && (number_component(&lower[end])
+            || lower[end] == "and"
+            || lower[end] == "-"
+            || (end == start + 1 && literal(tokens[end].text).is_some()))
+    {
+        end += 1;
+    }
+    let unit = lower.get(end)?.as_str();
+    if (symbol == "£" && unit != "pence")
+        || (symbol != "£" && unit != "cents")
+        || !gap(text, &tokens[end - 1], &tokens[end])
+    {
+        return None;
+    }
+    let minor = if end == start + 2
+        && tokens[start + 1]
+            .text
+            .starts_with(|c: char| c.is_ascii_digit())
+    {
+        tokens[start + 1].text.parse::<u64>().ok()?
+    } else {
+        let words: Vec<_> = lower[start + 1..end]
+            .iter()
+            .filter(|word| word.as_str() != "-")
+            .map(String::as_str)
+            .collect();
+        cardinal(&words)?
+    };
+    if minor >= 100 {
+        return None;
+    }
+    Some((format!("{minor:02}"), end + 1))
+}
+
+/// Convert quantities before personalization, only when spoken formatting is on.
+/// Standalone multiword cardinal/decimal phrases are intentionally canonicalized.
+/// Single words require known units; titles and identifier-like sequences survive.
+pub(crate) fn normalize(text: &str) -> String {
+    let tokens = tokens(text);
+    let lower: Vec<_> = tokens
+        .iter()
+        .map(|token| token.text.to_ascii_lowercase())
+        .collect();
+    let mut output = String::with_capacity(text.len());
+    let mut copied = 0;
+    let mut i = 0;
+    while i < tokens.len() {
+        let start = i;
+        let mut negative = false;
+        if matches!(lower[i].as_str(), "minus" | "negative") {
+            negative = true;
+            i += 1;
+        } else if lower[i] == "-"
+            && tokens
+                .get(i + 1)
+                .is_some_and(|next| next.start == tokens[i].end)
+        {
+            negative = true;
+            i += 1;
+        }
+        let mut symbol = None;
+        if i < tokens.len() && matches!(tokens[i].text, "$" | "€" | "£") {
+            symbol = Some(tokens[i].text);
+            i += 1;
+        }
+        if i == tokens.len() {
+            break;
+        }
+        if i > start && (start..i).any(|j| !gap(text, &tokens[j], &tokens[j + 1])) {
+            i = start + 1;
+            continue;
+        }
+        if symbol.is_some()
+            && tokens[i].text == "-"
+            && tokens
+                .get(i + 1)
+                .is_some_and(|next| next.start == tokens[i].end)
+        {
+            negative = true;
+            i += 1;
+        }
+        let number_start = i;
+        let amount = if number_component(&lower[i])
+            || (lower[i] == "a"
+                && lower
+                    .get(i + 1)
+                    .is_some_and(|word| word == "hundred" || scale(word).is_some()))
+        {
+            i += 1;
+            while i < tokens.len() {
+                if tokens[i].text == "-"
+                    && tokens
+                        .get(i + 1)
+                        .is_some_and(|next| number_component(&next.text.to_ascii_lowercase()))
+                {
+                    i += 1;
+                    continue;
+                }
+                if !gap(text, &tokens[i - 1], &tokens[i]) {
+                    break;
+                }
+                let is_connector = lower[i] == "and"
+                    && tokens.get(i + 1).is_some_and(|_| {
+                        number_component(&lower[i + 1]) && gap(text, &tokens[i], &tokens[i + 1])
+                    });
+                if !number_component(&lower[i]) && !is_connector {
+                    break;
+                }
+                i += 1;
+            }
+            let words: Vec<_> = lower[number_start..i]
+                .iter()
+                .filter(|w| w.as_str() != "-")
+                .map(String::as_str)
+                .collect();
+            spoken(&words)
+        } else {
+            i = start + 1;
+            continue;
+        };
+        let number_end = i;
+        let next = lower.get(i).map(String::as_str);
+        let unit_gap = tokens
+            .get(i)
+            .is_some_and(|next| gap(text, &tokens[number_end - 1], next));
+        let sterling = next.is_some_and(|word| matches!(word, "pound" | "pounds"))
+            && lower
+                .get(i + 1)
+                .is_some_and(|word| word == "sterling" && gap(text, &tokens[i], &tokens[i + 1]));
+        // "Pounds" alone is also a weight. Currency requires an explicit symbol,
+        // sterling qualifier, or a nearby monetary verb/noun in the same clause.
+        let money_cue = lower[..start]
+            .iter()
+            .rev()
+            .take(2)
+            .take_while(|word| word.chars().all(char::is_alphabetic))
+            .any(|word| {
+                matches!(
+                    word.as_str(),
+                    "cost"
+                        | "costs"
+                        | "pay"
+                        | "paid"
+                        | "price"
+                        | "charge"
+                        | "charged"
+                        | "spend"
+                        | "spent"
+                        | "budget"
+                        | "owe"
+                        | "owes"
+                )
+            });
+        let money = next.and_then(currency).filter(|currency| {
+            unit_gap && (*currency != "£" || symbol == Some("£") || sterling || money_cue)
+        });
+        let conflicting_currency = symbol
+            .zip(money)
+            .is_some_and(|(prefix, suffix)| prefix != suffix);
+        if symbol.is_none() {
+            symbol = money;
+        }
+        let per_cent = next == Some("per")
+            && lower
+                .get(i + 1)
+                .is_some_and(|word| word == "cent" && gap(text, &tokens[i], &tokens[i + 1]));
+        let percent = (next.is_some_and(|w| matches!(w, "%" | "percent")) || per_cent) && unit_gap;
+        let unit = next.is_some_and(quantity_unit) && unit_gap;
+        let multiword = number_end - number_start > 1;
+        // An initial title/name such as "Twenty One Pilots" has no quantity
+        // context. Do not guess that it denotes a number.
+        let title = !unit
+            && symbol.is_none()
+            && !percent
+            && tokens
+                .get(number_end)
+                .is_some_and(|next| next.text.chars().next().is_some_and(char::is_uppercase));
+        let attached = text[..tokens[start].start]
+            .chars()
+            .next_back()
+            .is_some_and(|c| {
+                !c.is_whitespace() && !matches!(c, '(' | '[' | '{' | '"' | '\'' | '“')
+            });
+        let identifier_tail = tokens.get(number_end).is_some_and(|next| {
+            next.start == tokens[number_end - 1].end
+                && matches!(next.text, "/" | ":" | "_" | "-" | "@")
+        });
+        let dangling_and = next == Some("and")
+            && tokens
+                .get(i + 1)
+                .is_none_or(|token| !token.text.chars().any(char::is_alphanumeric));
+        if let Some(amount) = amount.filter(|_| {
+            !attached
+                && !identifier_tail
+                && !title
+                && !dangling_and
+                && !conflicting_currency
+                && !(symbol.is_some() && percent)
+                && (symbol.is_some()
+                    || percent
+                    || unit
+                    || (multiword
+                        && lower[number_start] != "a"
+                        && lower[number_start..number_end]
+                            .iter()
+                            .any(|word| number_word(word))))
+        }) {
+            let mut amount = amount;
+            if money.is_some() {
+                i += 1;
+                if sterling {
+                    i += 1;
+                }
+                if !amount.contains('.')
+                    && tokens
+                        .get(i)
+                        .is_some_and(|next| gap(text, &tokens[i - 1], next))
+                {
+                    if let Some((minor, end)) =
+                        minor_amount(text, &tokens, &lower, i, symbol.unwrap())
+                    {
+                        amount.push('.');
+                        amount.push_str(&minor);
+                        i = end;
+                    }
+                }
+            }
+            if percent {
+                i += 1;
+                if per_cent {
+                    i += 1;
+                }
+            }
+            output.push_str(&text[copied..tokens[start].start]);
+            if negative {
+                output.push('-');
+            }
+            if let Some(symbol) = symbol {
+                output.push_str(symbol);
+            }
+            output.push_str(&if symbol.is_some() {
+                money_amount(&amount)
+            } else {
+                amount
+            });
+            if percent {
+                output.push('%');
+            }
+            copied = tokens[i - 1].end;
+        }
+    }
+    output.push_str(&text[copied..]);
+    output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cardinal_grammar_and_exact_decimals() {
+        for (source, expected) in [
+            ("twenty five", "25"),
+            ("forty-five", "45"),
+            ("one hundred and five", "105"),
+            ("one thousand and five", "1005"),
+            ("two million three hundred thousand seven", "2300007"),
+            (
+                "one trillion two billion three million four thousand five",
+                "1002003004005",
+            ),
+            ("twelve point zero five", "12.05"),
+            ("zero point oh five", "0.05"),
+            ("point five", "0.5"),
+        ] {
+            assert_eq!(normalize(source), expected, "{source}");
+        }
+        for source in [
+            "one two three",
+            "twenty four seven",
+            "one million million",
+            "one point twenty five",
+            "one hundred and",
+        ] {
+            assert_eq!(normalize(source), source);
+        }
+    }
+
+    #[test]
+    fn quantities_currency_percent_and_negative_amounts() {
+        for (source, expected) in [
+            ("five boxes and twelve users", "5 boxes and 12 users"),
+            ("twelve point five kilograms", "12.5 kilograms"),
+            (
+                "The order contains twelve boxes and costs forty five dollars.",
+                "The order contains 12 boxes and costs $45.",
+            ),
+            (
+                "45 dollars, forty five euros, and costs five pounds.",
+                "$45, €45, and costs £5.",
+            ),
+            ("minus twelve point five degrees", "-12.5 degrees"),
+            ("negative forty five dollars", "-$45"),
+            ("-12.50 dollars", "-$12.50"),
+            ("$1,234.50", "$1234.50"),
+            ("$-12.50", "-$12.50"),
+            ("$45.00", "$45"),
+            ("$0.0050", "$0.005"),
+            ("twelve point five dollars", "$12.50"),
+            ("one dollar and five cents", "$1.05"),
+            ("two euros and ninety nine cents", "€2.99"),
+            ("45 dollars and 50 cents", "$45.50"),
+            ("one pound sterling and five pence", "£1.05"),
+            ("twelve point five per cent", "12.5%"),
+            ("five pounds sterling", "£5"),
+            ("weighs five pounds", "weighs 5 pounds"),
+            ("one point five percent and 12.5%", "1.5% and 12.5%"),
+            ("(five boxes)", "(5 boxes)"),
+        ] {
+            assert_eq!(normalize(source), expected, "{source}");
+        }
+    }
+
+    #[test]
+    fn ambiguous_prose_names_dates_codes_and_non_english_survive() {
+        for source in [
+            "one more thing",
+            "one of a kind",
+            "one in a million",
+            "a hundred",
+            "a hundred reasons",
+            "take five",
+            "twenty four seven",
+            "Twenty One Pilots",
+            "Seven Oaks",
+            "Version v0.5.5",
+            "2026-10-04",
+            "PIN one two three four",
+            "https://example.com/twenty-five",
+            "id_twenty_five",
+            "12,34 dollars",
+            "12.5.5 kilograms",
+            "πέντε κιλά",
+            "一百美元",
+            "two point five million dollars",
+            "twenty\nfive",
+            "$\n45",
+            "$45 euros",
+            "$45 percent",
+        ] {
+            assert_eq!(normalize(source), source, "{source}");
+        }
+    }
+
+    #[test]
+    fn mixed_recognizer_numbers_are_parsed_as_one_phrase() {
+        for (raw, expected) in [
+            ("12 point five kilograms", "12.5 kilograms"),
+            ("twelve point 05 kilograms", "12.05 kilograms"),
+            ("$12 point five", "$12.50"),
+            ("one hundred 5 boxes", "105 boxes"),
+            ("12 million dollars", "$12000000"),
+            ("a hundred boxes", "100 boxes"),
+            ("a million dollars", "$1000000"),
+            ("one dollar and forty 5 cents", "$1.45"),
+            ("a box and one more thing", "a box and one more thing"),
+            ("one hundred oh", "one hundred oh"),
+            ("12.5 point five kilograms", "12.5 point five kilograms"),
+            ("PIN 123 456 7890", "PIN 123 456 7890"),
+        ] {
+            let result = normalize(raw);
+            assert_eq!(result, expected, "{raw}");
+            assert_eq!(normalize(&result), result, "not idempotent: {raw}");
+        }
+    }
+}

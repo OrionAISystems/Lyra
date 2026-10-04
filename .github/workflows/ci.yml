@@ -58,7 +58,7 @@ jobs:
       - name: Format and test Rust
         run: |
           cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
-          cargo test --release --locked --manifest-path src-tauri/Cargo.toml
+          cargo test --release --locked --manifest-path src-tauri/Cargo.toml --features regression-bench
 
       - name: Verify signed seasonal theme fixture through Rust
         run: npm run test:themes-fixture

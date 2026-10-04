@@ -73,6 +73,8 @@ To build the local installer after configuring updater signing, run `npm run tau
 
 ## Architecture and roadmap
 
+The internal [transcription regression benchmark](benchmarks/transcription/README.md) replays labeled audio fixtures through the existing local pipeline, measures accuracy/timing, and compares approved baselines. It is an opt-in developer tool excluded from normal app builds and public release assets.
+
 - [ARCHITECTURE.md](ARCHITECTURE.md) describes boundaries and data flow.
 - [BUILD-STAGE.md](BUILD-STAGE.md) records what is complete, what is hardware-gated, and the next vertical slices.
 - [docs/MODELS.md](docs/MODELS.md) records pinned runtime/model sources, checksums, licenses, and storage policy.

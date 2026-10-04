@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "cases": [
+    {"id":"silence","category":"silence","provenance":"synthetic","audio":"audio/silence.wav","expected":"","max_wer":0,"require_exact":true,"accept_empty_recording":true},
+    {"id":"short","category":"short_dictation","provenance":"synthetic","audio":"audio/short.wav","expected":"The meeting starts after lunch.","max_wer":0.1},
+    {"id":"punctuation","category":"spoken_punctuation","provenance":"synthetic","audio":"audio/punctuation.wav","expected":"Hello, Orion.\nPlease send the report.","max_wer":0.1,"require_exact":true},
+    {"id":"numbers","category":"numbers","provenance":"synthetic","audio":"audio/numbers.wav","expected":"The order contains 12 boxes and costs $45.","max_wer":0},
+    {"id":"names","category":"proper_names","provenance":"synthetic","audio":"audio/names.wav","expected":"Send the Lyra report to Orion and NVIDIA in Seattle.","max_wer":0.2},
+    {"id":"long","category":"long_dictation","provenance":"synthetic","audio":"audio/long.wav","expected":"Today we reviewed the transcription service and agreed on a practical plan for the next release. First we will collect representative recordings from several microphones in a quiet room. Then we will repeat the same sentences with background noise and compare the results against an approved baseline. Every recording should include a carefully checked reference transcript and a clear description of the environment. We will track accuracy and recognition time separately so that a faster engine does not hide a loss of quality. Finally we will review the failed cases, document the limitations, and decide whether the release is ready for everyday dictation.","max_wer":0.1},
+    {"id":"interrupted","category":"pause_and_resume","provenance":"synthetic","audio":"audio/interrupted.wav","expected":"We should finish the review tomorrow after the team meeting.","max_wer":0.1},
+    {"id":"self-correction","category":"explicit_self_correction","provenance":"synthetic","audio":"audio/self-correction.wav","expected":"Send the report on Friday.","max_wer":0.1},
+    {"id":"decimal","category":"signed_decimal","provenance":"synthetic","audio":"audio/decimal.wav","expected":"The temperature is -12.5 degrees.","max_wer":0,"require_exact":true},
+    {"id":"currency","category":"currency_minor_units","provenance":"synthetic","audio":"audio/currency.wav","expected":"The total is $45.50.","max_wer":0,"require_exact":true},
+    {"id":"percentage","category":"percentage","provenance":"synthetic","audio":"audio/percentage.wav","expected":"The discount is 12.5%.","max_wer":0,"require_exact":true},
+    {"id":"standalone-numbers","category":"standalone_multiword_numbers","provenance":"synthetic","audio":"audio/standalone-numbers.wav","expected":"We counted 25 and then 105.","max_wer":0},
+    {"id":"number-prose","category":"ambiguous_number_prose","provenance":"synthetic","audio":"audio/number-prose.wav","expected":"I need one more thing before we finish.","max_wer":0}
+  ]
+}

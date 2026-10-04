@@ -5,6 +5,7 @@ mod commands;
 mod domain;
 mod native_nemo;
 mod personalization;
+mod quantities;
 mod runtime;
 mod saved_items;
 mod seasonal_themes;
@@ -15,6 +16,10 @@ mod tray;
 mod updater;
 mod usage;
 mod windows;
+
+#[cfg(feature = "regression-bench")]
+#[path = "../../benchmarks/transcription/runner.rs"]
+pub mod regression_bench;
 
 use std::sync::{Arc, Mutex};
 
