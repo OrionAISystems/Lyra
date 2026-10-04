@@ -600,7 +600,7 @@ fn sentence_content_start(text: &str) -> usize {
 fn capitalize_sentence_start(text: &str) -> String {
     let start = sentence_content_start(text);
     let word = text[start..]
-        .split(|c: char| !c.is_alphabetic() && !matches!(c, '\'' | '’'))
+        .split(|c: char| !c.is_alphabetic() && !matches!(c, '\'' | '’' | '-'))
         .next()
         .unwrap_or("");
     let Some(first) = word.chars().next().filter(|c| c.is_lowercase()) else {
@@ -1063,6 +1063,27 @@ mod tests {
             ),
             ("hello period l’esprit", "hello. L’esprit"),
             ("‘five boxes’", "‘5 boxes’"),
+        ] {
+            assert_eq!(
+                process_transcription_text(source, None, options),
+                expected,
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn sentence_casing_preserves_hyphenated_mixed_case_names() {
+        let options = TextProcessingOptions {
+            formatting_commands_enabled: true,
+            self_correction_enabled: true,
+            corrections: &[],
+            snippets: &[],
+        };
+        for (source, expected) in [
+            ("hello period i-Ready is open", "hello. i-Ready is open"),
+            ("Send this scratch that i-Ready is open", "i-Ready is open"),
+            ("hello period well-known names", "hello. Well-known names"),
         ] {
             assert_eq!(
                 process_transcription_text(source, None, options),

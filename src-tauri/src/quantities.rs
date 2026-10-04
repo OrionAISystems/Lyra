@@ -586,20 +586,24 @@ pub(crate) fn normalize(text: &str) -> String {
         let money = named_currency
             .filter(|currency| *currency != "£" || symbol == Some("£") || sterling || money_cue);
         let annotation_end = i + 1 + usize::from(sterling);
-        let conflicting_suffix = named_currency.is_some_and(|first| {
+        // Repeated annotations are malformed too: partial consumption would
+        // produce a redundant result that changes again on the next pass.
+        let invalid_suffix = named_currency.is_some_and(|_| {
             lower.get(annotation_end).is_some_and(|word| {
-                currency_annotation(word).is_some_and(|second| first != second)
+                currency_annotation(word).is_some()
                     && gap(text, &tokens[annotation_end - 1], &tokens[annotation_end])
             })
         });
         let conflicting_currency = symbol
             .zip(named_currency)
             .is_some_and(|(prefix, suffix)| prefix != suffix)
-            || conflicting_suffix
+            || invalid_suffix
             || (unit_gap
-                && symbol
-                    .zip(next.and_then(currency_annotation))
-                    .is_some_and(|(first, second)| first != second));
+                && symbol.zip(next.and_then(currency_annotation)).is_some_and(
+                    |(first, second)| {
+                        first != second || next.is_some_and(|word| currency(word).is_none())
+                    },
+                ));
         if symbol.is_none() {
             symbol = money;
         }
@@ -616,8 +620,7 @@ pub(crate) fn normalize(text: &str) -> String {
         if let (Some(symbol), Some(minor)) = (symbol, minor.as_ref()) {
             let conflicting_minor = minor.pence != (symbol == "£")
                 || tokens.get(minor.end).is_some_and(|next| {
-                    currency_annotation(&lower[minor.end])
-                        .is_some_and(|currency| currency != symbol)
+                    currency_annotation(&lower[minor.end]).is_some()
                         && gap(text, &tokens[minor.end - 1], next)
                 });
             if conflicting_minor {
@@ -735,6 +738,25 @@ pub(crate) fn normalize(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn repeated_currency_annotations_remain_literal_and_idempotent() {
+        for source in [
+            "five dollars dollars",
+            "five euros €",
+            "$five $",
+            "one dollar and five cents dollars",
+            "five pounds sterling pounds",
+        ] {
+            assert_eq!(normalize(source), source, "{source}");
+            assert_eq!(normalize(&normalize(source)), source, "{source}");
+        }
+        assert_eq!(normalize("$five dollars"), "$5");
+        assert_eq!(
+            normalize("five dollars, dollars later"),
+            "$5, dollars later"
+        );
+    }
 
     #[test]
     fn conflicting_currency_symbols_remain_literal() {

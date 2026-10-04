@@ -326,6 +326,25 @@ fn compare(
     if current.cases.len() != baseline.cases.len() {
         failures.push("baseline case set changed".into());
     }
+    // Warmup selection depends on fixture order and audio content. Compare
+    // initialization timing only when the complete ordered corpus is identical.
+    if current
+        .cases
+        .iter()
+        .map(|c| (&c.id, &c.fingerprint))
+        .eq(baseline.cases.iter().map(|c| (&c.id, &c.fingerprint)))
+    {
+        if current.warmup_latency_ms
+            > baseline.warmup_latency_ms * (1.0 + latency_ratio) + latency_ms
+        {
+            failures.push(format!(
+                "warmup latency regressed ({:.1} -> {:.1} ms)",
+                baseline.warmup_latency_ms, current.warmup_latency_ms
+            ));
+        }
+    } else {
+        failures.push("baseline ordered warmup fixture corpus changed".into());
+    }
     for case in &current.cases {
         let Some(old) = baseline.cases.iter().find(|old| old.id == case.id) else {
             failures.push(format!("{}: missing from baseline", case.id));
@@ -767,6 +786,27 @@ mod tests {
         now = baseline();
         now.passed = false;
         assert!(compare(&old, &now, 0.0, 0.25, 50.0)[0].contains("incompatible"));
+    }
+
+    #[test]
+    fn baseline_gates_warmup_latency_and_ordered_corpus() {
+        let old = baseline();
+        let mut now = baseline();
+        now.warmup_latency_ms = 300.0;
+        assert!(compare(&now, &old, 0.0, 0.25, 50.0).is_empty());
+        now.warmup_latency_ms = 301.0;
+        assert!(compare(&now, &old, 0.0, 0.25, 50.0)
+            .iter()
+            .any(|f| f.contains("warmup latency")));
+        assert!(compare(&now, &old, 0.0, 0.5, 50.0).is_empty());
+        let mut old = baseline();
+        old.cases.push(baseline().cases.remove(0));
+        old.cases[1].id = "two".into();
+        let mut now: Report = serde_json::from_slice(&serde_json::to_vec(&old).unwrap()).unwrap();
+        now.cases.reverse();
+        assert!(compare(&now, &old, 0.0, 0.25, 50.0)
+            .iter()
+            .any(|f| f.contains("ordered warmup fixture corpus")));
     }
 
     #[test]
