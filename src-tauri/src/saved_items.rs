@@ -343,7 +343,7 @@ fn read_record(path: &Path) -> io::Result<SavedItemFile> {
     Ok(record)
 }
 
-fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
+pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let temporary = path.with_extension("json.tmp");
     fs::write(&temporary, bytes)?;
     if let Err(error) = replace_file(&temporary, path) {

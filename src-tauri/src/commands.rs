@@ -240,6 +240,7 @@ impl AppState {
         if let Some(capture) = self.active_capture.take() {
             capture.cancel();
         }
+        self.snapshot.request_id = None;
         info!("Lyra shutdown requested");
     }
 
@@ -918,7 +919,7 @@ pub fn save_settings(
             let message = error.to_string();
             state.hotkey_status = HotkeyStatus {
                 hotkey: previous.hotkey.clone(),
-                registered: configured_shortcut(&shared_state)
+                registered: parse_shortcut(&previous.hotkey)
                     .ok()
                     .is_some_and(|old| state.app.global_shortcut().is_registered(old)),
                 error: Some(message.clone()),
@@ -980,12 +981,12 @@ pub fn save_settings(
             return Err(error.to_string());
         }
     }
-    let saved = match state.settings.set(settings) {
+    let saved = match state.settings.set(settings.clone()) {
         Ok(saved) => saved,
         Err(error) => {
             if let Some(candidate) = candidate_shortcut {
                 let _ = state.app.global_shortcut().unregister(candidate);
-                if let Ok(old) = configured_shortcut(&shared_state) {
+                if let Ok(old) = parse_shortcut(&previous.hotkey) {
                     let _ = register_hotkey(&state.app, shared_state.clone(), old);
                 }
             }
@@ -993,7 +994,7 @@ pub fn save_settings(
                 let _ = state.app.global_shortcut().unregister(candidate);
             }
             if recovery_changed {
-                unregister_recovery_shortcuts(&state.app, &previous);
+                unregister_recovery_shortcuts(&state.app, &settings);
                 let _ =
                     register_recovery_shortcuts_for(&state.app, shared_state.clone(), &previous);
             }
@@ -2116,7 +2117,10 @@ fn stop_session(
 fn cancel_session(state: Arc<Mutex<AppState>>) -> Result<(), String> {
     let control = {
         let mut state = state.lock().map_err(|_| "state lock poisoned".to_owned())?;
-        if state.session.state() != DictationState::Listening {
+        if !matches!(
+            state.session.state(),
+            DictationState::Listening | DictationState::Processing
+        ) {
             return Ok(());
         }
         state
@@ -2299,7 +2303,21 @@ fn process_capture(
         finish_error(&state, &request_id, BackendError::EmptyRecording);
         return;
     }
-    if let Ok(state_guard) = state.lock() {
+    // Cancellation and replacement must win before any result side effect. Keep
+    // the state lock through insertion, persistence and completion so they form
+    // one commit; checking the request and then unlocking would permit a late paste.
+    let mut state_guard = match state.lock() {
+        Ok(state) => state,
+        Err(_) => return,
+    };
+    if !request_can_commit(
+        &state_guard.snapshot,
+        state_guard.session.state(),
+        &request_id,
+    ) {
+        return;
+    }
+    {
         state_guard.usage.record_result(&result);
         state_guard.emit_usage_from_settings(&settings);
     }
@@ -2326,10 +2344,8 @@ fn process_capture(
         }
     }
     if paste_attempted {
-        if let Ok(state_guard) = state.lock() {
-            state_guard.usage.record_paste(paste_succeeded);
-            state_guard.emit_usage_from_settings(&settings);
-        }
+        state_guard.usage.record_paste(paste_succeeded);
+        state_guard.emit_usage_from_settings(&settings);
     }
     let timestamp = timestamp_ms();
     let metadata = SavedItemSummary {
@@ -2354,7 +2370,7 @@ fn process_capture(
         },
         pinned: false,
     };
-    let (saved_item, save_warning, scratchpad_save_error) = if let Ok(state_guard) = state.lock() {
+    let (saved_item, save_warning, scratchpad_save_error) = {
         match destination {
             SessionDestination::Dictation => {
                 let current_settings = state_guard.settings.get();
@@ -2385,18 +2401,11 @@ fn process_capture(
                 }
             }
         }
-    } else {
-        (
-            None,
-            Some("Lyra couldn't access local saved items.".to_owned()),
-            (destination == SessionDestination::Scratchpad)
-                .then(|| "Lyra couldn't access local Scratchpad storage.".to_owned()),
-        )
     };
     if save_warning.is_some() || scratchpad_save_error.is_some() {
         warn!(destination = ?destination, "recognized text could not be saved locally");
     }
-    if let Ok(state_guard) = state.lock() {
+    {
         state_guard.usage.record_session(SessionRecord {
             timestamp_ms: timestamp,
             app_version: env!("CARGO_PKG_VERSION").to_owned(),
@@ -2442,10 +2451,8 @@ fn process_capture(
         });
     }
     let has_injection_error = injection_error.is_some();
-    let state_updated = if let Ok(mut state) = state.lock() {
-        if state.snapshot.request_id.as_deref() != Some(request_id.as_str()) {
-            return;
-        }
+    {
+        let state = &mut *state_guard;
         state.last_transcript = Some(result.text.clone());
         state.last_result = Some(result.clone());
         state.activation.reset();
@@ -2480,14 +2487,12 @@ fn process_capture(
         state.started_at = None;
         state.capture_destination = None;
         state.emit_state();
-        true
-    } else {
-        false
-    };
-    if state_updated && has_injection_error {
+    }
+    drop(state_guard);
+    if has_injection_error {
         schedule_error_reset(&state, &request_id);
     }
-    if state_updated && scratchpad_save_error.is_some() {
+    if scratchpad_save_error.is_some() {
         schedule_error_reset(&state, &request_id);
     }
     if let Some(message) = save_warning {
@@ -2503,6 +2508,10 @@ fn process_capture(
             let _ = app.emit("lyra://open-scratchpad", item.id);
         }
     }
+}
+
+fn request_can_commit(snapshot: &SessionSnapshot, state: DictationState, request_id: &str) -> bool {
+    state == DictationState::Processing && snapshot.request_id.as_deref() == Some(request_id)
 }
 
 fn finish_error(state: &Arc<Mutex<AppState>>, request_id: &str, error: BackendError) {
@@ -2580,9 +2589,35 @@ fn schedule_error_reset(state: &Arc<Mutex<AppState>>, request_id: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{benchmark_is_blocked, canonical_shortcut, parse_shortcut, validate_shortcut_set};
+    use super::{
+        benchmark_is_blocked, canonical_shortcut, parse_shortcut, request_can_commit,
+        validate_shortcut_set,
+    };
     use crate::domain::DictationState;
+    use crate::domain::{DictationStateMachine, SessionEvent, SessionSnapshot};
     use crate::settings::Settings;
+
+    #[test]
+    fn cancelled_and_replaced_transcriptions_cannot_commit_late_results() {
+        let mut machine = DictationStateMachine::default();
+        let mut snapshot = SessionSnapshot {
+            request_id: Some("old".to_owned()),
+            ..Default::default()
+        };
+        machine.transition(SessionEvent::Start).unwrap();
+        machine.transition(SessionEvent::Stop).unwrap();
+        assert!(request_can_commit(&snapshot, machine.state(), "old"));
+        machine.transition(SessionEvent::Cancel).unwrap();
+        snapshot = SessionSnapshot::default();
+        assert!(!request_can_commit(&snapshot, machine.state(), "old"));
+        machine.transition(SessionEvent::Start).unwrap();
+        snapshot.request_id = Some("new".to_owned());
+        machine.transition(SessionEvent::Stop).unwrap();
+        assert!(!request_can_commit(&snapshot, machine.state(), "old"));
+        assert!(request_can_commit(&snapshot, machine.state(), "new"));
+        machine.transition(SessionEvent::Success).unwrap();
+        assert!(!request_can_commit(&snapshot, machine.state(), "new"));
+    }
 
     #[test]
     fn shortcuts_require_a_modifier_and_canonicalize_key_order() {
