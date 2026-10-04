@@ -4,7 +4,7 @@ All recognition routes share `process_transcription_text`: line-ending normaliza
 
 ## Punctuation and sentence casing
 
-Spoken `comma` and `period` commands own adjacent punctuation supplied by the recognizer. `report period.` becomes `report.`; `Hello, comma, Orion` becomes `Hello, Orion`. Literal punctuation without a spoken cue is preserved, including ellipses, decimal points, versions and URLs. Line-break commands continue to remove recognizer punctuation attached to the command itself.
+Spoken `comma` and `period` commands own adjacent punctuation supplied by the recognizer, including conflicting marks before the cue: `Hello, period.` becomes `Hello.` and `Hello. comma,` becomes `Hello,`. `report period.` becomes `report.`; `Hello, comma, Orion` becomes `Hello, Orion`. Literal punctuation without a spoken cue is preserved, including ellipses, decimal points, versions and URLs. Line-break commands continue to remove recognizer punctuation attached to the command itself.
 
 A spoken period capitalizes the following lowercase word, including across an explicit newline/paragraph and opening quotes. Mixed-case words such as `iPhone` and `eBay` retain their casing. A bare newline does not capitalize list items, and ordinary recognized sentences are not globally recased. Explicit self-correction preserves the initial uppercase style of the clause it replaces: `Send ... scratch that send ...` produces `Send ...`. User corrections and snippets run later, so their intentional spelling/casing wins.
 
@@ -36,7 +36,7 @@ Currency rendering removes grouping commas, removes an all-zero fractional part,
 
 ## Ambiguity and opt-out boundaries
 
-Identifier-like adjacency, existing versions, URLs, written dates, repeated digit sequences, mixed-case names and non-English number words are protected by deterministic checks. Number phrases never join across a newline. A following capitalized name token protects titles such as `Twenty One Pilots`.
+Identifier-like adjacency, existing versions, URLs, written dates, repeated digit sequences, mixed-case names and non-English number words are protected by deterministic checks. Attached dotted components remain literal (`twenty-five.com`, `version twenty five.1`), while a terminal sentence period permits conversion (`twenty five.` → `25.`). Hyphens join number words only when attached on both sides; spaced subtraction is not combined into a cardinal. Number phrases and monetary context never join across a newline. A following capitalized name token protects titles such as `Twenty One Pilots`.
 
 Converting standalone multiword numbers still carries the explicitly chosen tradeoff: a lowercase name or idiom that is also a valid English number phrase can be converted. The formatter cannot recover a name that a recognizer already emitted as digits. Calendar/date layout, telephone/PIN formatting, ordinals, fractions, scientific notation and non-English grammars are outside this pass. Disable spoken formatting for literal/code-oriented dictation; profile overrides and later personalization remain available.
 

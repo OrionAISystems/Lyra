@@ -630,7 +630,7 @@ fn replace_spoken_punctuation(text: &str, source: &str, punctuation: char) -> St
         while result.ends_with([' ', '\t']) {
             result.pop();
         }
-        while result.ends_with(punctuation) {
+        while result.ends_with(['.', ',', ';', ':', '!', '?']) {
             result.pop();
         }
         result.push(punctuation);
@@ -889,6 +889,9 @@ mod tests {
                 "Hello, Orion. Next sentence.",
             ),
             ("Hello comma,world period.next", "Hello, world. Next"),
+            ("Hello, period.", "Hello."),
+            ("Hello. comma,", "Hello,"),
+            ("Hello?! period. next", "Hello. Next"),
             (
                 "hello period open quote welcome close quote period.",
                 "hello. \"Welcome\".",

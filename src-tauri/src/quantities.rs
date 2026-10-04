@@ -369,7 +369,11 @@ fn minor_amount(
         && gap(text, &tokens[end - 1], &tokens[end])
         && (number_component(&lower[end])
             || lower[end] == "and"
-            || lower[end] == "-"
+            || (lower[end] == "-"
+                && tokens[end - 1].end == tokens[end].start
+                && tokens
+                    .get(end + 1)
+                    .is_some_and(|next| next.start == tokens[end].end))
             || (end == start + 1 && literal(tokens[end].text).is_some()))
     {
         end += 1;
@@ -458,9 +462,11 @@ pub(crate) fn normalize(text: &str) -> String {
             i += 1;
             while i < tokens.len() {
                 if tokens[i].text == "-"
-                    && tokens
-                        .get(i + 1)
-                        .is_some_and(|next| number_component(&next.text.to_ascii_lowercase()))
+                    && tokens[i - 1].end == tokens[i].start
+                    && tokens.get(i + 1).is_some_and(|next| {
+                        next.start == tokens[i].end
+                            && number_component(&next.text.to_ascii_lowercase())
+                    })
                 {
                     i += 1;
                     continue;
@@ -498,14 +504,16 @@ pub(crate) fn normalize(text: &str) -> String {
                 .is_some_and(|word| word == "sterling" && gap(text, &tokens[i], &tokens[i + 1]));
         // "Pounds" alone is also a weight. Currency requires an explicit symbol,
         // sterling qualifier, or a nearby monetary verb/noun in the same clause.
-        let money_cue = lower[..start]
-            .iter()
+        let money_cue = (0..start)
             .rev()
             .take(2)
-            .take_while(|word| word.chars().all(char::is_alphabetic))
-            .any(|word| {
+            .take_while(|&index| {
+                gap(text, &tokens[index], &tokens[index + 1])
+                    && lower[index].chars().all(char::is_alphabetic)
+            })
+            .any(|index| {
                 matches!(
-                    word.as_str(),
+                    lower[index].as_str(),
                     "cost"
                         | "costs"
                         | "pay"
@@ -552,14 +560,23 @@ pub(crate) fn normalize(text: &str) -> String {
             });
         let identifier_tail = tokens.get(number_end).is_some_and(|next| {
             next.start == tokens[number_end - 1].end
-                && matches!(next.text, "/" | ":" | "_" | "-" | "@")
+                && (matches!(next.text, "/" | ":" | "_" | "-" | "@")
+                    || (next.text == "."
+                        && tokens.get(number_end + 1).is_some_and(|tail| {
+                            tail.start == next.end && tail.text.starts_with(char::is_alphanumeric)
+                        })))
         });
+        let spaced_operator = start > 0
+            && tokens[start - 1].text == "-"
+            && tokens[start - 1].end < tokens[start].start
+            && gap(text, &tokens[start - 1], &tokens[start]);
         let dangling_and = next == Some("and")
             && tokens
                 .get(i + 1)
                 .is_none_or(|token| !token.text.chars().any(char::is_alphanumeric));
         if let Some(amount) = amount.filter(|_| {
             !attached
+                && !spaced_operator
                 && !identifier_tail
                 && !title
                 && !dangling_and
@@ -625,6 +642,43 @@ pub(crate) fn normalize(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn review_preservation_boundaries() {
+        for (source, expected) in [
+            ("twenty - five boxes", "twenty - five boxes"),
+            ("forty - two percent", "forty - two percent"),
+            ("twenty- five boxes", "twenty- five boxes"),
+            ("twenty -five boxes", "twenty -5 boxes"),
+            ("twenty-five boxes", "25 boxes"),
+            ("one dollar and twenty-five cents", "$1.25"),
+            (
+                "one dollar and twenty - five cents",
+                "$1 and twenty - five cents",
+            ),
+            ("shipping costs\nfive pounds", "shipping costs\n5 pounds"),
+            (
+                "shipping costs\r\nabout five pounds",
+                "shipping costs\r\nabout 5 pounds",
+            ),
+            (
+                "shipping costs\n\nfive pounds",
+                "shipping costs\n\n5 pounds",
+            ),
+            (
+                "shipping costs about five pounds",
+                "shipping costs about £5",
+            ),
+            ("twenty-five.com", "twenty-five.com"),
+            ("version twenty five.1", "version twenty five.1"),
+            ("twenty five.", "25."),
+            ("twenty five. next", "25. next"),
+        ] {
+            let result = normalize(source);
+            assert_eq!(result, expected, "{source}");
+            assert_eq!(normalize(&result), result, "not idempotent: {source}");
+        }
+    }
 
     #[test]
     fn cardinal_grammar_and_exact_decimals() {

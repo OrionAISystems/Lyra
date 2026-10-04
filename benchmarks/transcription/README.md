@@ -27,7 +27,7 @@ npm run bench:transcription -- --manifest benchmarks/transcription/suite.json --
 
 The process exits 1 on any case failure, warmup failure, incompatible baseline, or regression; JSON is still written for recognition/gate failures. Missing fixtures or invalid CLI/manifest/WAV inputs fail before recognition. Run `npm run bench:transcription -- --help` for options. Required `--machine` should identify CPU, GPU, power mode and relevant driver configuration; compare on the same idle machine with Lyra closed. Default repetitions: 3; range: 1–20. Use release builds for meaningful timings.
 
-When extending an existing generated corpus, use `-CaseId` to generate only new fixtures without overwriting retained audio. For example:
+When extending an existing generated corpus, use `-CaseId` to generate only new fixtures without overwriting retained audio. The provenance sidecar keeps an append-only `generations` history (schema 2), retaining each batch's voice, timestamp and completed case IDs. Legacy metadata is preserved verbatim when extending an older corpus. Selected existing WAVs fail before generation; provenance is saved after each completed case so partial runs retain their evidence. For example:
 
 ```powershell
 powershell.exe -NoProfile -Command "& './benchmarks/transcription/generate-synthetic.ps1' -CaseId @('decimal','currency','percentage','standalone-numbers','number-prose')"
@@ -59,9 +59,10 @@ Runtime/model hashes describe the app's pinned, verified installation markers, n
 cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
 cargo test --release --locked --manifest-path src-tauri/Cargo.toml --features regression-bench
 cargo check --release --locked --manifest-path src-tauri/Cargo.toml
+powershell.exe -NoProfile -File benchmarks/transcription/test-generator.ps1
 ```
 
-Unit tests cover WER insertions/deletions, Unicode/case/punctuation, undefined silence WER, numbers, WAV corruption/rates/padding, baseline compatibility, backend fallback changes, accuracy, text matches and latency gates. Model-free CI runs these along with the existing application tests. Recognition needs installed native models and compatible GPU/CPU drivers; failures remain visible in reports.
+Unit tests cover WER insertions/deletions, Unicode/case/punctuation, undefined silence WER, numbers, WAV corruption/rates/padding, baseline compatibility, backend fallback changes, accuracy, text matches and latency gates. Model-free CI runs these along with the existing application tests. The generator regression script uses an installed Windows desktop voice in an isolated temporary corpus to check retained audio/provenance, legacy and repeated extensions, and duplicate preflight; it needs Windows PowerShell 5.1 but no recognition model. Recognition needs installed native models and compatible GPU/CPU drivers; failures remain visible in reports.
 
 Microphone quality, noise/accents, actual stop/restart/cancellation, silence auto-stop, maximum-duration capture, live Nemotron partial timing and focus-safe injection require hardware-backed app checks. Fixture replay bypasses `cpal`, capture state, endpoint timing and injection. In particular, a pause inside a WAV is not evidence that Lyra's silence endpoint would retain the continuation. Evaluate those separately using the existing acceptance documents, with approved recordings and fixed settings.
 

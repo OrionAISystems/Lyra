@@ -64,3 +64,9 @@ The repeat run exposed a harness defect: JSON parsing changed `1/103` from `0.00
 - Both final 13-case native suites and their saved-baseline comparisons: passed; the historical Parakeet comparison also passed.
 
 Live microphone capture, accents/noise, silence endpointing, actual stop/restart/cancellation and cross-application paste still need the existing hardware-backed app acceptance checks. The existing Nemotron repeated-model-load abort remains contained by benchmark workers; this pass does not fix the desktop native lifecycle. The frontend was unchanged. The formatting switches/profile preferences provide the existing opt-out for literal dictation, and standalone multiword conversions retain the documented risk for lowercase number-like names/idioms.
+
+## PR review follow-up
+
+The first connector review identified five concrete edge cases. The follow-up requires attached hyphens before combining number words (including currency minor units), stops monetary cues at line breaks, preserves attached dotted identifiers, replaces conflicting marks before spoken punctuation cues, and retains fixture generation provenance across extensions. Focused regression inputs cover subtraction, valid hyphenated amounts, CRLF/paragraph boundaries, domain/version components and terminal sentence periods.
+
+The updated full feature-enabled release Rust suite passed **104 tests, 0 failed, 2 ignored**. An isolated Windows PowerShell 5.1 / Microsoft David Desktop generator check passed initial generation, legacy metadata migration, repeated extensions, unchanged retained WAV bytes, and duplicate-fixture preflight without modifying the original corpus. The native replay reports above remain the earlier immutable evidence; these additional edge cases were verified with deterministic cleanup tests, rather than presented as new microphone or recognizer measurements. Contributor and evidence-based review guidance now lives in the root [AGENTS.md](../../AGENTS.md).
