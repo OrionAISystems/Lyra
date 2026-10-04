@@ -387,6 +387,14 @@ struct MinorAmount {
     pence: bool,
 }
 
+fn minor_unit(word: &str) -> Option<bool> {
+    match word {
+        "cent" | "cents" => Some(false),
+        "penny" | "pence" => Some(true),
+        _ => None,
+    }
+}
+
 fn minor_amount(
     text: &str,
     tokens: &[Token<'_>],
@@ -411,9 +419,8 @@ fn minor_amount(
         end += 1;
     }
     let unit = lower.get(end)?.as_str();
-    if !matches!(unit, "cent" | "cents" | "penny" | "pence")
-        || !gap(text, &tokens[end - 1], &tokens[end])
-    {
+    let pence = minor_unit(unit)?;
+    if !gap(text, &tokens[end - 1], &tokens[end]) {
         return None;
     }
     let minor = if end == start + 2
@@ -436,7 +443,7 @@ fn minor_amount(
     Some(MinorAmount {
         fraction: format!("{minor:02}"),
         end: end + 1,
-        pence: matches!(unit, "penny" | "pence"),
+        pence,
     })
 }
 
@@ -620,7 +627,8 @@ pub(crate) fn normalize(text: &str) -> String {
         if let (Some(symbol), Some(minor)) = (symbol, minor.as_ref()) {
             let conflicting_minor = minor.pence != (symbol == "£")
                 || tokens.get(minor.end).is_some_and(|next| {
-                    currency_annotation(&lower[minor.end]).is_some()
+                    (currency_annotation(&lower[minor.end]).is_some()
+                        || minor_unit(&lower[minor.end]).is_some())
                         && gap(text, &tokens[minor.end - 1], next)
                 });
             if conflicting_minor {
@@ -653,7 +661,11 @@ pub(crate) fn normalize(text: &str) -> String {
             .chars()
             .next_back()
             .is_some_and(|c| {
-                !c.is_whitespace() && !matches!(c, '(' | '[' | '{' | '"' | '\'' | '“' | '‘')
+                !c.is_whitespace()
+                    && !matches!(
+                        c,
+                        '(' | '[' | '{' | '"' | '\'' | '“' | '‘' | ',' | ';' | '!' | '?'
+                    )
             });
         let identifier_tail = tokens.get(number_end).is_some_and(|next| {
             next.start == tokens[number_end - 1].end
@@ -738,6 +750,33 @@ pub(crate) fn normalize(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn repeated_minor_annotations_remain_literal() {
+        for source in [
+            "one dollar and five cents cents",
+            "one pound sterling and five pence pence",
+            "€1 and one cent penny",
+            "$1 and one cent cent",
+        ] {
+            assert_eq!(normalize(source), source, "{source}");
+        }
+    }
+
+    #[test]
+    fn clause_punctuation_allows_following_quantities() {
+        for (source, expected) in [
+            ("first,five boxes", "first,5 boxes"),
+            ("done!twenty five users", "done!25 users"),
+            ("ready;twelve boxes", "ready;12 boxes"),
+            ("why?five boxes", "why?5 boxes"),
+        ] {
+            assert_eq!(normalize(source), expected, "{source}");
+        }
+        for source in ["v.twenty-five", "id:twenty five", "id_twenty five"] {
+            assert_eq!(normalize(source), source, "{source}");
+        }
+    }
 
     #[test]
     fn repeated_currency_annotations_remain_literal_and_idempotent() {

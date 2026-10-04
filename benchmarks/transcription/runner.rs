@@ -1,5 +1,5 @@
 //! Internal, opt-in fixture replay. Never called by the desktop application.
-use std::{collections::HashSet, fs, path::Path, time::Instant};
+use std::{collections::HashSet, fs, io::Write, path::Path, time::Instant};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -191,18 +191,45 @@ fn recognize(router: &TranscriptionRouter, engine: &str, samples: &[f32], id: &s
     )
 }
 
+fn write_snapshot(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|e| e.to_string())?;
+    let result = file.write_all(bytes);
+    drop(file);
+    if result.is_err() {
+        let _ = fs::remove_file(path);
+    }
+    result.map_err(|e| e.to_string())
+}
+
+fn warmup_case(cases: &[Case]) -> usize {
+    cases
+        .iter()
+        .position(|case| !case.expected.trim().is_empty())
+        .unwrap_or(0)
+}
+
 // The pinned native Nemotron library aborts on repeated model reloads in one
 // process. Its production path loads per request, so isolate each replay without
 // replacing that path. An abort becomes a failed trial, not a lost suite report.
-fn isolated_nemotron(audio: &Path, root: &Path) -> Recognition {
+fn isolated_nemotron(bytes: &[u8], root: &Path) -> Recognition {
     let started = Instant::now();
     let result_path =
         std::env::temp_dir().join(format!("lyra-bench-{}.json", uuid::Uuid::new_v4()));
+    let audio = result_path.with_extension("wav");
+    let mut staged = false;
     let result = (|| -> Result<Recognition, String> {
+        // Workers replay the exact snapshot used for fingerprinting, never
+        // rereading a mutable fixture path during a long benchmark run.
+        write_snapshot(&audio, bytes)?;
+        staged = true;
         let output =
             std::process::Command::new(std::env::current_exe().map_err(|e| e.to_string())?)
                 .arg("--native-worker")
-                .arg(audio)
+                .arg(&audio)
                 .arg(root)
                 .arg(&result_path)
                 .output()
@@ -224,6 +251,9 @@ fn isolated_nemotron(audio: &Path, root: &Path) -> Recognition {
     })();
     if result_path.exists() {
         let _ = fs::remove_file(&result_path);
+    }
+    if staged {
+        let _ = fs::remove_file(&audio);
     }
     result.unwrap_or_else(|error| {
         (
@@ -535,6 +565,7 @@ pub fn run(args: Vec<String>) -> Result<(), String> {
                 .iter()
                 .map(|byte| format!("{byte:02x}"))
                 .collect::<String>(),
+            bytes,
         ));
     }
     let baseline: Option<Report> = options
@@ -572,28 +603,16 @@ pub fn run(args: Vec<String>) -> Result<(), String> {
         processing: "formatting-on-self-correction-on-no-personalization-v1".into(),
     };
     let router = TranscriptionRouter::new(runtime);
-    let transcribe = |samples: &[f32], id: &str, audio: &Path| {
+    let transcribe = |samples: &[f32], id: &str, bytes: &[u8]| {
         if engine == "nemotron" {
-            isolated_nemotron(audio, &root)
+            isolated_nemotron(bytes, &root)
         } else {
             recognize(&router, engine, samples, id)
         }
     };
-    let warmup = fixtures
-        .iter()
-        .position(|(s, _)| s.iter().any(|v| v.abs() > 0.01))
-        .unwrap_or(0);
-    let audio_path = |case: &Case| {
-        Path::new(manifest)
-            .parent()
-            .unwrap_or(Path::new("."))
-            .join(&case.audio)
-    };
-    let (warmup_result, warmup_latency_ms, _) = transcribe(
-        &fixtures[warmup].0,
-        "warmup",
-        &audio_path(&suite.cases[warmup]),
-    );
+    let warmup = warmup_case(&suite.cases);
+    let (warmup_result, warmup_latency_ms, _) =
+        transcribe(&fixtures[warmup].0, "warmup", &fixtures[warmup].2);
     let mut report = Report {
         schema: SCHEMA,
         source_revision: std::process::Command::new("git")
@@ -609,7 +628,10 @@ pub fn run(args: Vec<String>) -> Result<(), String> {
             .as_millis(),
         context,
         warmup_latency_ms,
-        warmup_error: warmup_result.err().map(|e| e.to_string()),
+        warmup_error: warmup_result
+            .err()
+            .filter(|error| !expected_empty_recording(&suite.cases[warmup], error))
+            .map(|e| e.to_string()),
         cases: vec![],
         comparison: vec![],
         baseline_deltas: vec![],
@@ -620,15 +642,12 @@ pub fn run(args: Vec<String>) -> Result<(), String> {
         }),
         passed: true,
     };
-    for (case, (samples, fingerprint)) in suite.cases.iter().zip(fixtures) {
+    for (case, (samples, fingerprint, bytes)) in suite.cases.iter().zip(fixtures) {
         println!("{} ({}, {})", case.id, case.category, case.provenance);
         let mut trials = vec![];
         for repetition in 0..repetitions {
-            let (result, latency_ms, partial_count) = transcribe(
-                &samples,
-                &format!("{}-{repetition}", case.id),
-                &audio_path(case),
-            );
+            let (result, latency_ms, partial_count) =
+                transcribe(&samples, &format!("{}-{repetition}", case.id), &bytes);
             let mut trial = Trial {
                 latency_ms,
                 raw: None,
@@ -742,6 +761,45 @@ pub fn run(args: Vec<String>) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn warmup_uses_expected_speech_not_audio_gain() {
+        let case = |expected: &str| {
+            serde_json::from_value::<Case>(serde_json::json!({"id":"case","category":"test","provenance":"synthetic","audio":"case.wav","expected":expected,"max_wer":0})).unwrap()
+        };
+        assert_eq!(
+            warmup_case(&[case(""), case("quiet speech"), case("loud speech")]),
+            1
+        );
+        assert_eq!(warmup_case(&[case(""), case("")]), 0);
+        let mut silence = case("");
+        silence.accept_empty_recording = true;
+        assert!(expected_empty_recording(
+            &silence,
+            &BackendError::EmptyRecording
+        ));
+        assert!(!expected_empty_recording(
+            &silence,
+            &BackendError::StreamFailure("failed".into())
+        ));
+    }
+
+    #[test]
+    fn worker_snapshot_retains_original_bytes_and_never_overwrites() {
+        let source =
+            std::env::temp_dir().join(format!("lyra-bench-source-{}.wav", uuid::Uuid::new_v4()));
+        let staged = source.with_extension("snapshot.wav");
+        let original = crate::audio::encode_pcm_wav(&[0.001, -0.001], 16000);
+        fs::write(&source, &original).unwrap();
+        let bytes = fs::read(&source).unwrap();
+        fs::write(&source, crate::audio::encode_pcm_wav(&[0.5], 16000)).unwrap();
+        write_snapshot(&staged, &bytes).unwrap();
+        assert_eq!(fs::read(&staged).unwrap(), original);
+        assert!(write_snapshot(&staged, b"replacement").is_err());
+        assert_eq!(fs::read(&staged).unwrap(), original);
+        fs::remove_file(&staged).unwrap();
+        fs::remove_file(&source).unwrap();
+    }
 
     fn baseline() -> Report {
         serde_json::from_value(serde_json::json!({
