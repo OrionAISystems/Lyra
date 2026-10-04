@@ -41,6 +41,8 @@ Identifier-like adjacency, existing versions, URLs, written dates, repeated digi
 
 Known short unit abbreviations in uppercase remain quantity context (`five GB` → `5 GB`, `twelve MB` → `12 MB`), rather than title signals. Minor-currency conflicts are checked before committing any part of the amount: `one dollar and five pence` and `$1 and five cents euros` remain wholly literal. Comma- or newline-separated denominations belong to separate contexts.
 
+Written numeric date forms such as `2026-10-04` remain literal. Ordinary multiword cardinals still convert beside calendar words (`October twenty five, 2026` → `October 25, 2026`); that changes the number's spelling without inferring or rearranging date layout. The formatter does not interpret month/day order or expand ordinals into date fields. Monetary lookback supports a cue within four tokens through recognized short copulas, modifiers or payment pronouns (`price is about five pounds`, `owe me five pounds`), stopping at punctuation, line breaks and other content words to avoid treating a later weight as a price. Smart opening single quotes permit quantity conversion, and typographic word-internal apostrophes retain the mixed-case name safeguard (`d’Artagnan`).
+
 Converting standalone multiword numbers still carries the explicitly chosen tradeoff: a lowercase name or idiom that is also a valid English number phrase can be converted. The formatter cannot recover a name that a recognizer already emitted as digits. Calendar/date layout, telephone/PIN formatting, ordinals, fractions, scientific notation and non-English grammars are outside this pass. Disable spoken formatting for literal/code-oriented dictation; profile overrides and later personalization remain available.
 
 ## Regression evidence

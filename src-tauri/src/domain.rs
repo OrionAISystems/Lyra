@@ -600,7 +600,7 @@ fn sentence_content_start(text: &str) -> usize {
 fn capitalize_sentence_start(text: &str) -> String {
     let start = sentence_content_start(text);
     let word = text[start..]
-        .split(|c: char| !c.is_alphabetic() && c != '\'')
+        .split(|c: char| !c.is_alphabetic() && !matches!(c, '\'' | '’'))
         .next()
         .unwrap_or("");
     let Some(first) = word.chars().next().filter(|c| c.is_lowercase()) else {
@@ -1031,6 +1031,38 @@ mod tests {
             ("(Send it scratch that eBay", "eBay"),
             ("Done. (Send it scratch that send this", "Done. Send this"),
             ("(Send it scratch that \"send this\"", "\"Send this\""),
+        ] {
+            assert_eq!(
+                process_transcription_text(source, None, options),
+                expected,
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn sentence_casing_preserves_names_with_curly_apostrophes() {
+        let options = TextProcessingOptions {
+            formatting_commands_enabled: true,
+            self_correction_enabled: true,
+            corrections: &[],
+            snippets: &[],
+        };
+        for (source, expected) in [
+            (
+                "hello period d’Artagnan arrived",
+                "hello. d’Artagnan arrived",
+            ),
+            (
+                "hello period d'Artagnan arrived",
+                "hello. d'Artagnan arrived",
+            ),
+            (
+                "Send this scratch that d’Artagnan arrived",
+                "d’Artagnan arrived",
+            ),
+            ("hello period l’esprit", "hello. L’esprit"),
+            ("‘five boxes’", "‘5 boxes’"),
         ] {
             assert_eq!(
                 process_transcription_text(source, None, options),

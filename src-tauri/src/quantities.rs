@@ -254,6 +254,24 @@ fn currency(word: &str) -> Option<&'static str> {
     }
 }
 
+fn monetary_cue(word: &str) -> bool {
+    matches!(
+        word,
+        "cost"
+            | "costs"
+            | "pay"
+            | "paid"
+            | "price"
+            | "charge"
+            | "charged"
+            | "spend"
+            | "spent"
+            | "budget"
+            | "owe"
+            | "owes"
+    )
+}
+
 fn quantity_unit(word: &str) -> bool {
     matches!(
         word,
@@ -520,28 +538,39 @@ pub(crate) fn normalize(text: &str) -> String {
         // sterling qualifier, or a nearby monetary verb/noun in the same clause.
         let money_cue = (0..start)
             .rev()
-            .take(2)
+            .take(4)
             .take_while(|&index| {
                 gap(text, &tokens[index], &tokens[index + 1])
-                    && lower[index].chars().all(char::is_alphabetic)
+                    && (monetary_cue(&lower[index])
+                        || matches!(
+                            lower[index].as_str(),
+                            "is" | "are"
+                                | "was"
+                                | "were"
+                                | "be"
+                                | "been"
+                                | "will"
+                                | "has"
+                                | "have"
+                                | "about"
+                                | "roughly"
+                                | "approximately"
+                                | "around"
+                                | "just"
+                                | "only"
+                                | "exactly"
+                                | "me"
+                                | "him"
+                                | "her"
+                                | "them"
+                                | "us"
+                                | "you"
+                                | "it"
+                                | "at"
+                                | "of"
+                        ))
             })
-            .any(|index| {
-                matches!(
-                    lower[index].as_str(),
-                    "cost"
-                        | "costs"
-                        | "pay"
-                        | "paid"
-                        | "price"
-                        | "charge"
-                        | "charged"
-                        | "spend"
-                        | "spent"
-                        | "budget"
-                        | "owe"
-                        | "owes"
-                )
-            });
+            .any(|index| monetary_cue(&lower[index]));
         let named_currency = next.and_then(currency).filter(|_| unit_gap);
         let money = named_currency
             .filter(|currency| *currency != "£" || symbol == Some("£") || sterling || money_cue);
@@ -605,7 +634,7 @@ pub(crate) fn normalize(text: &str) -> String {
             .chars()
             .next_back()
             .is_some_and(|c| {
-                !c.is_whitespace() && !matches!(c, '(' | '[' | '{' | '"' | '\'' | '“')
+                !c.is_whitespace() && !matches!(c, '(' | '[' | '{' | '"' | '\'' | '“' | '‘')
             });
         let identifier_tail = tokens.get(number_end).is_some_and(|next| {
             next.start == tokens[number_end - 1].end
@@ -685,6 +714,42 @@ pub(crate) fn normalize(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn monetary_cues_allow_short_copulas_but_stop_at_content_boundaries() {
+        for (source, expected) in [
+            ("price is about five pounds", "price is about £5"),
+            ("cost was roughly five pounds", "cost was roughly £5"),
+            ("costs just five pounds", "costs just £5"),
+            ("owe me five pounds", "owe me £5"),
+            ("price will be about five pounds", "price will be about £5"),
+            (
+                "price is high but weighs five pounds",
+                "price is high but weighs 5 pounds",
+            ),
+            (
+                "price is high, about five pounds",
+                "price is high, about 5 pounds",
+            ),
+            ("price is\nabout five pounds", "price is\nabout 5 pounds"),
+        ] {
+            assert_eq!(normalize(source), expected, "{source}");
+        }
+    }
+
+    #[test]
+    fn quantities_inside_smart_single_quotes_format() {
+        assert_eq!(normalize("‘five boxes’"), "‘5 boxes’");
+        assert_eq!(normalize("‘twenty five’"), "‘25’");
+        assert_eq!(normalize("‘one more thing’"), "‘one more thing’");
+    }
+
+    #[test]
+    fn cardinal_date_words_do_not_imply_date_layout_inference() {
+        assert_eq!(normalize("October twenty five, 2026"), "October 25, 2026");
+        assert_eq!(normalize("twenty five of October"), "25 of October");
+        assert_eq!(normalize("2026-10-04"), "2026-10-04");
+    }
 
     #[test]
     fn conflicting_minor_currency_clauses_remain_wholly_literal() {
