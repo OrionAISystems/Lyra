@@ -74,6 +74,16 @@ ambiguity policy; change that contract explicitly when behavior changes.
   publication. Preserve pinned verification keys, HTTPS feeds, staged checksum
   verification and separation of application updates from seasonal artwork.
 
+## Source control
+
+- Follow [the commit conventions](docs/engineering/commits.md) when creating a
+  Git commit. The message rules apply whether Git receives the message through
+  `-m`, `-F`, an editor, or another interface.
+- Follow [the pull request guide](docs/engineering/pull-requests.md) when
+  preparing a PR title or description.
+- Keep commits focused on one coherent change. Commit and push only when
+  requested, and include only validation that was actually performed.
+
 ## Code Review Rules
 
 - Review the current revision proportionally to its intent and scope. Report
