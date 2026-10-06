@@ -1,12 +1,24 @@
 # Dictation text formatting
 
-All recognition routes share `process_transcription_text`: line-ending normalization → self-correction → spoken formatting/quantities → corrections → snippets → insertion cleanup. Formatting obeys the existing **Spoken formatting** switch and profile flag. Self-correction has its own preference; later personalization wins. No new UI, dependency, model call or service is added.
+All recognition routes share the domain text-processing pipeline (`process_transcription_text` and its insertion-context variant): line-ending normalization → self-correction → spoken formatting/quantities/contextual casing → corrections → snippets → insertion cleanup. Formatting obeys the existing **Spoken formatting** switch and profile flag. Self-correction has its own preference; later personalization wins. No model call or external service is used for formatting.
 
 ## Punctuation and casing
 
 Spoken comma/period commands own adjacent recognizer punctuation, including marks separated by spaces/tabs: `report period.` → `report.`, `Hello. , period next` → `Hello. Next`. They do not cross line breaks when removing marks. Literal punctuation without a spoken cue remains intact.
 
 A spoken period capitalizes the following lowercase word, including after opening quotes or a line break. Mixed-case spellings such as `eBay`, `d’Artagnan` and `i-Ready` survive. A bare newline does not recase list items. Self-correction preserves the replaced clause's initial uppercase style, including after opening delimiters.
+
+### Continuing text at the insertion cursor
+
+For automatic Dictation paste with Spoken formatting and the target app's formatting profile enabled, Lyra queries the focused Windows accessibility TextPattern immediately before final text processing/paste. It requests a range of 128 characters before the actual caret, including text typed manually. Returned text is bounded to 129 UTF-16 units; the extra unit is used only to reject oversized or incorrectly expanded provider ranges. It does not use the previous Lyra transcript. The query never moves the selection, sends keystrokes, reads the clipboard, or retrieves the entire document.
+
+If the preceding context indicates an unfinished sentence, a recognized initial titlecase word becomes lowercase: `typed text ` + `And this continues` → `typed text and this continues`. Only the opening word changes; later sentences retain their casing. Period/question/exclamation marks, ellipses and paragraph breaks retain the recognized opening case, looking past spaces, tabs, nonbreaking spaces and surrounding quote/bracket marks. An existing letter/digit immediately before insertion uses the shared word-spacing cleanup.
+
+`I` and its common contractions, acronyms, mixed-case spellings, enabled capitalized Words entries, and matching Corrections/Snippet triggers preserve their casing. Corrections and snippets still own the final text. A titlecase proper name such as `John` cannot be distinguished deterministically from recognizer-added sentence capitalization; add it to Words or Corrections to preserve it at the start of a continuation. No change is made to Scratchpad, clipboard-only output, replay of saved text, or formatting-disabled captures.
+
+Context reading uses one dedicated COM worker with a bounded queue, provider timeouts, and a 250 ms caller budget. Only the preceding character and continuation flag return to the processing flow; surrounding text remains transient on the worker and is never logged, saved, exported or sent to recognition/cloud providers. Foreground HWND/process, focused element/process, password status and caret selection are checked; focus/selection changes, selected text, unsupported controls, overexpanded provider ranges, and timeouts fall back to recognized casing. Custom editors or elevated apps may not expose a usable TextPattern; support is verified per target rather than assumed.
+
+See [cursor-context acceptance](ACCEPTANCE-CURSOR-CONTEXT.md) for the synthetic native fixture and pending microphone/app checks.
 
 ## Canonical English quantities
 

@@ -367,9 +367,64 @@ pub struct TextProcessingOptions<'a> {
     pub snippets: &'a [crate::personalization::SnippetEntry],
 }
 
+/// Only insertion policy survives the accessibility query; surrounding text is not retained.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InsertionContext {
+    pub preceding_character: Option<char>,
+    pub continues_sentence: bool,
+}
+
+impl InsertionContext {
+    pub fn from_prefix(prefix: &str) -> Self {
+        let preceding_character = prefix.chars().next_back();
+        let significant = prefix.chars().rev().find(|c| {
+            !matches!(
+                c,
+                ' ' | '\t'
+                    | '\u{a0}'
+                    | '"'
+                    | '\''
+                    | '“'
+                    | '”'
+                    | '‘'
+                    | '’'
+                    | '('
+                    | ')'
+                    | '['
+                    | ']'
+                    | '{'
+                    | '}'
+            )
+        });
+        Self {
+            preceding_character,
+            continues_sentence: significant.is_some_and(|c| {
+                !matches!(c, '.' | '!' | '?' | '\n' | '\r' | '。' | '！' | '？' | '…')
+            }),
+        }
+    }
+}
+
 pub fn process_transcription_text(
     raw: &str,
     preceding_character: Option<char>,
+    options: TextProcessingOptions<'_>,
+) -> String {
+    process_transcription_text_with_context(
+        raw,
+        preceding_character.map(|character| InsertionContext {
+            preceding_character: Some(character),
+            continues_sentence: false,
+        }),
+        &[],
+        options,
+    )
+}
+
+pub fn process_transcription_text_with_context(
+    raw: &str,
+    context: Option<InsertionContext>,
+    words: &[crate::personalization::WordEntry],
     options: TextProcessingOptions<'_>,
 ) -> String {
     let normalized = raw.replace("\r\n", "\n").replace('\r', "\n");
@@ -391,6 +446,9 @@ pub fn process_transcription_text(
         text = replace_spoken_punctuation(&text, "period", '.');
         text = normalize_formatting_spacing(&text);
         text = crate::quantities::normalize(&text);
+        if context.is_some_and(|context| context.continues_sentence) {
+            text = lowercase_continuation_start(&text, words, options);
+        }
     }
 
     let mut corrections = options
@@ -410,7 +468,62 @@ pub fn process_transcription_text(
 
     text = crate::personalization::apply_snippets(&text, options.snippets);
 
-    post_process(&text, preceding_character)
+    post_process(
+        &text,
+        context.and_then(|context| context.preceding_character),
+    )
+}
+
+fn lowercase_continuation_start(
+    text: &str,
+    words: &[crate::personalization::WordEntry],
+    options: TextProcessingOptions<'_>,
+) -> String {
+    // Explicit new-line commands start a fresh block. Later personalization owns its casing.
+    if text.starts_with(['\n', '\r']) {
+        return text.to_owned();
+    }
+    let start = sentence_content_start(text);
+    let starts_with_phrase = |phrase: &str, case_sensitive| {
+        find_phrase(text, start, phrase.trim(), case_sensitive)
+            .is_some_and(|(found, _)| found == start)
+    };
+    if words.iter().any(|word| {
+        word.enabled
+            && !word.phrase.trim().is_empty()
+            && word.phrase.chars().any(char::is_uppercase)
+            && starts_with_phrase(&word.phrase, false)
+    }) || options.corrections.iter().any(|entry| {
+        entry.enabled
+            && !entry.source.trim().is_empty()
+            && starts_with_phrase(&entry.source, entry.case_sensitive)
+    }) || options.snippets.iter().any(|entry| {
+        entry.enabled
+            && !entry.trigger.trim().is_empty()
+            && starts_with_phrase(&entry.trigger, entry.case_sensitive)
+    }) {
+        return text.to_owned();
+    }
+    let word = text[start..]
+        .split(|c: char| !c.is_alphabetic() && !matches!(c, '\'' | '’' | '-'))
+        .next()
+        .unwrap_or("");
+    let Some(first) = word.chars().next().filter(|c| c.is_uppercase()) else {
+        return text.to_owned();
+    };
+    let rest = &word[first.len_utf8()..];
+    if rest.chars().any(char::is_uppercase)
+        || word == "I"
+        || ["I'm", "I'll", "I've", "I'd", "I’m", "I’ll", "I’ve", "I’d"].contains(&word)
+    {
+        return text.to_owned();
+    }
+    format!(
+        "{}{}{}",
+        &text[..start],
+        first.to_lowercase(),
+        &text[start + first.len_utf8()..]
+    )
 }
 
 fn apply_explicit_self_correction(text: &str) -> String {
@@ -705,6 +818,154 @@ fn normalize_formatting_spacing(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cursor_context_distinguishes_continuations_from_sentence_and_paragraph_boundaries() {
+        for prefix in [
+            "typed some text",
+            "typed some text ",
+            "text,\t",
+            "unfinished (\"",
+            "quoted text’ ",
+        ] {
+            assert!(
+                InsertionContext::from_prefix(prefix).continues_sentence,
+                "{prefix:?}"
+            );
+        }
+        for prefix in [
+            "",
+            " \t",
+            "finished. ",
+            "finished!\" ",
+            "finished? (",
+            "new paragraph\n\t",
+            "finished… ",
+        ] {
+            assert!(
+                !InsertionContext::from_prefix(prefix).continues_sentence,
+                "{prefix:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn continuation_casing_adjusts_only_the_initial_word_and_keeps_later_sentences() {
+        let options = TextProcessingOptions {
+            formatting_commands_enabled: true,
+            self_correction_enabled: true,
+            corrections: &[],
+            snippets: &[],
+        };
+        for (raw, expected) in [
+            (
+                "And this continues. Another sentence.",
+                "and this continues. Another sentence.",
+            ),
+            ("\"And this continues\"", "\"and this continues\""),
+            ("Également ici", "également ici"),
+            ("Well-known names", "well-known names"),
+            ("I agree", "I agree"),
+            ("I'll finish", "I'll finish"),
+            ("I’m ready", "I’m ready"),
+            ("NASA is ready", "NASA is ready"),
+            ("OpenAI is ready", "OpenAI is ready"),
+            ("eBay is ready", "eBay is ready"),
+            ("Next period another sentence", "next. Another sentence"),
+            ("new line Next item", "Next item"),
+        ] {
+            assert_eq!(
+                process_transcription_text_with_context(
+                    raw,
+                    Some(InsertionContext::from_prefix("typed text ")),
+                    &[],
+                    options
+                ),
+                expected,
+                "{raw}"
+            );
+        }
+        assert_eq!(
+            process_transcription_text_with_context(
+                "And this continues",
+                Some(InsertionContext::from_prefix("typed text")),
+                &[],
+                options
+            ),
+            " and this continues"
+        );
+        for context in [
+            None,
+            Some(InsertionContext::from_prefix("Done. ")),
+            Some(InsertionContext::from_prefix("\n")),
+        ] {
+            assert_eq!(
+                process_transcription_text_with_context("And this begins", context, &[], options),
+                "And this begins"
+            );
+        }
+        assert_eq!(
+            process_transcription_text_with_context(
+                "And literal text",
+                Some(InsertionContext::from_prefix("typed text ")),
+                &[],
+                TextProcessingOptions {
+                    formatting_commands_enabled: false,
+                    ..options
+                }
+            ),
+            "And literal text"
+        );
+    }
+
+    #[test]
+    fn continuation_casing_respects_personalized_names_corrections_and_snippets() {
+        let context = Some(InsertionContext::from_prefix("send this to "));
+        let words = [crate::personalization::WordEntry {
+            phrase: "John Smith".to_owned(),
+            enabled: true,
+            boost: 1.0,
+        }];
+        let corrections = [CorrectionEntry {
+            source: "And".to_owned(),
+            replacement: "AND".to_owned(),
+            enabled: true,
+            case_sensitive: true,
+        }];
+        let snippets = [crate::personalization::SnippetEntry {
+            trigger: "Signature".to_owned(),
+            expansion: "Kind regards,\nJohn".to_owned(),
+            enabled: true,
+            case_sensitive: true,
+        }];
+        let options = TextProcessingOptions {
+            formatting_commands_enabled: true,
+            self_correction_enabled: true,
+            corrections: &corrections,
+            snippets: &snippets,
+        };
+        assert_eq!(
+            process_transcription_text_with_context(
+                "John Smith tomorrow",
+                context,
+                &words,
+                options
+            ),
+            "John Smith tomorrow"
+        );
+        assert_eq!(
+            process_transcription_text_with_context("And this continues", context, &words, options),
+            "AND this continues"
+        );
+        assert_eq!(
+            process_transcription_text_with_context("Signature", context, &words, options),
+            "Kind regards,\nJohn"
+        );
+        assert_eq!(
+            process_transcription_text_with_context("Ordinary text", context, &words, options),
+            "ordinary text"
+        );
+    }
 
     #[test]
     fn push_to_talk_requires_key_up_to_stop() {

@@ -2288,17 +2288,53 @@ fn process_capture(
         }
     };
     result.audio_duration_ms = captured_duration_ms;
-    result.text = crate::domain::process_transcription_text(
-        &result.text,
-        None,
-        TextProcessingOptions {
-            formatting_commands_enabled: settings.formatting_commands_enabled
-                && profile.formatting_enabled,
-            self_correction_enabled: personalization.self_correction_enabled,
-            corrections: &personalization.corrections,
-            snippets: &personalization.snippets,
-        },
+    // A canceled/replaced request should not inspect the user's current editor.
+    // The later commit guard still covers cancellation during this bounded query.
+    {
+        let state_guard = match state.lock() {
+            Ok(state) => state,
+            Err(_) => return,
+        };
+        if !request_can_commit(
+            &state_guard.snapshot,
+            state_guard.session.state(),
+            &request_id,
+        ) {
+            return;
+        }
+    }
+    let insertion_context = if destination == SessionDestination::Dictation
+        && settings.auto_paste
+        && settings.formatting_commands_enabled
+        && profile.formatting_enabled
+        && profile.injection_strategy != crate::personalization::InjectionStrategy::ClipboardOnly
+    {
+        target.and_then(|target| injector.insertion_context(target))
+    } else {
+        None
+    };
+    let text_options = TextProcessingOptions {
+        formatting_commands_enabled: settings.formatting_commands_enabled
+            && profile.formatting_enabled,
+        self_correction_enabled: personalization.self_correction_enabled,
+        corrections: &personalization.corrections,
+        snippets: &personalization.snippets,
+    };
+    info!(
+        context_available = insertion_context.is_some(),
+        continues_sentence = insertion_context.is_some_and(|context| context.continues_sentence),
+        "insertion context resolved"
     );
+    result.text = if insertion_context.is_some() {
+        crate::domain::process_transcription_text_with_context(
+            &result.text,
+            insertion_context,
+            &personalization.words,
+            text_options,
+        )
+    } else {
+        crate::domain::process_transcription_text(&result.text, None, text_options)
+    };
     if result.text.is_empty() {
         finish_error(&state, &request_id, BackendError::EmptyRecording);
         return;

@@ -75,6 +75,7 @@ The Rust side owns state transitions and side effects. The frontend renders even
 - `tray.rs`: the single tray update menu item, kept in sync with updater status.
 - `clipboard.rs`: bounded Windows text snapshots, sequence-number-guarded clipboard recovery, and clipboard operations.
 - `windows.rs`: foreground target capture, display enumeration, active/primary/fixed monitor placement, fallback status, non-activating bar behavior, and `SendInput` integration with an HWND/process/focus recheck before each injection.
+- `cursor_context.rs`: read-only Windows TextPattern query on a dedicated bounded COM worker. A bounded range before the caret produces transient casing/spacing policy; unsupported, password, selected or changed targets and timeouts preserve recognized casing. Queries run after recognition and never supply context to recognition providers. See [TEXT-FORMATTING.md](docs/TEXT-FORMATTING.md) for the range limits, policy and privacy boundary.
 - `commands.rs`: Tauri commands and event emission; this is presentation wiring, not domain policy.
 
 ## v0.5 settings and lifecycle contracts

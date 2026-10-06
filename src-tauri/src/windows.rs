@@ -174,7 +174,7 @@ mod platform {
         thread_id != 0 && target_identity_matches(target, hwnd as isize, process_id)
     }
 
-    fn target_is_foreground(target: TargetContext) -> bool {
+    pub fn target_is_foreground(target: TargetContext) -> bool {
         if !target_is_alive(target) {
             return false;
         }
@@ -604,6 +604,9 @@ pub use platform::{
     capture_foreground_target, focus_target, inject_ctrl_v, inject_shift_insert, target_executable,
     target_is_alive,
 };
+
+#[cfg(windows)]
+pub use platform::target_is_foreground;
 
 pub fn capture_external_foreground_target(excluded_process_id: u32) -> Option<TargetContext> {
     capture_foreground_target()
