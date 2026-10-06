@@ -80,6 +80,8 @@ The internal [transcription regression benchmark](benchmarks/transcription/READM
 - [docs/MODELS.md](docs/MODELS.md) records pinned runtime/model sources, checksums, licenses, and storage policy.
 - [docs/RELEASES.md](docs/RELEASES.md) records the tag, signing, cross-repository publication, and update-feed contract.
 - [docs/THEMES.md](docs/THEMES.md) records the signed seasonal catalog, authoring format, publication workflow, and validation limits.
+- [docs/engineering/commits.md](docs/engineering/commits.md) defines commit subjects, types, message bodies, and commit boundaries.
+- [docs/engineering/pull-requests.md](docs/engineering/pull-requests.md) guides branch-level PR titles, descriptions, validation, and risks.
 - [CHANGELOG.md](CHANGELOG.md) records the canonical per-version changes and is mirrored to the public [Lyra-Releases changelog](https://github.com/OrionAISystems/Lyra-Releases/blob/main/CHANGELOG.md).
 
 The v1 scope is Windows x64, local-first dictation, optional English streaming recognition, optional OpenAI fallback, secure target-aware injection, independent metadata-only Insights, optional local transcript History, and intentional Scratchpad entries. Lyra never saves audio. Transcript History starts Off, while Scratchpad text is saved only after a deliberate Scratchpad capture. Mobile/macOS/Linux, accounts, teams, rewriting, editor extensions, and persistent developer context remain future phases.
