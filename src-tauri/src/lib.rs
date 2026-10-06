@@ -2,6 +2,7 @@ mod audio;
 mod benchmark;
 mod clipboard;
 mod commands;
+mod cursor_context;
 mod domain;
 mod native_nemo;
 mod personalization;
@@ -38,6 +39,7 @@ use crate::updater::UpdateManager;
 use crate::usage::UsageStatsStore;
 
 pub fn run() {
+    cursor_context::initialize();
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("lyra=info")),

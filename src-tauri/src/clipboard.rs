@@ -22,6 +22,9 @@ pub struct InjectionOutcome {
 }
 
 pub trait TextInjector: Send + Sync {
+    fn insertion_context(&self, _target: TargetContext) -> Option<crate::domain::InsertionContext> {
+        None
+    }
     fn copy_text(&self, text: &str) -> Result<(), BackendError>;
     fn paste_into_target(
         &self,
@@ -162,6 +165,9 @@ impl ClipboardService {
 }
 
 impl TextInjector for ClipboardService {
+    fn insertion_context(&self, target: TargetContext) -> Option<crate::domain::InsertionContext> {
+        crate::cursor_context::read(target)
+    }
     fn copy_text(&self, text: &str) -> Result<(), BackendError> {
         ClipboardService::copy_text(self, text)
     }
