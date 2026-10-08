@@ -20,6 +20,8 @@ If the preceding context indicates an unfinished sentence, a recognized initial 
 
 Context reading uses one dedicated COM worker with a bounded queue, provider timeouts, and a 250 ms caller budget. Only the preceding character and continuation flag return to the processing flow; surrounding text remains transient on the worker and is never logged, saved, exported or sent to recognition/cloud providers. Foreground HWND/process, focused element/process, password status and caret selection are checked; focus/selection changes, selected text, unsupported controls, overexpanded provider ranges, and timeouts fall back to fresh-utterance casing. Custom editors or elevated apps may not expose a usable TextPattern; support is verified per target rather than assumed.
 
+The TextPattern document range must be owned by the focused field. Placeholder/container-owned ranges are rejected before reading any text, and the caret/lookback are confined to the accepted document bounds. In the observed Codex composer, Chromium attributes the document range to a placeholder descendant and returns the same range through `RangeFromChild` on the composer. These ambiguous providers use fresh-dictation casing rather than interpreting their reported prefix as a continuation. Automatic continuation casing is unavailable there until the provider exposes a field-owned range.
+
 See [cursor-context acceptance](ACCEPTANCE-CURSOR-CONTEXT.md) for the synthetic native fixture and pending microphone/app checks.
 
 ## Canonical English quantities

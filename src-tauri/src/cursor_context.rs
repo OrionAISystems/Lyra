@@ -32,8 +32,9 @@ mod platform {
             COINIT_MULTITHREADED,
         },
         UI::Accessibility::{
-            CUIAutomation8, IUIAutomation2, IUIAutomationTextPattern, TextPatternRangeEndpoint_End,
-            TextPatternRangeEndpoint_Start, TextUnit_Character, UIA_TextPatternId,
+            CUIAutomation8, IUIAutomation2, IUIAutomationElement, IUIAutomationTextPattern,
+            IUIAutomationTextRange, TextPatternRangeEndpoint_End, TextPatternRangeEndpoint_Start,
+            TextUnit_Character, UIA_TextPatternId,
         },
     };
 
@@ -130,6 +131,7 @@ mod platform {
             return Err(unknown());
         }
         let pattern: IUIAutomationTextPattern = focused.GetCurrentPatternAs(UIA_TextPatternId)?;
+        let document = field_document(automation, &focused, &pattern)?;
         let selection = pattern.GetSelection()?;
         // A replacement selection or multiple selections have ambiguous insertion semantics.
         if selection.Length()? != 1 {
@@ -144,12 +146,37 @@ mod platform {
         {
             return Err(unknown());
         }
+        if caret.CompareEndpoints(
+            TextPatternRangeEndpoint_Start,
+            &document,
+            TextPatternRangeEndpoint_Start,
+        )? < 0
+            || caret.CompareEndpoints(
+                TextPatternRangeEndpoint_End,
+                &document,
+                TextPatternRangeEndpoint_End,
+            )? > 0
+        {
+            return Err(unknown());
+        }
         let prefix = caret.Clone()?;
         prefix.MoveEndpointByUnit(
             TextPatternRangeEndpoint_Start,
             TextUnit_Character,
             -CONTEXT_CHARACTERS,
         )?;
+        if prefix.CompareEndpoints(
+            TextPatternRangeEndpoint_Start,
+            &document,
+            TextPatternRangeEndpoint_Start,
+        )? < 0
+        {
+            prefix.MoveEndpointByRange(
+                TextPatternRangeEndpoint_Start,
+                &document,
+                TextPatternRangeEndpoint_Start,
+            )?;
+        }
         // Request one extra unit to reject providers that expand Character to a larger unit.
         let text = prefix.GetText(CONTEXT_CHARACTERS + 1)?;
         if text.len() > CONTEXT_CHARACTERS as usize {
@@ -183,6 +210,96 @@ mod platform {
             return Err(unknown());
         }
         Ok(context)
+    }
+
+    unsafe fn field_document(
+        automation: &IUIAutomation2,
+        focused: &IUIAutomationElement,
+        pattern: &IUIAutomationTextPattern,
+    ) -> windows::core::Result<IUIAutomationTextRange> {
+        // Chromium can expose a placeholder/container-owned TextPattern on an
+        // edit. Even RangeFromChild(edit) can return that same ambiguous range,
+        // so its selection/lookback are not evidence of text in the field.
+        let document = pattern.DocumentRange()?;
+        if !automation
+            .CompareElements(focused, &document.GetEnclosingElement()?)?
+            .as_bool()
+        {
+            return Err(windows::core::Error::from_hresult(windows::core::HRESULT(
+                0x80004005u32 as i32,
+            )));
+        }
+        Ok(document)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        #[ignore = "read-only live Codex provider check; requires explicit HWND and PID"]
+        fn delegated_composer_range_is_rejected_without_reading_text() {
+            use windows::Win32::{
+                Foundation::HWND,
+                System::Variant::VARIANT,
+                UI::Accessibility::{TreeScope_Descendants, UIA_ClassNamePropertyId},
+            };
+            let hwnd: usize = std::env::var("LYRA_COMPOSER_PROBE_HWND")
+                .expect("explicit composer HWND required")
+                .parse()
+                .unwrap();
+            let pid: i32 = std::env::var("LYRA_COMPOSER_PROBE_PID")
+                .expect("explicit composer PID required")
+                .parse()
+                .unwrap();
+            unsafe {
+                CoInitializeEx(None, COINIT_MULTITHREADED).unwrap();
+                let result = (|| -> windows::core::Result<()> {
+                    let automation: IUIAutomation2 =
+                        CoCreateInstance(&CUIAutomation8, None, CLSCTX_INPROC_SERVER)?;
+                    automation.SetConnectionTimeout(100)?;
+                    automation.SetTransactionTimeout(150)?;
+                    let root = automation.ElementFromHandle(HWND(hwnd as *mut _))?;
+                    assert_eq!(root.CurrentProcessId()?, pid);
+                    let condition = automation.CreatePropertyCondition(
+                        UIA_ClassNamePropertyId,
+                        &VARIANT::from("ProseMirror"),
+                    )?;
+                    let field = root.FindFirst(TreeScope_Descendants, &condition)?;
+                    assert_eq!(field.CurrentProcessId()?, pid);
+                    assert!(!field.CurrentIsPassword()?.as_bool());
+                    let pattern: IUIAutomationTextPattern =
+                        field.GetCurrentPatternAs(UIA_TextPatternId)?;
+                    let document = pattern.DocumentRange()?;
+                    assert!(!automation
+                        .CompareElements(&field, &document.GetEnclosingElement()?)?
+                        .as_bool());
+                    assert!(pattern
+                        .RangeFromChild(&field)?
+                        .Compare(&document)?
+                        .as_bool());
+                    assert!(field_document(&automation, &field, &pattern).is_err());
+                    // The same fallback used by production must restore a clean opening.
+                    assert_eq!(
+                        crate::domain::process_transcription_text_with_context(
+                            " and this is dictated \u{200b}",
+                            None,
+                            &[],
+                            crate::domain::TextProcessingOptions {
+                                formatting_commands_enabled: true,
+                                self_correction_enabled: true,
+                                corrections: &[],
+                                snippets: &[],
+                            },
+                        ),
+                        "And this is dictated"
+                    );
+                    Ok(())
+                })();
+                CoUninitialize();
+                result.unwrap();
+            }
+        }
     }
 }
 
