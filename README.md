@@ -6,7 +6,7 @@ The repository is intentionally standalone. Lyra does not depend on Orion's gate
 
 ## Current phase
 
-v0.5.8 is being prepared as a dictation hotfix: fresh-utterance capitalization and leading/trailing whitespace cleanup while preserving v0.5.7 cursor-context continuations. Local and publication evidence is tracked in [docs/ACCEPTANCE-V0.5.8.md](docs/ACCEPTANCE-V0.5.8.md).
+v0.5.8 (2026-10-08 local time) is the current published release. It fixes fresh-utterance capitalization and leading/trailing whitespace cleanup while preserving v0.5.7 cursor-context continuations. The installer and signed updater feed are published in [Lyra-Releases](https://github.com/OrionAISystems/Lyra-Releases/releases/tag/v0.5.8); local and publication evidence is tracked in [docs/ACCEPTANCE-V0.5.8.md](docs/ACCEPTANCE-V0.5.8.md).
 
 Settings migrations through schema v5 are automatic and idempotent. Existing History, Scratchpad, appearance, audio, and personalization preferences are preserved; seasonal themes and motion can each be disabled. Runtime and model installation remains separate and explicit; the optional Nemotron model is independently versioned and verified.
 
