@@ -2325,16 +2325,12 @@ fn process_capture(
         continues_sentence = insertion_context.is_some_and(|context| context.continues_sentence),
         "insertion context resolved"
     );
-    result.text = if insertion_context.is_some() {
-        crate::domain::process_transcription_text_with_context(
-            &result.text,
-            insertion_context,
-            &personalization.words,
-            text_options,
-        )
-    } else {
-        crate::domain::process_transcription_text(&result.text, None, text_options)
-    };
+    result.text = crate::domain::process_transcription_text_with_context(
+        &result.text,
+        insertion_context,
+        &personalization.words,
+        text_options,
+    );
     if result.text.is_empty() {
         finish_error(&state, &request_id, BackendError::EmptyRecording);
         return;

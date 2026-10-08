@@ -12,6 +12,8 @@ This development change adjusts an opening word when automatic dictation paste c
 | Development executable with embedded frontend | Pass | `npm run build`; `npm run tauri:build -- --debug --no-bundle` rebuilt `src-tauri/target/debug/lyra.exe` after the final cancellation guard | 2026-10-06 |
 | Overall hands-on development-bundle use | User reports working | User said the behavior seems to work in the running development bundle; individual scenarios were not specified | 2026-10-06 |
 
+The v0.5.8 fixture additionally covers a completely empty RichEdit field and passes lowercase input with boundary whitespace through cleanup. All eight cases passed locally on 2026-10-08; the first pass had one transient unavailable sentence-boundary query, followed by an isolated pass and a full passing rerun. See [v0.5.8 acceptance](ACCEPTANCE-V0.5.8.md).
+
 To repeat the native synthetic fixture after compiling the regression-bench test executable:
 
 ```powershell

@@ -75,7 +75,7 @@ The Rust side owns state transitions and side effects. The frontend renders even
 - `tray.rs`: the single tray update menu item, kept in sync with updater status.
 - `clipboard.rs`: bounded Windows text snapshots, sequence-number-guarded clipboard recovery, and clipboard operations.
 - `windows.rs`: foreground target capture, display enumeration, active/primary/fixed monitor placement, fallback status, non-activating bar behavior, and `SendInput` integration with an HWND/process/focus recheck before each injection.
-- `cursor_context.rs`: read-only Windows TextPattern query on a dedicated bounded COM worker. A bounded range before the caret produces transient casing/spacing policy; unsupported, password, selected or changed targets and timeouts preserve recognized casing. Queries run after recognition and never supply context to recognition providers. See [TEXT-FORMATTING.md](docs/TEXT-FORMATTING.md) for the range limits, policy and privacy boundary.
+- `cursor_context.rs`: read-only Windows TextPattern query on a dedicated bounded COM worker. A bounded range before the caret produces transient casing/spacing policy; unsupported, password, selected or changed targets and timeouts use fresh-utterance casing. Queries run after recognition and never supply context to recognition providers. See [TEXT-FORMATTING.md](docs/TEXT-FORMATTING.md) for the range limits, policy and privacy boundary.
 - `commands.rs`: Tauri commands and event emission; this is presentation wiring, not domain policy.
 
 ## v0.5 settings and lifecycle contracts
@@ -103,6 +103,8 @@ The bar is placed at startup and at session start. Follow-active-window resolves
 The model artifact state (`RuntimeStatus`) is separate from recognizer state (`ModelRuntimeStatus`). `always_warm` preloads asynchronously when verified artifacts exist. Timed policies unload only after recognizer inactivity, and `never_keep_warm` releases the recognizer after each request; the recognizer lock prevents unload during recognition. A failed CUDA or Vulkan recognition retries against an already-installed verified fallback runtime before the error reaches cloud routing.
 
 The updater reserves installation before the async download begins. The reservation is made while the app state lock is held by the command, so a new capture cannot slip between the session check and installation. Errors release the reservation; a successful passive install keeps it until restart.
+
+Final transcript cleanup removes boundary whitespace, BOMs and zero-width space markers. With Spoken formatting enabled, a fresh dictation capitalizes its opening word, including after an opening quote. The bounded cursor-context query preserves lowercase continuation behavior; unavailable context defaults to a fresh utterance. Mixed-case names, structured tokens, Words, Corrections and Snippet triggers preserve their casing. See [TEXT-FORMATTING.md](docs/TEXT-FORMATTING.md) for the insertion policy.
 
 ## Privacy boundaries
 

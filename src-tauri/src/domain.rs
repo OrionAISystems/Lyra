@@ -338,7 +338,7 @@ impl DictationStateMachine {
 
 pub fn post_process(raw: &str, preceding_character: Option<char>) -> String {
     let normalized = raw.replace("\r\n", "\n").replace('\r', "\n");
-    let text = normalized.trim().to_string();
+    let text = trim_transcript_boundary(&normalized).to_string();
     if text.is_empty() {
         return text;
     }
@@ -428,7 +428,7 @@ pub fn process_transcription_text_with_context(
     options: TextProcessingOptions<'_>,
 ) -> String {
     let normalized = raw.replace("\r\n", "\n").replace('\r', "\n");
-    let mut text = normalized.trim().to_owned();
+    let mut text = trim_transcript_boundary(&normalized).to_owned();
     if text.is_empty() {
         return text;
     }
@@ -448,6 +448,8 @@ pub fn process_transcription_text_with_context(
         text = crate::quantities::normalize(&text);
         if context.is_some_and(|context| context.continues_sentence) {
             text = lowercase_continuation_start(&text, words, options);
+        } else if !start_has_personalization(&text, words, options) {
+            text = capitalize_dictation_start(&text);
         }
     }
 
@@ -474,21 +476,17 @@ pub fn process_transcription_text_with_context(
     )
 }
 
-fn lowercase_continuation_start(
+fn start_has_personalization(
     text: &str,
     words: &[crate::personalization::WordEntry],
     options: TextProcessingOptions<'_>,
-) -> String {
-    // Explicit new-line commands start a fresh block. Later personalization owns its casing.
-    if text.starts_with(['\n', '\r']) {
-        return text.to_owned();
-    }
+) -> bool {
     let start = sentence_content_start(text);
     let starts_with_phrase = |phrase: &str, case_sensitive| {
         find_phrase(text, start, phrase.trim(), case_sensitive)
             .is_some_and(|(found, _)| found == start)
     };
-    if words.iter().any(|word| {
+    words.iter().any(|word| {
         word.enabled
             && !word.phrase.trim().is_empty()
             && word.phrase.chars().any(char::is_uppercase)
@@ -501,9 +499,19 @@ fn lowercase_continuation_start(
         entry.enabled
             && !entry.trigger.trim().is_empty()
             && starts_with_phrase(&entry.trigger, entry.case_sensitive)
-    }) {
+    })
+}
+
+fn lowercase_continuation_start(
+    text: &str,
+    words: &[crate::personalization::WordEntry],
+    options: TextProcessingOptions<'_>,
+) -> String {
+    // Explicit new-line commands start a fresh block. Later personalization owns its casing.
+    if text.starts_with(['\n', '\r']) || start_has_personalization(text, words, options) {
         return text.to_owned();
     }
+    let start = sentence_content_start(text);
     let word = text[start..]
         .split(|c: char| !c.is_alphabetic() && !matches!(c, '\'' | '’' | '-'))
         .next()
@@ -524,6 +532,27 @@ fn lowercase_continuation_start(
         first.to_lowercase(),
         &text[start + first.len_utf8()..]
     )
+}
+
+fn trim_transcript_boundary(text: &str) -> &str {
+    // Invisible boundary markers must not shield adjacent whitespace from trim.
+    text.trim_matches(|character: char| {
+        character.is_whitespace() || matches!(character, '\u{feff}' | '\u{200b}')
+    })
+}
+
+fn capitalize_dictation_start(text: &str) -> String {
+    let start = sentence_content_start(text);
+    let token = text[start..].split_whitespace().next().unwrap_or_default();
+    // Preserve literal URLs, email addresses, paths and identifiers.
+    if token.contains(['/', '\\', '@', '_'])
+        || token
+            .trim_end_matches(['.', '!', '?', ',', ';', ':'])
+            .contains('.')
+    {
+        return text.to_owned();
+    }
+    capitalize_sentence_start(text)
 }
 
 fn apply_explicit_self_correction(text: &str) -> String {
@@ -1059,6 +1088,137 @@ mod tests {
     }
 
     #[test]
+    fn new_dictations_start_cleanly_while_known_continuations_keep_their_case() {
+        let options = TextProcessingOptions {
+            formatting_commands_enabled: true,
+            self_correction_enabled: false,
+            corrections: &[],
+            snippets: &[],
+        };
+        for raw in [
+            " looks good",
+            "\u{feff} looks good",
+            "\u{200b} looks good ",
+            "\tlooks good \u{200b}\u{feff}\r\n",
+        ] {
+            assert_eq!(process_transcription_text(raw, None, options), "Looks good");
+        }
+        assert_eq!(process_transcription_text("élan", None, options), "Élan");
+        assert_eq!(
+            process_transcription_text("“looks good”", None, options),
+            "“Looks good”"
+        );
+        assert_eq!(
+            process_transcription_text_with_context(
+                "looks good",
+                Some(InsertionContext::from_prefix("a")),
+                &[],
+                options
+            ),
+            " looks good"
+        );
+        assert_eq!(
+            process_transcription_text_with_context(
+                "looks good",
+                Some(InsertionContext::from_prefix("existing text ")),
+                &[],
+                options
+            ),
+            "looks good"
+        );
+        assert_eq!(
+            process_transcription_text("looks good", Some('\n'), options),
+            "Looks good"
+        );
+        assert_eq!(
+            process_transcription_text("123 items", None, options),
+            "123 items"
+        );
+        assert_eq!(
+            process_transcription_text("\u{200b} \r\n", None, options),
+            ""
+        );
+        for prefix in ["", " ", "Done. ", "Done! ", "\n"] {
+            assert_eq!(
+                process_transcription_text_with_context(
+                    " looks good ",
+                    Some(InsertionContext::from_prefix(prefix)),
+                    &[],
+                    options
+                ),
+                "Looks good"
+            );
+        }
+        assert_eq!(
+            process_transcription_text(
+                " looks good ",
+                None,
+                TextProcessingOptions {
+                    formatting_commands_enabled: false,
+                    ..options
+                }
+            ),
+            "looks good"
+        );
+        for raw in [
+            "eBay works",
+            "iPhone works",
+            "d’Artagnan agrees",
+            "NASA works",
+            "https://example.com/path",
+            "person@example.com",
+            "example.com works",
+            "some_identifier works",
+            "c:\\some\\path",
+        ] {
+            assert_eq!(process_transcription_text(raw, None, options), raw);
+        }
+        assert_eq!(
+            process_transcription_text("hello\u{200b} world", None, options),
+            "Hello\u{200b} world"
+        );
+    }
+
+    #[test]
+    fn new_dictation_preserves_explicit_personalization_casing() {
+        let corrections = [CorrectionEntry {
+            source: "brand".to_owned(),
+            replacement: "iPhone".to_owned(),
+            enabled: true,
+            case_sensitive: true,
+        }];
+        let snippets = [crate::personalization::SnippetEntry {
+            trigger: "signature".to_owned(),
+            expansion: "best regards".to_owned(),
+            enabled: true,
+            case_sensitive: true,
+        }];
+        let options = TextProcessingOptions {
+            formatting_commands_enabled: true,
+            self_correction_enabled: false,
+            corrections: &corrections,
+            snippets: &snippets,
+        };
+        assert_eq!(
+            process_transcription_text("brand works", None, options),
+            "iPhone works"
+        );
+        assert_eq!(
+            process_transcription_text("signature", None, options),
+            "best regards"
+        );
+        let words = [crate::personalization::WordEntry {
+            phrase: "iReady".to_owned(),
+            enabled: true,
+            boost: 2.5,
+        }];
+        assert_eq!(
+            process_transcription_text_with_context("iready works", None, &words, options),
+            "iready works"
+        );
+    }
+
+    #[test]
     fn formatting_commands_are_whole_phrases_and_deterministic() {
         let options = TextProcessingOptions {
             formatting_commands_enabled: true,
@@ -1068,11 +1228,11 @@ mod tests {
         };
         assert_eq!(
             process_transcription_text("hello comma world period", None, options),
-            "hello, world."
+            "Hello, world."
         );
         assert_eq!(
             process_transcription_text("new paragraph next new line item", None, options),
-            "next\nitem"
+            "Next\nitem"
         );
         assert_eq!(
             process_transcription_text(
@@ -1092,11 +1252,11 @@ mod tests {
         );
         assert_eq!(
             process_transcription_text("open quote hello close quote", None, options),
-            "\"hello\""
+            "\"Hello\""
         );
         assert_eq!(
             process_transcription_text("commawheel", None, options),
-            "commawheel"
+            "Commawheel"
         );
     }
 
@@ -1151,10 +1311,10 @@ mod tests {
             ("Hello?! period. next", "Hello. Next"),
             (
                 "hello period open quote welcome close quote period.",
-                "hello. \"Welcome\".",
+                "Hello. \"Welcome\".",
             ),
-            ("hello period new paragraph élève", "hello.\n\nÉlève"),
-            ("hello period iPhone and eBay", "hello. iPhone and eBay"),
+            ("hello period new paragraph élève", "Hello.\n\nÉlève"),
+            ("hello period iPhone and eBay", "Hello. iPhone and eBay"),
             (
                 "Send the report on Thursday scratch that send the report on Friday period.",
                 "Send the report on Friday.",
@@ -1180,18 +1340,17 @@ mod tests {
             "Wait... then continue.",
             "Value 12.5, version v0.5.5, example.com.",
             "https://example.com/path?x=12.5",
-            "commawheel periodical",
             "Already punctuated. next stays as recognized.",
         ] {
             assert_eq!(process_transcription_text(raw, None, options), raw);
         }
         assert_eq!(
             process_transcription_text("new line item", None, options),
-            "item"
+            "Item"
         );
         assert_eq!(
             process_transcription_text("notes new line item", None, options),
-            "notes\nitem"
+            "Notes\nitem"
         );
         let disabled = TextProcessingOptions {
             formatting_commands_enabled: false,
@@ -1209,7 +1368,7 @@ mod tests {
         };
         assert_eq!(
             process_transcription_text("hello period next", None, personalized),
-            "hello. eBay"
+            "Hello. eBay"
         );
         assert_eq!(
             process_transcription_text("Use Amazon scratch that eBay", None, options),
@@ -1246,7 +1405,7 @@ mod tests {
         );
         let text =
             process_transcription_text("hello period twelve point five kilograms", None, options);
-        assert_eq!(text, "hello. 12.5 kilograms");
+        assert_eq!(text, "Hello. 12.5 kilograms");
         assert_eq!(process_transcription_text(&text, None, options), text);
     }
 
@@ -1305,17 +1464,17 @@ mod tests {
         for (source, expected) in [
             (
                 "hello period d’Artagnan arrived",
-                "hello. d’Artagnan arrived",
+                "Hello. d’Artagnan arrived",
             ),
             (
                 "hello period d'Artagnan arrived",
-                "hello. d'Artagnan arrived",
+                "Hello. d'Artagnan arrived",
             ),
             (
                 "Send this scratch that d’Artagnan arrived",
                 "d’Artagnan arrived",
             ),
-            ("hello period l’esprit", "hello. L’esprit"),
+            ("hello period l’esprit", "Hello. L’esprit"),
             ("‘five boxes’", "‘5 boxes’"),
         ] {
             assert_eq!(
@@ -1335,9 +1494,9 @@ mod tests {
             snippets: &[],
         };
         for (source, expected) in [
-            ("hello period i-Ready is open", "hello. i-Ready is open"),
+            ("hello period i-Ready is open", "Hello. i-Ready is open"),
             ("Send this scratch that i-Ready is open", "i-Ready is open"),
-            ("hello period well-known names", "hello. Well-known names"),
+            ("hello period well-known names", "Hello. Well-known names"),
         ] {
             assert_eq!(
                 process_transcription_text(source, None, options),

@@ -213,6 +213,7 @@ mod tests {
         initialize();
         let actual = read(target);
         let expected = match case.as_str() {
+            "empty" => Some(InsertionContext::from_prefix("")),
             "continuation" | "middle" | "bounded" => {
                 Some(InsertionContext::from_prefix("typed text "))
             }
@@ -228,7 +229,7 @@ mod tests {
         );
         if let Some(context) = actual {
             let output = crate::domain::process_transcription_text_with_context(
-                "And this is dictated",
+                " and this is dictated \u{200b}",
                 Some(context),
                 &[],
                 crate::domain::TextProcessingOptions {

@@ -1,11 +1,11 @@
 param(
     [switch]$Fixture,
-    [ValidateSet('continuation', 'middle', 'bounded', 'boundary', 'selection', 'password', 'unsupported')]
+    [ValidateSet('empty', 'continuation', 'middle', 'bounded', 'boundary', 'selection', 'password', 'unsupported')]
     [string]$Case = 'continuation',
     [string]$MetadataPath,
     [string]$TestBinary,
-    [ValidateSet('continuation', 'middle', 'bounded', 'boundary', 'selection', 'password', 'unsupported')]
-    [string[]]$Cases = @('continuation', 'middle', 'bounded', 'boundary', 'selection', 'password', 'unsupported')
+    [ValidateSet('empty', 'continuation', 'middle', 'bounded', 'boundary', 'selection', 'password', 'unsupported')]
+    [string[]]$Cases = @('empty', 'continuation', 'middle', 'bounded', 'boundary', 'selection', 'password', 'unsupported')
 )
 
 $ErrorActionPreference = 'Stop'
@@ -40,6 +40,7 @@ public static class LyraCursorFixtureNative {
     } else { New-Object System.Windows.Forms.RichTextBox }
     $field.Dock = 'Fill'
     $field.Text = switch ($Case) {
+        'empty' { '' }
         'boundary' { 'finished. ' }
         'bounded' { ('Older sentence. ' * 30) + 'typed text ' }
         'middle' { 'typed text Trailing sentence ends here.' }
