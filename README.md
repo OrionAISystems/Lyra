@@ -6,9 +6,7 @@ The repository is intentionally standalone. Lyra does not depend on Orion's gate
 
 ## Current phase
 
-v0.5.6 (2026-10-04 local time) is the current published release. The Windows installer and signed updater feed are published in [`OrionAISystems/Lyra-Releases`](https://github.com/OrionAISystems/Lyra-Releases/releases/tag/v0.5.6).
-
-v0.5.6 combines dictation cancellation, microphone-error recovery, settings persistence and shortcut rollback, English quantity/punctuation cleanup, and seasonal cache hardening. Its release evidence is tracked in [docs/ACCEPTANCE-V0.5.6.md](docs/ACCEPTANCE-V0.5.6.md), with the bounded reliability handoff in [docs/RELIABILITY-PASS.md](docs/RELIABILITY-PASS.md).
+v0.5.8 is being prepared as a dictation hotfix: fresh-utterance capitalization and leading/trailing whitespace cleanup while preserving v0.5.7 cursor-context continuations. Local and publication evidence is tracked in [docs/ACCEPTANCE-V0.5.8.md](docs/ACCEPTANCE-V0.5.8.md).
 
 Settings migrations through schema v5 are automatic and idempotent. Existing History, Scratchpad, appearance, audio, and personalization preferences are preserved; seasonal themes and motion can each be disabled. Runtime and model installation remains separate and explicit; the optional Nemotron model is independently versioned and verified.
 
