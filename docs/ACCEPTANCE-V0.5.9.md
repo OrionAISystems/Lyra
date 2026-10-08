@@ -24,7 +24,11 @@ All local gates passed. Main carries `[skip ci]` on a documentation-only push ti
 | Default-feature check/tests, Rust format | Pass; release check, 134 default tests with 4 explicitly ignored, and format check |
 | Signed seasonal theme fixture | Pass; valid/corrupt signatures, invalid assets and offline cache recovery |
 | Unbundled Tauri release build | Pass; `npm run tauri build -- --no-bundle`, executable file version `0.5.9` |
-| Tagged publication and public artifacts | Pending |
+| Tagged NSIS/updater publication | Pass; [release run 37820641677](https://github.com/OrionAISystems/Lyra/actions/runs/37820641677) publication step succeeded; [stable v0.5.9](https://github.com/OrionAISystems/Lyra-Releases/releases/tag/v0.5.9) published at 2026-10-08 18:14:23 UTC |
+| Public installer, updater manifest/signature and signed seasonal catalog | Pass; `npm run verify:public-release -- --version 0.5.9` verified stable latest, the 3,030,522-byte installer and its Tauri signature, and seasonal catalog revision 1 |
+| Exact public changelog mirror | Pass; public and tagged source Git blobs both equal `62e866ca62d5fe38109604d2ca39a949ae76126c` |
+
+Installer SHA-256: `802d54c196b8b969e0ed3cfb98674cf29fa499bfee0bdf6f793e8f41e841064c`. Public assets are only `latest.json`, `Lyra_0.5.9_x64-setup.exe` and its `.sig` companion. No source, benchmark inputs, models or runtime archives were published.
 
 The read-only live provider regression is opt-in and never changes focus, selection, text or the clipboard:
 
