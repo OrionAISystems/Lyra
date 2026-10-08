@@ -20,6 +20,8 @@ Seasonal art uses a separate `workflow_dispatch` path. It signs decoded catalog 
 
 The public repository must remain release-only. Its root may contain the public README and changelog, alongside release assets and metadata. Do not add source code, models, native runtime archives, credentials, CI logs, or private organization documentation there.
 
+When the user explicitly requests skipping main CI for a hotfix, run all CI-equivalent gates locally first and record them in the versioned acceptance document. Put `[skip ci]` on a separate documentation-only main push tip, and tag the tested release source commit whose message contains no skip directive. A skip directive on the tagged commit can suppress the tag workflow too. The signed tag publication and public-artifact checks remain required.
+
 ## Required protected inputs
 
 The release workflow expects:

@@ -10,7 +10,7 @@ The reader now rejects a TextPattern whose document enclosing element differs fr
 
 ## Verification
 
-Main will carry `[skip ci]` on a documentation-only tip after passing local checks; the annotated `v0.5.9` tag will target the release source commit without a skip directive, allowing the existing signed tag publisher to run.
+All local gates passed. Main carries `[skip ci]` on a documentation-only push tip; the annotated `v0.5.9` tag targets release source commit `478d4f8086f15a89c599ecd9060f20b51486481c` without a skip directive, allowing the existing signed tag publisher to run.
 
 | Gate | Result |
 | --- | --- |
