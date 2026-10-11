@@ -10,7 +10,7 @@ remain in Appearance.
 - Runtime UI regression verifies a fresh device without NVIDIA detection defaults
   to CPU, all three options are present, CPU/Vulkan selections pass the correct
   variant to setup, and controls are disabled during installation.
-- Runtime regression selects already verified CUDA/Vulkan variants without
+- Runtime regression selects already verified CUDA/Vulkan/CPU variants without
   invoking download progress or replacing fixture DLL bytes.
 - Playwright inspected the app at `http://127.0.0.1:1420` (title Lyra). Runtime
   dropdown opened and keyboard ArrowUp/Enter selected CPU. Desktop preview cannot
@@ -32,5 +32,22 @@ remain in Appearance.
 
 ## Release gates and publication
 
-Final Rust, fixture, main CI, tag publication and public artifact results are
-recorded below once completed.
+- Final frontend gates: typecheck, 27 tests, and production build passed.
+- Rust formatting and default-feature release check passed; release tests with
+  `regression-bench`: 144 passed, 4 intentionally ignored.
+- Version, changelog, release configuration and theme feed separation passed.
+- Signed updater and seasonal-theme fixtures passed locally.
+- [Windows main CI](https://github.com/OrionAISystems/Lyra/actions/runs/38097576513)
+  passed for source commit `832d025`, including the unbundled Tauri release build.
+- Protected tag `v0.5.10` points to that tested source commit. Publication runs in
+  [the tagged release workflow](https://github.com/OrionAISystems/Lyra/actions/runs/38098399017).
+- Tagged publication passed. Public release is
+  [v0.5.10](https://github.com/OrionAISystems/Lyra-Releases/releases/tag/v0.5.10).
+- `npm run verify:public-release -- --version 0.5.10` passed: canonical public
+  changelog, stable latest release/feed, installer bytes and Tauri signature,
+  and the separate signed seasonal catalog/artwork verified.
+- Installer: `Lyra_0.5.10_x64-setup.exe`, 3,032,387 bytes;
+  SHA-256 `b7d0a2184cc4fc164ea5623e47d5d52064d951691643967b9fdb76c621ab0cbc`.
+  Installer, detached `.sig` and `latest.json` assets are uploaded; release is
+  neither draft nor prerelease. Windows Authenticode remains optional; Tauri
+  updater signing is verified.

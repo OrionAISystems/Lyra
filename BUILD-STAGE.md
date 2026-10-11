@@ -1,6 +1,6 @@
 # Lyra build stage
 
-The current published version is v0.5.9 (2026-10-08 local time). It fixes leading spaces and lowercase openings in empty Codex/ChatGPT composers by rejecting placeholder/container-owned accessibility ranges. Ambiguous providers use fresh-dictation casing, while supported editors retain cursor-context continuations and personalization. Local CI-equivalent gates, the live Codex provider regression, all eight synthetic native editor cases, and public installer/updater/changelog verification passed. Installed microphone dictation, the separate ChatGPT desktop provider and the installed v0.5.8-to-v0.5.9 updater flow remain untested; see [docs/ACCEPTANCE-V0.5.9.md](docs/ACCEPTANCE-V0.5.9.md). Earlier release evidence remains in the versioned acceptance documents.
+The current published version is v0.5.10 (2026-10-10 local time). It restores explicit CUDA, Vulkan and CPU runtime setup, reuses verified installed runtimes when switching, and centers the Insights empty state. Local gates, rendered UI checks, Windows main CI, tagged publication and public installer/updater/changelog verification passed. CPU microphone dictation on the reported AMD laptop and the installed v0.5.9-to-v0.5.10 updater flow remain unverified; see [docs/ACCEPTANCE-V0.5.10.md](docs/ACCEPTANCE-V0.5.10.md). Earlier release evidence remains in the versioned acceptance documents.
 
 ## Stage 0 — foundation
 

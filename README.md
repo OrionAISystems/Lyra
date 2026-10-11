@@ -6,7 +6,7 @@ The repository is intentionally standalone. Lyra does not depend on Orion's gate
 
 ## Current phase
 
-v0.5.9 (2026-10-08 local time) is the current published release. It fixes leading spaces and lowercase openings in empty Codex/ChatGPT composers by rejecting placeholder/container-owned accessibility ranges. Ambiguous providers use fresh-dictation casing; supported field-owned ranges retain sentence continuations. The installer and signed updater feed are published in [Lyra-Releases](https://github.com/OrionAISystems/Lyra-Releases/releases/tag/v0.5.9); local and publication evidence is tracked in [docs/ACCEPTANCE-V0.5.9.md](docs/ACCEPTANCE-V0.5.9.md).
+v0.5.10 (2026-10-10 local time) is the current published release. It restores explicit CUDA, Vulkan and CPU runtime setup in Audio & Engine, reuses previously verified runtimes when switching, and centers the Insights empty state within its chart. CPU needs no GPU, including on AMD laptops. The installer and signed updater feed are published in [Lyra-Releases](https://github.com/OrionAISystems/Lyra-Releases/releases/tag/v0.5.10); automated, rendered and publication evidence is tracked in [docs/ACCEPTANCE-V0.5.10.md](docs/ACCEPTANCE-V0.5.10.md).
 
 Settings migrations through schema v5 are automatic and idempotent. Existing History, Scratchpad, appearance, audio, and personalization preferences are preserved; seasonal themes and motion can each be disabled. Runtime and model installation remains separate and explicit; the optional Nemotron model is independently versioned and verified.
 
@@ -49,10 +49,10 @@ cargo check --release --locked --manifest-path src-tauri/Cargo.toml
 cargo test --release --locked --manifest-path src-tauri/Cargo.toml --features regression-bench
 ```
 
-Verify the existing signed theme channel while confirming the stable app remains v0.5.9:
+Verify the existing signed theme channel while confirming the stable app remains v0.5.10:
 
 ```powershell
-npm run verify:public-themes -- --latest-version 0.5.9
+npm run verify:public-themes -- --latest-version 0.5.10
 ```
 
 Verify the public app and artwork feeds without credentials:
