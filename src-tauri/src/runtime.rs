@@ -499,6 +499,25 @@ impl RuntimeManager {
         F: FnMut(SetupProgress),
     {
         let spec = self.artifact_spec(kind);
+        // Switching back to a verified runtime must not replace loaded DLLs or
+        // download the same archive again. Recognition reloads on variant change.
+        if let Some(variant) = kind.runtime_variant() {
+            if self.is_variant_ready(variant.as_str()) {
+                write_json_atomic(
+                    &self
+                        .root
+                        .join("runtime")
+                        .join(RUNTIME_VERSION)
+                        .join("active.json"),
+                    &ActiveRuntimeMarker {
+                        version: RUNTIME_VERSION.to_owned(),
+                        variant: variant.as_str().to_owned(),
+                    },
+                )?;
+                info!(variant = variant.as_str(), "verified runtime selected");
+                return Ok(());
+            }
+        }
         let partial_path = self.partial_path(kind);
         self.download_to_partial(&spec, &partial_path, &cancellation, &mut emit_progress)?;
 
@@ -1346,6 +1365,44 @@ mod tests {
         assert!(manager.is_variant_ready("vulkan"));
         assert!(!manager.is_variant_ready("cpu"));
         assert_eq!(manager.verified_fallbacks("cuda"), vec!["vulkan"]);
+        let cpu = manager.runtime_path("cpu");
+        fs::create_dir_all(&cpu).expect("create CPU fixture");
+        fs::write(cpu.join("nemo_speech_asr_c.dll"), b"cpu").expect("write CPU fixture");
+        write_json_atomic(
+            &cpu.join("runtime.json"),
+            &RuntimeMarker {
+                version: RUNTIME_VERSION.to_owned(),
+                variant: "cpu".to_owned(),
+                sha256: RUNTIME_CPU_SHA256.to_owned(),
+            },
+        )
+        .expect("write CPU marker");
+        for variant in [
+            RuntimeVariant::Cuda,
+            RuntimeVariant::Vulkan,
+            RuntimeVariant::Cpu,
+        ] {
+            manager
+                .install_artifact(
+                    SetupArtifactKind::Runtime(variant),
+                    Arc::new(AtomicBool::new(false)),
+                    |_| panic!("installed runtime must not download"),
+                )
+                .expect("select installed runtime without downloading");
+            assert_eq!(
+                manager.refresh().runtime_variant.as_deref(),
+                Some(variant.as_str())
+            );
+        }
+        assert_eq!(
+            fs::read(cuda.join("nemo_speech_asr_c.dll")).unwrap(),
+            b"cuda"
+        );
+        assert_eq!(
+            fs::read(vulkan.join("nemo_speech_asr_c.dll")).unwrap(),
+            b"vulkan"
+        );
+        assert_eq!(fs::read(cpu.join("nemo_speech_asr_c.dll")).unwrap(), b"cpu");
         fs::remove_dir_all(root).expect("remove runtime fixture");
     }
 }

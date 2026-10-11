@@ -1022,7 +1022,17 @@ blockquote {
 .chart {
   height: 240px;
   padding: 20px;
+  display: flex;
+  flex-direction: column;
 }
+.runtime-setup-details {
+  padding: 0 18px 16px;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.runtime-setup-details summary { cursor: pointer; padding: 8px 0; }
+.runtime-setup-details button { margin-left: 10px; }
 .insights-actions {
   display: flex;
   align-items: center;
@@ -1057,7 +1067,8 @@ blockquote {
   background: #35c8b1;
 }
 .bars {
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   display: flex;
   align-items: flex-end;
   gap: 18px;
@@ -2084,7 +2095,7 @@ html.bar-window,
 .seasonal-settings__delivery .secondary { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-size: 10px; padding: 7px 9px; }
 .seasonal-settings__notice { margin: 0 15px 16px; font-size: 11px; line-height: 1.5; color: var(--muted); }
 .seasonal-refreshing { animation: spin 1s linear infinite; }
-.insights-empty { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; color: var(--muted); }
+.insights-empty { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; height: 100%; text-align: center; color: var(--muted); }
 .bar-window[data-seasonal-theme] .bar-shell { --accent: var(--seasonal-bar-accent); --glow: var(--seasonal-bar-glow); --muted: var(--seasonal-bar-muted); --panel: var(--seasonal-bar-panel); --line: var(--seasonal-bar-line); --text: var(--seasonal-bar-text); }
 .bar-window[data-seasonal-theme] .bar-surface { background: color-mix(in srgb, var(--panel) 97%, transparent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
 .bar-window[data-seasonal-theme] .bar-shell--listening .bar-surface { border-color: color-mix(in srgb, var(--accent) 70%, transparent); }

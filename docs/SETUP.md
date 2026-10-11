@@ -30,7 +30,9 @@ Audio & Engine provides separate install controls for the required Parakeet mode
 
 ## Runtime selection
 
-The first candidate is the official NeMo-Speech.cpp v0.1.0 Windows x64 CUDA archive. If a verified CUDA or Vulkan runtime fails during recognition, Lyra retries the request with an already-installed verified fallback (Vulkan first, then CPU). The user can separately approve the Vulkan archive and then the CPU archive; Lyra does not download a fallback, install a CUDA Toolkit, or modify PATH as a recovery action.
+Audio & Engine exposes three local runtimes: CUDA for NVIDIA GPUs, Vulkan for compatible graphics drivers (including supported integrated graphics), and CPU without a GPU requirement. Choose CPU on an AMD laptop when GPU compatibility is uncertain. An existing active runtime remains the initial selection; a fresh device without detected NVIDIA hardware starts with CPU. Selecting an option alone does not install or activate it: review the download details and press **Install & use**. Runtime progress, errors and cancellation appear below the control. Selecting a previously verified runtime reuses its installed files without another download; the recognizer reloads when its runtime variant changes.
+
+If a verified CUDA or Vulkan runtime fails during recognition, Lyra retries the request with an already-installed verified fallback (Vulkan first, then CPU). Lyra does not download a fallback, install a CUDA Toolkit, or modify PATH as a recovery action.
 
 ## First launch checklist
 

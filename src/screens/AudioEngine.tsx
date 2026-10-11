@@ -9,6 +9,7 @@ import {
   startMicrophoneTest,
   stopMicrophoneTest,
   startSetupArtifact,
+  cancelSetupArtifact,
 } from "../bridge";
 import {
   Card,
@@ -26,6 +27,11 @@ export default function AudioEngine({ state }: { state: LyraState }) {
     state.setup.state,
   );
   const [setupStartError, setSetupStartError] = useState<string | null>(null);
+  const [runtimeChoice, setRuntimeChoice] = useState<string | null>(null);
+  const [setupStarting, setSetupStarting] = useState(false);
+  const variant = runtimeChoice ?? state.runtime.runtimeVariant ?? (state.runtime.gpuName ? "cuda" : "cpu");
+  const runtimeArtifact = state.artifacts.find((artifact) => artifact.kind === "runtime" && artifact.variant === variant);
+  const runtimeReady = state.runtime.runtimeVerified && state.runtime.runtimeVariant === variant;
   const [benchmarkState, setBenchmarkState] = useState("idle");
   const [benchmarkError, setBenchmarkError] = useState<string | null>(null);
   const [benchmarkResult, setBenchmarkResult] =
@@ -167,6 +173,17 @@ export default function AudioEngine({ state }: { state: LyraState }) {
       );
     }
   };
+  const startRuntimeSetup = async () => {
+    setSetupStartError(null);
+    setSetupStarting(true);
+    try {
+      await startSetupArtifact("runtime", variant);
+    } catch (error) {
+      setSetupStartError(error instanceof Error ? error.message : "Lyra couldn't start runtime setup.");
+    } finally {
+      setSetupStarting(false);
+    }
+  };
   return (
     <Page
       title="Audio & Engine"
@@ -299,12 +316,32 @@ export default function AudioEngine({ state }: { state: LyraState }) {
           title="Local runtime"
           description={`${state.runtime.runtimeVariant?.toUpperCase() ?? "Not installed"} · ${state.modelRuntime.state}`}
         >
-          <span
-            className={`badge ${state.runtime.runtimeVerified ? "ok" : ""}`}
-          >
-            {state.runtime.runtimeVerified ? "Ready" : "Setup required"}
-          </span>
+          <div className="microphone-controls">
+            <Select label="Runtime" value={variant} disabled={busy || setupStarting || sessionBusy || benchmarkBusy} onChange={setRuntimeChoice}>
+              <option value="cuda">CUDA · NVIDIA GPU</option>
+              <option value="vulkan">Vulkan · compatible GPU</option>
+              <option value="cpu">CPU · no GPU required</option>
+            </Select>
+            <button type="button" className="secondary" disabled={!isTauri || !runtimeArtifact || busy || setupStarting || sessionBusy || benchmarkBusy || runtimeReady} onClick={() => void startRuntimeSetup()}>
+              {setupStarting || (busy && state.setup.kind === "runtime") ? "Setting up…" : runtimeReady ? "Active" : "Install & use"}
+            </button>
+          </div>
         </Row>
+        <div className="runtime-setup-details">
+          <p>CPU works without a dedicated GPU, including AMD laptops. Vulkan needs a compatible graphics driver; CUDA requires NVIDIA hardware.</p>
+          {runtimeArtifact && <details key={variant}>
+            <summary>Runtime download details · {(runtimeArtifact.sizeBytes / 1024 ** 2).toFixed(1)} MiB</summary>
+            <p>Source: {runtimeArtifact.source}</p>
+            <p>Destination: {runtimeArtifact.destination}</p>
+            <p>SHA-256: {runtimeArtifact.expectedSha256}</p>
+          </details>}
+          {state.setup.kind === "runtime" && state.setup.state !== "idle" && <div role="status" aria-live="polite">
+            {state.setup.variant?.toUpperCase()}: {state.setup.state}
+            {busy && state.setup.totalBytes > 0 && <> · {Math.round(state.setup.downloadedBytes / state.setup.totalBytes * 100)}%</>}
+            {state.setup.error && <p className="inline-error">{state.setup.error}</p>}
+            {busy && <button type="button" className="secondary" onClick={() => void cancelSetupArtifact().catch((error) => setSetupStartError(String(error)))}>Cancel runtime setup</button>}
+          </div>}
+        </div>
         <Row
           icon={<Download />}
           title="Parakeet TDT 0.6B"
