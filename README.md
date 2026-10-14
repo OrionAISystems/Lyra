@@ -6,7 +6,7 @@ The repository is intentionally standalone. Lyra does not depend on Orion's gate
 
 ## Current phase
 
-v0.5.10 (2026-10-10 local time) is the current published release. It restores explicit CUDA, Vulkan and CPU runtime setup in Audio & Engine, reuses previously verified runtimes when switching, and centers the Insights empty state within its chart. CPU needs no GPU, including on AMD laptops. The installer and signed updater feed are published in [Lyra-Releases](https://github.com/OrionAISystems/Lyra-Releases/releases/tag/v0.5.10); automated, rendered and publication evidence is tracked in [docs/ACCEPTANCE-V0.5.10.md](docs/ACCEPTANCE-V0.5.10.md).
+v0.5.11 (2026-10-14 local time) adds persistent dictation bar visibility controls in Appearance and the system tray. The bar's Hide bar action shares that preference, and global dictation shortcuts remain available while hidden. The release destination is [Lyra-Releases](https://github.com/OrionAISystems/Lyra-Releases/releases/tag/v0.5.11); automated, rendered and publication evidence is tracked in [docs/ACCEPTANCE-V0.5.11.md](docs/ACCEPTANCE-V0.5.11.md). Explicit CUDA, Vulkan and CPU runtime setup remains available in Audio & Engine.
 
 Settings migrations through schema v5 are automatic and idempotent. Existing History, Scratchpad, appearance, audio, and personalization preferences are preserved; seasonal themes and motion can each be disabled. Runtime and model installation remains separate and explicit; the optional Nemotron model is independently versioned and verified.
 

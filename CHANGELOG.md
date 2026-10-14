@@ -2,6 +2,16 @@
 
 Lyra releases are published from the private source repository to the public [Lyra-Releases](https://github.com/OrionAISystems/Lyra-Releases) repository. The private source copy is the canonical release history; tagged builds mirror it publicly and use the current version section as their release notes.
 
+## [0.5.11] - 2026-10-14
+
+### Added
+
+- Add a Show dictation bar toggle in Appearance and a matching Show/Hide dictation bar action in the system tray menu.
+
+### Fixed
+
+- Keep dictation bar visibility consistent across Settings, the tray menu, and the bar's Hide bar action, and remember the choice across restarts. Global dictation shortcuts remain available while the bar is hidden.
+
 ## [0.5.10] - 2026-10-10
 
 ### Fixed

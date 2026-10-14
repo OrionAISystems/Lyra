@@ -1,6 +1,6 @@
 # Lyra build stage
 
-The current published version is v0.5.10 (2026-10-10 local time). It restores explicit CUDA, Vulkan and CPU runtime setup, reuses verified installed runtimes when switching, and centers the Insights empty state. Local gates, rendered UI checks, Windows main CI, tagged publication and public installer/updater/changelog verification passed. CPU microphone dictation on the reported AMD laptop and the installed v0.5.9-to-v0.5.10 updater flow remain unverified; see [docs/ACCEPTANCE-V0.5.10.md](docs/ACCEPTANCE-V0.5.10.md). Earlier release evidence remains in the versioned acceptance documents.
+The current release target is v0.5.11 (2026-10-14 local time). It adds persistent dictation bar visibility controls in Appearance and the system tray, sharing the preference with the bar's Hide bar action. Automated, rendered and publication evidence is tracked in [docs/ACCEPTANCE-V0.5.11.md](docs/ACCEPTANCE-V0.5.11.md); native tray/restart and installed-updater acceptance remain separate. Earlier runtime setup and hardware evidence remains in [docs/ACCEPTANCE-V0.5.10.md](docs/ACCEPTANCE-V0.5.10.md).
 
 ## Stage 0 — foundation
 
