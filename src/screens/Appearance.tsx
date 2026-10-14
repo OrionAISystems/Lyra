@@ -124,6 +124,13 @@ export default function Appearance({ state }: { state: LyraState }) {
             onChange={(v) => void u({ launchAtLogin: v })}
           />
         </Row>
+        <Row icon={<PanelTop />} title="Show dictation bar" description="Keep the floating dictation control visible">
+          <Toggle
+            label="Show dictation bar"
+            checked={s.showBar}
+            onChange={(v) => void u({ showBar: v })}
+          />
+        </Row>
         <Row icon={<Monitor />} title="Dictation bar placement">
           <Select
             label="Bar placement"

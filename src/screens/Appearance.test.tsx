@@ -134,6 +134,22 @@ afterEach(async () => {
 });
 
 describe("Appearance seasonal preview", () => {
+  it("updates bar visibility and reflects settings changes from other surfaces", async () => {
+    const state = appState(themeStatus(null, null, 1));
+    state.updateSettings = vi.fn();
+    await render(state);
+    const toggle = container.querySelector<HTMLButtonElement>('button[aria-label="Show dictation bar"]')!;
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    await act(async () => { toggle.click(); });
+    expect(state.updateSettings).toHaveBeenCalledWith({ showBar: false });
+    await act(async () => {
+      root?.render(<Appearance state={{ ...state, settings: { ...state.settings, showBar: false } }} />);
+    });
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    await act(async () => { toggle.click(); });
+    expect(state.updateSettings).toHaveBeenLastCalledWith({ showBar: true });
+  });
+
   it("switches to newly active November content and shows its live dates and remote source", async () => {
     await render(appState(themeStatus(null, null, 1)));
     expect(previewHeading()).toBe(bundledOctober.name);

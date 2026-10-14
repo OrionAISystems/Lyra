@@ -5,11 +5,23 @@ use crate::updater::{UpdateState, UpdateStatus};
 #[derive(Clone)]
 pub struct TrayController {
     update_item: MenuItem<Wry>,
+    bar_item: MenuItem<Wry>,
 }
 
 impl TrayController {
-    pub fn new(update_item: MenuItem<Wry>) -> Self {
-        Self { update_item }
+    pub fn new(update_item: MenuItem<Wry>, bar_item: MenuItem<Wry>) -> Self {
+        Self {
+            update_item,
+            bar_item,
+        }
+    }
+
+    pub fn set_bar_visibility(&self, visible: bool) {
+        let _ = self.bar_item.set_text(if visible {
+            "Hide dictation bar"
+        } else {
+            "Show dictation bar"
+        });
     }
 
     pub fn set_update_status(&self, status: &UpdateStatus) {

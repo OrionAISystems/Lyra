@@ -14,6 +14,8 @@ The settings shell owns the viewport height. Its sidebar remains pinned as a sin
 
 Right-clicking the dictation bar opens Settings, Hide bar, and Quit Lyra. The transparent bar window grows upward while this menu is open and keeps its lower edge fixed, so the menu remains visible above the bar without moving the dictation control. A second right-click or a click in the empty window area closes it.
 
+Appearance provides a Show dictation bar toggle. The tray menu provides a matching Show/Hide dictation bar action. These controls and the bar's Hide bar action persist the same visibility preference, update the settings renderer and tray label, and preserve the choice across restarts. Hiding the bar leaves global dictation shortcuts available.
+
 ## Runtime data flow
 
 ```text

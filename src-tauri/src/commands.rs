@@ -737,6 +737,24 @@ fn create_tray(app: &AppHandle) -> Result<TrayController, Box<dyn std::error::Er
     use tauri::tray::TrayIconBuilder;
 
     let settings = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
+    let show_bar = app
+        .state::<Arc<Mutex<AppState>>>()
+        .lock()
+        .map_err(|_| std::io::Error::other("state lock poisoned"))?
+        .settings
+        .get()
+        .show_bar;
+    let bar = MenuItem::with_id(
+        app,
+        "toggle-bar",
+        if show_bar {
+            "Hide dictation bar"
+        } else {
+            "Show dictation bar"
+        },
+        true,
+        None::<&str>,
+    )?;
     let copy = MenuItem::with_id(
         app,
         "copy-last",
@@ -747,7 +765,7 @@ fn create_tray(app: &AppHandle) -> Result<TrayController, Box<dyn std::error::Er
     let separator = PredefinedMenuItem::separator(app)?;
     let update = MenuItem::with_id(app, "update", "Check for updates", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit Lyra", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&settings, &copy, &separator, &update, &quit])?;
+    let menu = Menu::with_items(app, &[&settings, &bar, &copy, &separator, &update, &quit])?;
     let icon = app.default_window_icon().cloned().ok_or_else(|| {
         std::io::Error::new(
             std::io::ErrorKind::NotFound,
@@ -772,6 +790,16 @@ fn create_tray(app: &AppHandle) -> Result<TrayController, Box<dyn std::error::Er
                     }
                 }
             }
+            "toggle-bar" => {
+                if let Some(state) = app.try_state::<Arc<Mutex<AppState>>>() {
+                    if let Ok(mut state) = state.lock() {
+                        let visible = !state.settings.get().show_bar;
+                        if let Err(error) = set_bar_visibility(&mut state, visible) {
+                            warn!(error = %error, "could not change dictation bar visibility");
+                        }
+                    }
+                }
+            }
             "update" => {
                 let available = app
                     .try_state::<Arc<Mutex<AppState>>>()
@@ -789,7 +817,7 @@ fn create_tray(app: &AppHandle) -> Result<TrayController, Box<dyn std::error::Er
             _ => {}
         })
         .build(app)?;
-    Ok(TrayController::new(update))
+    Ok(TrayController::new(update, bar))
 }
 
 #[tauri::command]
@@ -1072,7 +1100,11 @@ pub fn save_settings(
             let _ = bar.show();
         }
     } else if let Some(bar) = state.app.get_webview_window("bar") {
+        let _ = set_bar_menu_open(&bar, false);
         let _ = bar.hide();
+    }
+    if let Some(tray) = state.app.try_state::<TrayController>() {
+        tray.set_bar_visibility(saved.show_bar);
     }
     Ok(saved)
 }
@@ -1871,11 +1903,29 @@ pub fn show_settings(state: State<'_, Arc<Mutex<AppState>>>) -> Result<(), Strin
 
 #[tauri::command]
 pub fn hide_bar(state: State<'_, Arc<Mutex<AppState>>>) -> Result<(), String> {
-    let state = state.lock().map_err(|_| "state lock poisoned".to_owned())?;
-    if let Some(bar) = state.app.get_webview_window("bar") {
+    let mut state = state.lock().map_err(|_| "state lock poisoned".to_owned())?;
+    set_bar_visibility(&mut state, false)
+}
+
+fn set_bar_visibility(state: &mut AppState, visible: bool) -> Result<(), String> {
+    let bar = state
+        .app
+        .get_webview_window("bar")
+        .ok_or_else(|| "dictation bar window is unavailable".to_owned())?;
+    if !visible {
         set_bar_menu_open(&bar, false).map_err(|error| error.to_string())?;
-        bar.hide().map_err(|error| error.to_string())?;
     }
+    let mut settings = state.settings.get();
+    settings.show_bar = visible;
+    let saved = state
+        .settings
+        .set(settings)
+        .map_err(|error| error.to_string())?;
+    state.emit_settings(&saved);
+    if let Some(tray) = state.app.try_state::<TrayController>() {
+        tray.set_bar_visibility(visible);
+    }
+    if visible { bar.show() } else { bar.hide() }.map_err(|error| error.to_string())?;
     Ok(())
 }
 
