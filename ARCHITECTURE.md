@@ -74,6 +74,8 @@ The Rust side owns state transitions and side effects. The frontend renders even
 - `updater.rs`: `UpdateProvider` seam, stable-version filtering, signed Tauri updater integration, update state machine, scheduling, passive restart behavior, and the installation reservation gate.
 - `usage.rs`: local aggregate counters, indefinite daily aggregates keyed to the Windows time zone, one-year metadata-only sessions, and derived metrics. It never receives transcript text or raw samples. A one-time migration moves retained completed-session metadata from legacy UTC buckets to local calendar days; older aggregates without timestamps remain on their original dates.
 - `saved_items.rs`: independent History and Scratchpad file stores, user-bound DPAPI protection for text, retention, bounded paginated metadata reads, and collection-specific operations.
+
+History requests the newest 50 metadata entries on entry and loads older pages only on demand. Its list command runs filesystem work on a blocking worker rather than the UI thread. Retention and listing share one scan; every file still needs to be inspected to sort and count the collection, but transcript text is decrypted only when explicitly opened. No persistent metadata index or transcript cache is maintained.
 - `tray.rs`: the single tray update menu item, kept in sync with updater status.
 - `clipboard.rs`: bounded Windows text snapshots, sequence-number-guarded clipboard recovery, and clipboard operations.
 - `windows.rs`: foreground target capture, display enumeration, active/primary/fixed monitor placement, fallback status, non-activating bar behavior, and `SendInput` integration with an HWND/process/focus recheck before each injection.

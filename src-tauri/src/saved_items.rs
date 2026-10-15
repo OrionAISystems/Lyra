@@ -94,12 +94,20 @@ impl SavedItemStore {
         offset: usize,
         limit: usize,
     ) -> io::Result<SavedItemPage> {
-        self.prune_history(retention, last_retention)?;
-        self.list_collection_page("history", offset, limit)
+        let effective = if retention.is_enabled() {
+            retention
+        } else {
+            last_retention
+        };
+        let cutoff = effective
+            .days()
+            .filter(|days| *days != u64::MAX)
+            .map(|days| timestamp_ms().saturating_sub(days.saturating_mul(DAY_MS)));
+        self.list_collection_page("history", offset, limit, cutoff)
     }
 
     pub fn list_scratchpad_page(&self, offset: usize, limit: usize) -> io::Result<SavedItemPage> {
-        self.list_collection_page("scratchpad", offset, limit)
+        self.list_collection_page("scratchpad", offset, limit, None)
     }
 
     pub fn history_text(&self, id: &str) -> io::Result<(SavedItemSummary, String)> {
@@ -189,6 +197,7 @@ impl SavedItemStore {
         collection: &str,
         offset: usize,
         limit: usize,
+        expiry_cutoff: Option<u64>,
     ) -> io::Result<SavedItemPage> {
         let dir = self.collection_path(collection)?;
         let entries = match fs::read_dir(dir) {
@@ -214,6 +223,11 @@ impl SavedItemStore {
                 continue;
             }
             match read_record(&entry.path()) {
+                Ok(record)
+                    if expiry_cutoff.is_some_and(|cutoff| record.summary.timestamp_ms < cutoff) =>
+                {
+                    fs::remove_file(entry.path())?;
+                }
                 Ok(record) => summaries.push(record.summary),
                 Err(error) => {
                     warn!("saved item metadata could not be read; skipping one item: {error}")
@@ -521,6 +535,101 @@ pub fn local_root(app: &tauri::AppHandle) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn large_history_pages_apply_retention_before_counting_and_slicing() {
+        let root = std::env::temp_dir().join(format!("lyra-history-pages-{}", Uuid::new_v4()));
+        let store = SavedItemStore::new(root.clone());
+        let dir = root.join("history");
+        fs::create_dir_all(&dir).unwrap();
+        let now = timestamp_ms();
+        for index in 0..650 {
+            let mut item = summary(now - index * 1_000);
+            item.id = Uuid::new_v4().to_string();
+            let record = SavedItemFile {
+                schema_version: ITEM_SCHEMA_VERSION,
+                summary: item.clone(),
+                // Listing must never try to decrypt a text payload.
+                encrypted_text: "synthetic encrypted payload".repeat(100),
+            };
+            fs::write(
+                store.item_path("history", &item.id).unwrap(),
+                serde_json::to_vec(&record).unwrap(),
+            )
+            .unwrap();
+        }
+        let mut expired = summary(now - 45 * DAY_MS);
+        expired.id = Uuid::new_v4().to_string();
+        let expired_path = store.item_path("history", &expired.id).unwrap();
+        fs::write(
+            &expired_path,
+            serde_json::to_vec(&SavedItemFile {
+                schema_version: ITEM_SCHEMA_VERSION,
+                summary: expired,
+                encrypted_text: String::new(),
+            })
+            .unwrap(),
+        )
+        .unwrap();
+
+        let before = std::time::Instant::now();
+        store
+            .prune_history(
+                TranscriptHistoryRetention::ThirtyDays,
+                TranscriptHistoryRetention::ThirtyDays,
+            )
+            .unwrap();
+        let expected = store.list_collection_page("history", 0, 50, None).unwrap();
+        let two_scan_elapsed = before.elapsed();
+        let after = std::time::Instant::now();
+        let first = store
+            .list_history_page(
+                TranscriptHistoryRetention::ThirtyDays,
+                TranscriptHistoryRetention::ThirtyDays,
+                0,
+                50,
+            )
+            .unwrap();
+        eprintln!(
+            "650 synthetic records: two scans {:?}, combined scan {:?} (warm filesystem)",
+            two_scan_elapsed,
+            after.elapsed()
+        );
+        assert_eq!(first, expected);
+        assert_eq!(first.total, 650);
+        assert_eq!(first.items.len(), 50);
+        assert!(first.has_more);
+        assert!(!expired_path.exists());
+
+        // Reintroduce an expired item to exercise pruning inside the listing scan.
+        let mut expired = summary(now - 45 * DAY_MS);
+        expired.id = Uuid::new_v4().to_string();
+        let path = store.item_path("history", &expired.id).unwrap();
+        fs::write(
+            &path,
+            serde_json::to_vec(&SavedItemFile {
+                schema_version: ITEM_SCHEMA_VERSION,
+                summary: expired,
+                encrypted_text: String::new(),
+            })
+            .unwrap(),
+        )
+        .unwrap();
+        let last = store
+            .list_history_page(
+                TranscriptHistoryRetention::Off,
+                TranscriptHistoryRetention::ThirtyDays,
+                600,
+                100,
+            )
+            .unwrap();
+        assert_eq!(last.total, 650);
+        assert_eq!(last.items.len(), 50);
+        assert!(!last.has_more);
+        assert!(!path.exists());
+        assert!(first.items.last().unwrap().timestamp_ms > last.items[0].timestamp_ms);
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn app_names_use_friendly_labels_and_drop_path_information() {

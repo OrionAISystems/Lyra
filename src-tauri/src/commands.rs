@@ -1752,7 +1752,7 @@ pub fn copy_last_transcript(
 }
 
 #[tauri::command]
-pub fn list_history(
+pub async fn list_history(
     offset: usize,
     limit: usize,
     state: State<'_, Arc<Mutex<AppState>>>,
@@ -1761,14 +1761,17 @@ pub fn list_history(
         let state = state.lock().map_err(|_| "state lock poisoned".to_owned())?;
         (state.saved_items.clone(), state.settings.get())
     };
-    store
-        .list_history_page(
+    tauri::async_runtime::spawn_blocking(move || {
+        store.list_history_page(
             settings.transcript_history_retention,
             settings.history_last_retention,
             offset,
             limit,
         )
-        .map_err(|_| "Transcript History could not be read from local storage".to_owned())
+    })
+    .await
+    .map_err(|_| "Transcript History loading task could not complete".to_owned())?
+    .map_err(|_| "Transcript History could not be read from local storage".to_owned())
 }
 
 #[tauri::command]
