@@ -8,7 +8,7 @@ The repository is intentionally standalone. Lyra does not depend on Orion's gate
 
 v0.5.12 (2026-10-14 local time) adds multiple recorded dictation shortcuts with independent Hold/Toggle modes, including F13–F24 hardware buttons. The initiating shortcut controls stopping, while bar and Scratchpad activation remain independent. The installer and signed updater feed are published through [Lyra-Releases](https://github.com/OrionAISystems/Lyra-Releases/releases/tag/v0.5.12); validation and publication status are tracked in [docs/ACCEPTANCE-V0.5.12.md](docs/ACCEPTANCE-V0.5.12.md).
 
-Settings migrations through schema v5 are automatic and idempotent. Existing History, Scratchpad, appearance, audio, and personalization preferences are preserved; seasonal themes and motion can each be disabled. Runtime and model installation remains separate and explicit; the optional Nemotron model is independently versioned and verified.
+Settings migrations through schema v7 are automatic and idempotent. Existing History, Scratchpad, appearance, audio, personalization, and shortcut preferences are preserved; seasonal themes and motion can each be disabled. Runtime and model installation remains separate and explicit; the optional Nemotron model is independently versioned and verified.
 
 Remaining installed-updater, hardware-backed recognition, and cross-application injection checks are tracked in [docs/ACCEPTANCE-V0.5.md](docs/ACCEPTANCE-V0.5.md). v0.5.4 release evidence is in [docs/ACCEPTANCE-V0.5.4.md](docs/ACCEPTANCE-V0.5.4.md); v0.5.5 automated and hands-on results are in [docs/ACCEPTANCE-V0.5.5.md](docs/ACCEPTANCE-V0.5.5.md).
 
@@ -49,10 +49,10 @@ cargo check --release --locked --manifest-path src-tauri/Cargo.toml
 cargo test --release --locked --manifest-path src-tauri/Cargo.toml --features regression-bench
 ```
 
-Verify the existing signed theme channel while confirming the stable app remains v0.5.10:
+Verify the existing signed theme channel while confirming the stable app remains v0.5.12:
 
 ```powershell
-npm run verify:public-themes -- --latest-version 0.5.10
+npm run verify:public-themes -- --latest-version 0.5.12
 ```
 
 Verify the public app and artwork feeds without credentials:
