@@ -32,6 +32,20 @@ Audio & Engine provides separate install controls for the required Parakeet mode
 
 ## Runtime selection
 
+Runtime/model downloads distinguish certificate validation, connection,
+request timeout and interrupted-transfer failures, with bounded messages that
+do not echo request URLs or proxy credentials into the UI or logs. Interrupted
+transfers retain staged partial bytes for a retry; local file errors remain
+separate. TLS validation, existing certificate trust, request timeouts and
+pinned artifact SHA-256 checks remain unchanged. If a browser download succeeds
+but Lyra's install fails, check
+**Windows Security > Virus & threat protection > Protection history** for the
+detection name and affected file. A successful retry with real-time protection
+disabled indicates protection involvement, but does not establish which file
+was blocked or that a detection is a false positive. Publisher signing and
+SmartScreen reputation are separate from antivirus detection. Keep protection
+enabled; investigate the recorded detection before deciding on remediation.
+
 Audio & Engine exposes three local runtimes: CUDA for NVIDIA GPUs, Vulkan for compatible graphics drivers (including supported integrated graphics), and CPU without a GPU requirement. Choose CPU on an AMD laptop when GPU compatibility is uncertain. An existing active runtime remains the initial selection; a fresh device without detected NVIDIA hardware starts with CPU. Selecting an option alone does not install or activate it: review the download details and press **Install & use**. Runtime progress, errors and cancellation appear below the control. Selecting a previously verified runtime reuses its installed files without another download; the recognizer reloads when its runtime variant changes.
 
 If a verified CUDA or Vulkan runtime fails during recognition, Lyra retries the request with an already-installed verified fallback (Vulkan first, then CPU). Lyra does not download a fallback, install a CUDA Toolkit, or modify PATH as a recovery action.

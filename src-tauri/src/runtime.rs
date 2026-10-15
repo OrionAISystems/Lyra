@@ -18,6 +18,58 @@ use tracing::{info, warn};
 use uuid::Uuid;
 use zip::ZipArchive;
 
+fn network_failure_message(error: &reqwest::Error) -> &'static str {
+    let mut source = std::error::Error::source(error);
+    let mut certificate = false;
+    for _ in 0..8 {
+        let Some(cause) = source else { break };
+        // Inspect causes only, never the request URL, and return static text to
+        // the UI/logs rather than forwarding proxy details or credentials.
+        certificate |= certificate_failure_details(&cause.to_string());
+        source = cause.source();
+    }
+    classify_network_failure(error.is_timeout(), error.is_connect(), certificate)
+}
+
+fn certificate_failure_details(details: &str) -> bool {
+    let details = details.to_ascii_lowercase();
+    [
+        "invalid peer certificate",
+        "invalid certificate",
+        "invalidcertificate",
+        "certificate verify failed",
+        "unknownissuer",
+        "unknown issuer",
+    ]
+    .iter()
+    .any(|reason| details.contains(reason))
+}
+
+fn classify_network_failure(timeout: bool, connect: bool, certificate: bool) -> &'static str {
+    if timeout {
+        "The download request timed out. Check the connection, proxy or firewall, then retry; partial downloads can resume."
+    } else if certificate {
+        "HTTPS certificate validation failed. Check the computer's date and trusted certificates, including antivirus or proxy HTTPS filtering, then retry."
+    } else if connect {
+        "Could not connect to the download server. Check the internet connection, DNS, proxy or firewall. If browser downloads work, check Windows Security Protection history for a blocked file or app."
+    } else {
+        "The download request failed. Check the connection and retry; partial downloads can resume. If browser downloads work, check Windows Security Protection history for a blocked file or app."
+    }
+}
+
+fn download_read_failure_message(error: &io::Error) -> &'static str {
+    let timeout = error.kind() == io::ErrorKind::TimedOut
+        || error
+            .get_ref()
+            .and_then(|cause| cause.downcast_ref::<reqwest::Error>())
+            .is_some_and(reqwest::Error::is_timeout);
+    if timeout {
+        "The download timed out while receiving data. Check the connection and retry; the partial download is kept for resuming."
+    } else {
+        "The download was interrupted while receiving data. Check the connection and retry; the partial download is kept for resuming."
+    }
+}
+
 pub const RUNTIME_VERSION: &str = "0.1.0";
 pub const MODEL_NAME: &str = "parakeet-tdt-0.6b-v3.q8_0.gguf";
 pub const MODEL_REVISION: &str = "541d1f99c6b0c3cd0b11a95167540bb8edefd82b";
@@ -617,7 +669,9 @@ impl RuntimeManager {
             if cancellation.load(Ordering::Acquire) {
                 return Err(RuntimeError::Cancelled);
             }
-            let read = response.read(&mut buffer)?;
+            let read = response
+                .read(&mut buffer)
+                .map_err(RuntimeError::DownloadRead)?;
             if read == 0 {
                 break;
             }
@@ -1001,8 +1055,10 @@ pub enum RuntimeError {
     Io(#[from] std::io::Error),
     #[error("runtime/model metadata serialization failed: {0}")]
     Serialization(#[from] serde_json::Error),
-    #[error("runtime/model download failed: {0}")]
+    #[error("runtime/model download failed: {}", network_failure_message(.0))]
     Network(#[from] reqwest::Error),
+    #[error("runtime/model download failed: {}", download_read_failure_message(.0))]
+    DownloadRead(#[source] io::Error),
     #[error("runtime archive extraction failed: {0}")]
     Archive(#[from] zip::result::ZipError),
     #[error("unknown setup artifact: {0}")]
@@ -1230,6 +1286,99 @@ fn detect_gpu() -> (Option<String>, Option<u64>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn network_errors_have_actionable_non_sensitive_messages() {
+        assert!(classify_network_failure(false, true, true).contains("certificate validation"));
+        assert!(classify_network_failure(true, true, true).contains("timed out"));
+        assert!(classify_network_failure(false, true, false).contains("DNS"));
+        assert!(certificate_failure_details(
+            "invalid peer certificate: UnknownIssuer"
+        ));
+        assert!(certificate_failure_details("certificate verify failed"));
+        assert!(!certificate_failure_details(
+            "DNS failed for certificate.example"
+        ));
+        assert!(!certificate_failure_details("private proxy credentials"));
+        let timeout = RuntimeError::DownloadRead(io::Error::new(
+            io::ErrorKind::TimedOut,
+            "private-proxy-password",
+        ));
+        assert!(timeout
+            .to_string()
+            .contains("timed out while receiving data"));
+        assert!(!timeout.to_string().contains("private-proxy-password"));
+    }
+
+    #[test]
+    fn connection_errors_hide_request_urls_in_setup_status() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        drop(listener);
+        let error = Client::builder()
+            .no_proxy()
+            .timeout(Duration::from_secs(2))
+            .build()
+            .unwrap()
+            .get(format!(
+                "http://{address}/private-path?token=invented-secret"
+            ))
+            .send()
+            .unwrap_err();
+        let message = RuntimeError::Network(error).to_string();
+        // A closed port can be refused or time out depending on Windows filtering.
+        assert!(message.contains("Could not connect") || message.contains("timed out"));
+        assert!(!message.contains("private-path"));
+        assert!(!message.contains("invented-secret"));
+        assert!(!message.contains("127.0.0.1"));
+    }
+
+    #[test]
+    fn interrupted_response_preserves_partial_bytes_and_sanitizes_status() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            let mut request = [0; 2048];
+            let read = stream.read(&mut request).unwrap();
+            assert!(String::from_utf8_lossy(&request[..read])
+                .to_ascii_lowercase()
+                .contains("range: bytes=3-"));
+            stream.write_all(b"HTTP/1.1 206 Partial Content\r\nContent-Length: 5\r\nConnection: close\r\n\r\nd").unwrap();
+        });
+        let root =
+            std::env::temp_dir().join(format!("lyra-runtime-interrupted-{}", Uuid::new_v4()));
+        let manager = RuntimeManager::for_tests(root.clone());
+        let kind = SetupArtifactKind::Runtime(RuntimeVariant::Cpu);
+        let mut spec = manager.artifact_spec(kind);
+        // Production specs are static pinned URLs; only this loopback fixture leaks its tiny URL.
+        spec.source = Box::leak(
+            format!("http://{address}/private-path?token=invented-secret").into_boxed_str(),
+        );
+        spec.size_bytes = 8;
+        let partial = manager.partial_path(kind);
+        fs::create_dir_all(partial.parent().unwrap()).unwrap();
+        fs::write(&partial, b"abc").unwrap();
+        let error = manager
+            .download_to_partial(&spec, &partial, &AtomicBool::new(false), &mut |_| {})
+            .unwrap_err();
+        server.join().unwrap();
+        assert!(matches!(error, RuntimeError::DownloadRead(_)));
+        assert!(fs::read(&partial).unwrap().starts_with(b"abc"));
+        manager.finish_setup(kind, Err(error));
+        let status = manager.setup_progress();
+        assert_eq!(status.state, "error");
+        let message = status.error.unwrap();
+        assert!(message.contains("interrupted while receiving data"));
+        assert!(!message.contains("private-path"));
+        assert!(!message.contains("invented-secret"));
+        assert!(!message.contains("I/O failed"));
+        assert!(!manager.is_variant_ready("cpu"));
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn empty_runtime_is_not_ready() {
