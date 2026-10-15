@@ -6,7 +6,7 @@ The repository is intentionally standalone. Lyra does not depend on Orion's gate
 
 ## Current phase
 
-v0.5.11 (2026-10-14 local time) is the current published release. It adds persistent dictation bar visibility controls in Appearance and the system tray. The bar's Hide bar action shares that preference, and global dictation shortcuts remain available while hidden. The installer and signed updater feed are published in [Lyra-Releases](https://github.com/OrionAISystems/Lyra-Releases/releases/tag/v0.5.11); automated, rendered and publication evidence is tracked in [docs/ACCEPTANCE-V0.5.11.md](docs/ACCEPTANCE-V0.5.11.md). Explicit CUDA, Vulkan and CPU runtime setup remains available in Audio & Engine.
+v0.5.12 (2026-10-14 local time) adds multiple recorded dictation shortcuts with independent Hold/Toggle modes, including F13–F24 hardware buttons. The initiating shortcut controls stopping, while bar and Scratchpad activation remain independent. The installer and signed updater feed are published through [Lyra-Releases](https://github.com/OrionAISystems/Lyra-Releases/releases/tag/v0.5.12); validation and publication status are tracked in [docs/ACCEPTANCE-V0.5.12.md](docs/ACCEPTANCE-V0.5.12.md).
 
 Settings migrations through schema v5 are automatic and idempotent. Existing History, Scratchpad, appearance, audio, and personalization preferences are preserved; seasonal themes and motion can each be disabled. Runtime and model installation remains separate and explicit; the optional Nemotron model is independently versioned and verified.
 

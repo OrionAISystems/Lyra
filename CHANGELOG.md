@@ -2,6 +2,18 @@
 
 Lyra releases are published from the private source repository to the public [Lyra-Releases](https://github.com/OrionAISystems/Lyra-Releases) repository. The private source copy is the canonical release history; tagged builds mirror it publicly and use the current version section as their release notes.
 
+## [0.5.12] - 2026-10-14
+
+### Added
+
+- Configure multiple dictation shortcuts with independent Hold or Toggle behavior, including bare F13–F24 keys for hardware buttons.
+- Click shortcut pills to record key combinations instead of typing shortcut names. Bar and Scratchpad activation can be configured independently.
+
+### Fixed
+
+- Keep the shortcut that starts a recording in control of when it stops, and restore previous assignments if shortcut registration or saving fails.
+- Keep compact Hold/Toggle dropdown menus inside the settings window.
+
 ## [0.5.11] - 2026-10-14
 
 ### Added

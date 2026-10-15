@@ -1,6 +1,6 @@
 # Lyra build stage
 
-The current published version is v0.5.11 (2026-10-14 local time). It adds persistent dictation bar visibility controls in Appearance and the system tray, sharing the preference with the bar's Hide bar action. Local gates, Windows main CI, tagged publication and public installer/updater/changelog verification passed; evidence is tracked in [docs/ACCEPTANCE-V0.5.11.md](docs/ACCEPTANCE-V0.5.11.md). Native tray/restart and installed-updater acceptance remain unverified. Earlier runtime setup and hardware evidence remains in [docs/ACCEPTANCE-V0.5.10.md](docs/ACCEPTANCE-V0.5.10.md).
+v0.5.12 (2026-10-14 local time) adds recorded multi-shortcut dictation with independent Hold/Toggle modes and compact dropdown bounds. Local automated, rendered and user-confirmed F20/keyboard evidence passed. Windows CI and publication status are tracked in [docs/ACCEPTANCE-V0.5.12.md](docs/ACCEPTANCE-V0.5.12.md); installed-updater acceptance remains unverified.
 
 ## Stage 0 — foundation
 
