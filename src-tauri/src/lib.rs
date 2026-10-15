@@ -110,6 +110,7 @@ pub fn run() {
             commands::get_scratchpad_hotkey_status,
             commands::retry_hotkey,
             commands::save_settings,
+            commands::set_shortcut_recording,
             commands::get_theme_status,
             commands::get_theme_content,
             commands::refresh_themes,

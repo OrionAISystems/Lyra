@@ -110,6 +110,8 @@ pub enum ActivationAction {
 pub struct ActivationController {
     mode: ActivationMode,
     active_mode: Option<ActivationMode>,
+    active_binding: Option<String>,
+    held_bindings: std::collections::HashSet<String>,
 }
 
 impl ActivationController {
@@ -117,6 +119,8 @@ impl ActivationController {
         Self {
             mode,
             active_mode: None,
+            active_binding: None,
+            held_bindings: std::collections::HashSet::new(),
         }
     }
 
@@ -126,21 +130,53 @@ impl ActivationController {
 
     pub fn reset(&mut self) {
         self.active_mode = None;
+        self.active_binding = None;
+        self.held_bindings.clear();
     }
 
-    pub fn handle(&mut self, edge: ShortcutEdge) -> ActivationAction {
+    pub fn active_mode(&self) -> Option<ActivationMode> {
+        self.active_mode
+    }
+
+    /// The initiating binding owns the gesture; other bindings cannot stop it.
+    pub fn handle_binding(&mut self, binding: &str, edge: ShortcutEdge) -> ActivationAction {
+        self.handle_binding_with_mode(binding, self.mode, edge)
+    }
+
+    pub fn handle_binding_with_mode(
+        &mut self,
+        binding: &str,
+        mode: ActivationMode,
+        edge: ShortcutEdge,
+    ) -> ActivationAction {
+        match edge {
+            ShortcutEdge::Pressed => {
+                if !self.held_bindings.insert(binding.to_owned()) {
+                    return ActivationAction::Ignore;
+                }
+            }
+            ShortcutEdge::Released => {
+                if !self.held_bindings.remove(binding) {
+                    return ActivationAction::Ignore;
+                }
+            }
+        }
         match (self.active_mode, edge) {
             (None, ShortcutEdge::Pressed) => {
-                self.active_mode = Some(self.mode);
+                self.active_binding = Some(binding.to_owned());
+                self.active_mode = Some(mode);
                 ActivationAction::Start
             }
-            (Some(ActivationMode::PushToTalk), ShortcutEdge::Released) => {
-                self.active_mode = None;
-                ActivationAction::Stop
-            }
-            (Some(ActivationMode::Toggle), ShortcutEdge::Pressed) => {
-                self.active_mode = None;
-                ActivationAction::Stop
+            (Some(active_mode), _) if self.active_binding.as_deref() == Some(binding) => {
+                if (active_mode == ActivationMode::PushToTalk && edge == ShortcutEdge::Released)
+                    || (active_mode == ActivationMode::Toggle && edge == ShortcutEdge::Pressed)
+                {
+                    self.active_mode = None;
+                    self.active_binding = None;
+                    ActivationAction::Stop
+                } else {
+                    ActivationAction::Ignore
+                }
             }
             _ => ActivationAction::Ignore,
         }
@@ -1000,19 +1036,77 @@ mod tests {
     fn push_to_talk_requires_key_up_to_stop() {
         let mut controller = ActivationController::new(ActivationMode::PushToTalk);
         assert_eq!(
-            controller.handle(ShortcutEdge::Pressed),
+            controller.handle_binding("test", ShortcutEdge::Pressed),
             ActivationAction::Start
         );
         assert_eq!(
-            controller.handle(ShortcutEdge::Pressed),
+            controller.handle_binding("test", ShortcutEdge::Pressed),
             ActivationAction::Ignore
         );
         assert_eq!(
-            controller.handle(ShortcutEdge::Released),
+            controller.handle_binding("test", ShortcutEdge::Released),
             ActivationAction::Stop
         );
         assert_eq!(
-            controller.handle(ShortcutEdge::Released),
+            controller.handle_binding("test", ShortcutEdge::Released),
+            ActivationAction::Ignore
+        );
+    }
+
+    #[test]
+    fn initiating_binding_owns_mixed_mode_recordings() {
+        let hold = ActivationMode::PushToTalk;
+        let toggle = ActivationMode::Toggle;
+        let mut controller = ActivationController::new(hold);
+        assert_eq!(
+            controller.handle_binding_with_mode("F20", toggle, ShortcutEdge::Pressed),
+            ActivationAction::Start
+        );
+        assert_eq!(controller.active_mode(), Some(toggle));
+        assert_eq!(
+            controller.handle_binding_with_mode("F20", toggle, ShortcutEdge::Pressed),
+            ActivationAction::Ignore
+        );
+        assert_eq!(
+            controller.handle_binding_with_mode("F20", toggle, ShortcutEdge::Released),
+            ActivationAction::Ignore
+        );
+        assert_eq!(
+            controller.handle_binding_with_mode("Ctrl+Alt+Space", hold, ShortcutEdge::Pressed),
+            ActivationAction::Ignore
+        );
+        assert_eq!(
+            controller.handle_binding_with_mode("Ctrl+Alt+Space", hold, ShortcutEdge::Released),
+            ActivationAction::Ignore
+        );
+        assert_eq!(
+            controller.handle_binding_with_mode("F20", hold, ShortcutEdge::Pressed),
+            ActivationAction::Stop
+        );
+        controller.reset();
+        assert_eq!(
+            controller.handle_binding_with_mode("Ctrl+Alt+Space", hold, ShortcutEdge::Pressed),
+            ActivationAction::Start
+        );
+        assert_eq!(
+            controller.handle_binding_with_mode("F20", toggle, ShortcutEdge::Pressed),
+            ActivationAction::Ignore
+        );
+        assert_eq!(
+            controller.handle_binding_with_mode("F20", toggle, ShortcutEdge::Released),
+            ActivationAction::Ignore
+        );
+        assert_eq!(
+            controller.handle_binding_with_mode("Ctrl+Alt+Space", toggle, ShortcutEdge::Released),
+            ActivationAction::Stop
+        );
+        assert_eq!(
+            controller.handle_binding_with_mode("F20", toggle, ShortcutEdge::Pressed),
+            ActivationAction::Start
+        );
+        controller.reset();
+        assert_eq!(
+            controller.handle_binding_with_mode("F20", toggle, ShortcutEdge::Released),
             ActivationAction::Ignore
         );
     }
@@ -1021,15 +1115,15 @@ mod tests {
     fn toggle_changes_on_each_press_and_ignores_release() {
         let mut controller = ActivationController::new(ActivationMode::Toggle);
         assert_eq!(
-            controller.handle(ShortcutEdge::Pressed),
+            controller.handle_binding("test", ShortcutEdge::Pressed),
             ActivationAction::Start
         );
         assert_eq!(
-            controller.handle(ShortcutEdge::Released),
+            controller.handle_binding("test", ShortcutEdge::Released),
             ActivationAction::Ignore
         );
         assert_eq!(
-            controller.handle(ShortcutEdge::Pressed),
+            controller.handle_binding("test", ShortcutEdge::Pressed),
             ActivationAction::Stop
         );
     }
@@ -1038,29 +1132,32 @@ mod tests {
     fn activation_mode_changes_do_not_change_the_active_gesture() {
         let mut push_to_talk = ActivationController::new(ActivationMode::PushToTalk);
         assert_eq!(
-            push_to_talk.handle(ShortcutEdge::Pressed),
+            push_to_talk.handle_binding("test", ShortcutEdge::Pressed),
             ActivationAction::Start
         );
         push_to_talk.set_mode(ActivationMode::Toggle);
         assert_eq!(
-            push_to_talk.handle(ShortcutEdge::Released),
+            push_to_talk.handle_binding("test", ShortcutEdge::Released),
             ActivationAction::Stop
         );
 
         let mut toggle = ActivationController::new(ActivationMode::Toggle);
         assert_eq!(
-            toggle.handle(ShortcutEdge::Pressed),
+            toggle.handle_binding("test", ShortcutEdge::Pressed),
             ActivationAction::Start
         );
         toggle.set_mode(ActivationMode::PushToTalk);
         assert_eq!(
-            toggle.handle(ShortcutEdge::Released),
+            toggle.handle_binding("test", ShortcutEdge::Released),
             ActivationAction::Ignore
         );
-        assert_eq!(toggle.handle(ShortcutEdge::Pressed), ActivationAction::Stop);
+        assert_eq!(
+            toggle.handle_binding("test", ShortcutEdge::Pressed),
+            ActivationAction::Stop
+        );
         toggle.reset();
         assert_eq!(
-            toggle.handle(ShortcutEdge::Pressed),
+            toggle.handle_binding("test", ShortcutEdge::Pressed),
             ActivationAction::Start
         );
     }

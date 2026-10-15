@@ -83,6 +83,9 @@ export interface Settings {
   schemaVersion: number;
   activationMode: ActivationMode;
   hotkey: string;
+  additionalHotkeys: string[];
+  dictationHotkeyModes: Record<string, ActivationMode>;
+  scratchpadActivationMode: ActivationMode | null;
   showBar: boolean;
   language: LanguagePreference;
   route: TranscriptionRoute;
@@ -346,9 +349,12 @@ export interface SavedItemDetail {
   text: string;
 }
 export const defaultSettings: Settings = {
-  schemaVersion: 5,
+  schemaVersion: 7,
   activationMode: "push_to_talk",
   hotkey: "Ctrl+Alt+Space",
+  additionalHotkeys: [],
+  dictationHotkeyModes: { "Ctrl+Alt+Space": "push_to_talk" },
+  scratchpadActivationMode: "push_to_talk",
   showBar: true,
   language: "auto",
   route: "local_first_cloud_fallback",

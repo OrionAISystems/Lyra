@@ -6,7 +6,7 @@ use tracing::{info, warn};
 
 use crate::domain::{ActivationMode, CorrectionEntry, LanguagePreference, TranscriptionRoute};
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 5;
+pub const CURRENT_SCHEMA_VERSION: u32 = 7;
 
 const DEFAULT_CLOUD_COST_PER_MINUTE_USD: f64 = 0.003;
 const DEFAULT_TYPING_WPM: u32 = 40;
@@ -122,6 +122,13 @@ pub struct Settings {
     pub activation_mode: ActivationMode,
     #[serde(default = "default_hotkey")]
     pub hotkey: String,
+    /// Additional dictation bindings; the existing primary binding remains compatible.
+    #[serde(default)]
+    pub additional_hotkeys: Vec<String>,
+    #[serde(default)]
+    pub dictation_hotkey_modes: std::collections::BTreeMap<String, ActivationMode>,
+    #[serde(default)]
+    pub scratchpad_activation_mode: Option<ActivationMode>,
     #[serde(default = "default_true")]
     pub show_bar: bool,
     #[serde(default)]
@@ -235,6 +242,12 @@ impl Default for Settings {
             schema_version: CURRENT_SCHEMA_VERSION,
             activation_mode: ActivationMode::PushToTalk,
             hotkey: default_hotkey(),
+            additional_hotkeys: Vec::new(),
+            dictation_hotkey_modes: std::collections::BTreeMap::from([(
+                default_hotkey(),
+                ActivationMode::PushToTalk,
+            )]),
+            scratchpad_activation_mode: Some(ActivationMode::PushToTalk),
             show_bar: true,
             language: LanguagePreference::Auto,
             route: TranscriptionRoute::LocalFirstCloudFallback,
@@ -282,6 +295,18 @@ impl Settings {
         if self.hotkey.trim().is_empty() {
             self.hotkey = default_hotkey();
         }
+        let bindings: Vec<_> = std::iter::once(self.hotkey.clone())
+            .chain(self.additional_hotkeys.clone())
+            .collect();
+        self.dictation_hotkey_modes
+            .retain(|key, _| bindings.contains(key));
+        for binding in bindings {
+            self.dictation_hotkey_modes
+                .entry(binding)
+                .or_insert(self.activation_mode);
+        }
+        self.scratchpad_activation_mode
+            .get_or_insert(self.activation_mode);
         if self.theme != "system" && self.theme != "dark" && self.theme != "light" {
             self.theme = default_theme();
         }
@@ -432,6 +457,74 @@ pub enum SettingsError {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn shortcut_modes_migrate_once_and_remain_independent_of_bar_mode() {
+        let mut fresh = Settings::default();
+        fresh.activation_mode = ActivationMode::Toggle;
+        assert_eq!(
+            fresh.normalized().dictation_hotkey_modes["Ctrl+Alt+Space"],
+            ActivationMode::PushToTalk
+        );
+        let mut legacy = serde_json::to_value(Settings::default()).unwrap();
+        legacy
+            .as_object_mut()
+            .unwrap()
+            .remove("dictationHotkeyModes");
+        legacy
+            .as_object_mut()
+            .unwrap()
+            .remove("scratchpadActivationMode");
+        legacy["schemaVersion"] = serde_json::json!(6);
+        legacy["activationMode"] = serde_json::json!("toggle");
+        legacy["additionalHotkeys"] = serde_json::json!(["F20"]);
+        let mut settings = migrate_settings_value(legacy).unwrap().normalized();
+        assert_eq!(
+            settings.dictation_hotkey_modes["F20"],
+            ActivationMode::Toggle
+        );
+        assert_eq!(
+            settings.dictation_hotkey_modes["Ctrl+Alt+Space"],
+            ActivationMode::Toggle
+        );
+        assert_eq!(
+            settings.scratchpad_activation_mode,
+            Some(ActivationMode::Toggle)
+        );
+        settings.activation_mode = ActivationMode::PushToTalk;
+        settings
+            .dictation_hotkey_modes
+            .insert("Ctrl+Alt+Space".to_owned(), ActivationMode::PushToTalk);
+        let settings = settings.normalized();
+        assert_eq!(
+            settings.dictation_hotkey_modes["F20"],
+            ActivationMode::Toggle
+        );
+        assert_eq!(
+            settings.scratchpad_activation_mode,
+            Some(ActivationMode::Toggle)
+        );
+        assert_eq!(
+            serde_json::from_value::<Settings>(serde_json::to_value(&settings).unwrap()).unwrap(),
+            settings
+        );
+    }
+    #[test]
+    fn legacy_shortcut_is_preserved_with_empty_additional_bindings() {
+        let mut legacy = serde_json::to_value(Settings::default()).unwrap();
+        legacy.as_object_mut().unwrap().remove("additionalHotkeys");
+        legacy["schemaVersion"] = serde_json::json!(5);
+        legacy["hotkey"] = serde_json::json!("Ctrl+Alt+K");
+        let settings = migrate_settings_value(legacy).unwrap();
+        assert_eq!(settings.hotkey, "Ctrl+Alt+K");
+        assert!(settings.additional_hotkeys.is_empty());
+        assert_eq!(settings.schema_version, CURRENT_SCHEMA_VERSION);
+        let mut multiple = settings;
+        multiple.additional_hotkeys = vec!["F20".to_owned(), "Ctrl+Shift+K".to_owned()];
+        assert_eq!(
+            serde_json::from_value::<Settings>(serde_json::to_value(&multiple).unwrap()).unwrap(),
+            multiple
+        );
+    }
     use super::*;
 
     #[test]
@@ -589,7 +682,7 @@ mod tests {
     }
 
     #[test]
-    fn v4_settings_migrate_to_v5_and_preserve_existing_preferences() {
+    fn v4_settings_migrate_and_preserve_existing_preferences() {
         let legacy = serde_json::json!({
             "schemaVersion": 4,
             "hotkey": "Ctrl+Alt+K",
@@ -602,7 +695,7 @@ mod tests {
 
         let migrated = migrate_settings_value(legacy).unwrap().normalized();
 
-        assert_eq!(migrated.schema_version, 5);
+        assert_eq!(migrated.schema_version, CURRENT_SCHEMA_VERSION);
         assert!(migrated.seasonal_themes_enabled);
         assert!(migrated.seasonal_motion_enabled);
         assert_eq!(migrated.hotkey, "Ctrl+Alt+K");

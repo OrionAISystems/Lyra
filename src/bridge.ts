@@ -38,6 +38,10 @@ export const listenToThemeChanges = async (onChange: (status: ThemeStatus) => vo
   isTauri ? listen<ThemeStatus>("lyra://theme-changed", (event) => onChange(event.payload)) : () => {};
 export const saveSettings = (settings: Settings) =>
   command<Settings>("save_settings", { settings });
+export const setShortcutRecording = (recording: boolean) =>
+  command<void>("set_shortcut_recording", { recording });
+export const listenToRecordedShortcut = async (onRecorded: (shortcut: string) => void) =>
+  isTauri ? listen<string>("lyra://shortcut-recorded", (event) => onRecorded(event.payload)) : () => {};
 export const getPersonalization = () =>
   command<Personalization>("get_personalization");
 export const savePersonalization = (personalization: Personalization) =>

@@ -2195,3 +2195,20 @@ html.bar-window,
     min-width: 0;
   }
 }
+/* Shortcut editors wrap inside the compact settings shell. */
+.shortcut-list { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; max-width: 400px; }
+.shortcut-binding { display: flex; align-items: flex-start; justify-content: flex-end; gap: 8px; }
+.shortcut-settings-row .row-copy { flex: 1; min-width: 0; }
+.shortcut-settings-row .row-control { flex: 0 0 auto; }
+.shortcut-binding .select { min-width: 100px; }
+.shortcut-binding .select-menu { min-width: 0; }
+.shortcut-editor { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
+.shortcut-pill-group { display: flex; align-items: center; gap: 2px; }
+.shortcut-pill { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 38px; padding: 7px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: inherit; cursor: pointer; }
+.shortcut-pill kbd { font: inherit; font-size: 12px; }
+.shortcut-pill kbd + kbd::before { content: "+"; opacity: .45; margin-right: 6px; }
+.shortcut-pill.recording { outline: 2px solid var(--accent); outline-offset: 2px; }
+.shortcut-pill:focus-visible, .shortcut-remove:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.shortcut-remove { display: grid; place-items: center; width: 32px; min-height: 36px; border: 0; background: transparent; color: inherit; cursor: pointer; }
+.shortcut-pill:disabled, .shortcut-remove:disabled { opacity: .5; cursor: default; }
+.shortcut-hint { font-size: 11px; opacity: .7; }

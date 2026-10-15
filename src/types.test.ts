@@ -8,7 +8,8 @@ describe("Lyra defaults", () => {
     expect(defaultSettings.route).toBe("local_first_cloud_fallback");
     expect(defaultSettings.autoPaste).toBe(true);
     expect(defaultSettings.maxDurationSeconds).toBe(120);
-    expect(defaultSettings.schemaVersion).toBe(5);
+    expect(defaultSettings.schemaVersion).toBe(7);
+    expect(defaultSettings.additionalHotkeys).toEqual([]);
     expect(defaultSettings.seasonalThemesEnabled).toBe(true);
     expect(defaultSettings.seasonalMotionEnabled).toBe(true);
     expect(defaultSettings.transcriptHistoryRetention).toBe("off");

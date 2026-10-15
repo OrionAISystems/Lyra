@@ -56,6 +56,8 @@ pub struct AppState {
     pub session: DictationStateMachine,
     pub snapshot: SessionSnapshot,
     pub activation: ActivationController,
+    shortcut_recording_until: Option<Instant>,
+    recorded_held_shortcuts: std::collections::HashSet<String>,
     pub active_capture: Option<CaptureControl>,
     pub microphone_test: Option<InputLevelMonitor>,
     pub benchmark_active: bool,
@@ -135,7 +137,13 @@ impl AppState {
             session: DictationStateMachine::default(),
             snapshot: SessionSnapshot::default(),
             activation: ActivationController::new(settings_value.activation_mode),
-            scratchpad_activation: ActivationController::new(settings_value.activation_mode),
+            shortcut_recording_until: None,
+            recorded_held_shortcuts: std::collections::HashSet::new(),
+            scratchpad_activation: ActivationController::new(
+                settings_value
+                    .scratchpad_activation_mode
+                    .unwrap_or(settings_value.activation_mode),
+            ),
             active_capture: None,
             microphone_test: None,
             benchmark_active: false,
@@ -361,47 +369,37 @@ fn track_external_foreground_target(app: AppHandle) {
     }
 }
 
-fn current_hotkey_label(state: &Arc<Mutex<AppState>>) -> String {
-    state
-        .lock()
-        .map(|state| state.settings.get().hotkey)
-        .unwrap_or_else(|_| "Ctrl+Alt+Space".to_owned())
-}
-
 fn try_register_hotkey(app: &AppHandle, state: Arc<Mutex<AppState>>) -> HotkeyStatus {
-    let hotkey_label = current_hotkey_label(&state);
-    match parse_shortcut(&hotkey_label) {
-        Ok(shortcut) => try_register_hotkey_with_shortcut(app, state, shortcut),
-        Err(error) => HotkeyStatus {
-            hotkey: hotkey_label,
-            registered: false,
-            error: Some(error.to_string()),
-        },
-    }
-}
-
-fn try_register_hotkey_with_shortcut(
-    app: &AppHandle,
-    state: Arc<Mutex<AppState>>,
-    shortcut: Shortcut,
-) -> HotkeyStatus {
-    let hotkey_label = current_hotkey_label(&state);
-    match register_hotkey(app, state, shortcut) {
-        Ok(()) => HotkeyStatus {
-            hotkey: hotkey_label,
-            registered: true,
-            error: None,
-        },
-        Err(error) => {
-            let message = error.to_string();
-            warn!(hotkey = %hotkey_label, error = %message, "global shortcut unavailable; bar and tray remain available");
-            HotkeyStatus {
-                hotkey: hotkey_label,
-                registered: false,
-                error: Some(message),
+    let settings = state.lock().expect("state lock poisoned").settings.get();
+    let labels = dictation_shortcuts(&settings);
+    let mut errors = Vec::new();
+    for label in &labels {
+        let result = parse_shortcut(label).and_then(|shortcut| {
+            if app.global_shortcut().is_registered(shortcut) {
+                return Ok(());
             }
+            register_hotkey(app, state.clone(), shortcut)
+        });
+        if let Err(error) = result {
+            warn!(shortcut = %label, error = %error, "dictation shortcut registration failed");
+            errors.push(format!("{label}: {error}"));
         }
     }
+    HotkeyStatus {
+        hotkey: labels.join(" · "),
+        registered: errors.is_empty(),
+        error: if errors.is_empty() {
+            None
+        } else {
+            Some(errors.join("; "))
+        },
+    }
+}
+
+fn dictation_shortcuts(settings: &Settings) -> Vec<String> {
+    std::iter::once(settings.hotkey.clone())
+        .chain(settings.additional_hotkeys.clone())
+        .collect()
 }
 
 fn register_hotkey(
@@ -419,7 +417,21 @@ fn register_hotkey(
             let action = handler_state
                 .lock()
                 .ok()
-                .map(|mut state| state.activation.handle(edge))
+                .map(|mut state| {
+                    if intercept_shortcut_recording(&mut state, shortcut, event.state) {
+                        return ActivationAction::Ignore;
+                    }
+                    let binding = canonical_shortcut(shortcut);
+                    let settings = state.settings.get();
+                    let mode = settings
+                        .dictation_hotkey_modes
+                        .get(&binding)
+                        .copied()
+                        .unwrap_or(settings.activation_mode);
+                    state
+                        .activation
+                        .handle_binding_with_mode(&binding, mode, edge)
+                })
                 .unwrap_or(ActivationAction::Ignore);
             match action {
                 ActivationAction::Start => {
@@ -501,7 +513,14 @@ fn register_scratchpad_hotkey(
             let action = handler_state
                 .lock()
                 .ok()
-                .map(|mut state| state.scratchpad_activation.handle(edge))
+                .map(|mut state| {
+                    if intercept_shortcut_recording(&mut state, shortcut, event.state) {
+                        return ActivationAction::Ignore;
+                    }
+                    state
+                        .scratchpad_activation
+                        .handle_binding(&canonical_shortcut(shortcut), edge)
+                })
                 .unwrap_or(ActivationAction::Ignore);
             match action {
                 ActivationAction::Start => {
@@ -548,7 +567,7 @@ struct TranscriptionPartialEvent {
     finality: bool,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RecoveryAction {
     PasteLast,
     CopyLast,
@@ -606,72 +625,222 @@ fn register_recovery_shortcuts_for(
     shared: Arc<Mutex<AppState>>,
     settings: &Settings,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut seen = std::collections::HashSet::new();
-    seen.insert(canonical_shortcut(parse_shortcut(&settings.hotkey)?));
-    seen.insert(canonical_shortcut(parse_shortcut(
-        &settings.scratchpad_hotkey,
-    )?));
+    validate_shortcut_set(settings)?;
     for (action, label) in recovery_shortcuts(settings) {
-        let shortcut = parse_shortcut(&label)?;
-        let canonical = canonical_shortcut(shortcut);
-        if !seen.insert(canonical.clone()) {
-            return Err(format!("shortcut {canonical} is assigned more than once").into());
-        }
-        let handler_state = shared.clone();
-        app.global_shortcut()
-            .on_shortcut(shortcut, move |app, _, event| {
-                if event.state != ShortcutState::Pressed {
-                    return;
-                }
-                match action {
-                    RecoveryAction::CopyLast => {
-                        if let Ok(state) = handler_state.lock() {
-                            if let Some(text) = state.last_transcript.as_deref() {
-                                let _ = state.injector.copy_text(text);
-                            }
-                        }
-                    }
-                    RecoveryAction::PasteLast => {
-                        if let Ok(state) = handler_state.lock() {
-                            if let (Some(text), Ok(target)) = (
-                                state.last_transcript.as_deref(),
-                                capture_foreground_target(),
-                            ) {
-                                let profile = state
-                                    .personalization
-                                    .get()
-                                    .profile_for(target_executable(target).as_deref());
-                                let _ = state.injector.paste_with_profile(target, text, &profile);
-                            }
-                        }
-                    }
-                    RecoveryAction::Cancel => {
-                        let _ = cancel_session(handler_state.clone());
-                    }
-                    RecoveryAction::HandsFreeToggle => {
-                        let listening = handler_state.lock().ok().is_some_and(|state| {
-                            state.session.state() == DictationState::Listening
-                        });
-                        if listening {
-                            let _ = stop_session(
-                                handler_state.clone(),
-                                ActivationSource::Hotkey,
-                                SessionDestination::Dictation,
-                            );
-                        } else {
-                            let _ = start_session(
-                                handler_state.clone(),
-                                ActivationSource::Hotkey,
-                                SessionDestination::Dictation,
-                            );
-                        }
-                    }
-                    RecoveryAction::OpenSettings => {
-                        let _ = show_settings_window(app);
-                    }
-                }
-            })?;
+        register_recovery_shortcut(app, shared.clone(), action, parse_shortcut(&label)?)?;
     }
+    Ok(())
+}
+
+fn register_recovery_shortcut(
+    app: &AppHandle,
+    shared: Arc<Mutex<AppState>>,
+    action: RecoveryAction,
+    shortcut: Shortcut,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let handler_state = shared.clone();
+    app.global_shortcut()
+        .on_shortcut(shortcut, move |app, _, event| {
+            if handler_state
+                .lock()
+                .map(|mut state| intercept_shortcut_recording(&mut state, shortcut, event.state))
+                .unwrap_or(true)
+            {
+                return;
+            }
+            if event.state != ShortcutState::Pressed {
+                return;
+            }
+            match action {
+                RecoveryAction::CopyLast => {
+                    if let Ok(state) = handler_state.lock() {
+                        if let Some(text) = state.last_transcript.as_deref() {
+                            let _ = state.injector.copy_text(text);
+                        }
+                    }
+                }
+                RecoveryAction::PasteLast => {
+                    if let Ok(state) = handler_state.lock() {
+                        if let (Some(text), Ok(target)) = (
+                            state.last_transcript.as_deref(),
+                            capture_foreground_target(),
+                        ) {
+                            let profile = state
+                                .personalization
+                                .get()
+                                .profile_for(target_executable(target).as_deref());
+                            let _ = state.injector.paste_with_profile(target, text, &profile);
+                        }
+                    }
+                }
+                RecoveryAction::Cancel => {
+                    let _ = cancel_session(handler_state.clone());
+                }
+                RecoveryAction::HandsFreeToggle => {
+                    let listening = handler_state
+                        .lock()
+                        .ok()
+                        .is_some_and(|state| state.session.state() == DictationState::Listening);
+                    if listening {
+                        let _ = stop_session(
+                            handler_state.clone(),
+                            ActivationSource::Hotkey,
+                            SessionDestination::Dictation,
+                        );
+                    } else {
+                        let _ = start_session(
+                            handler_state.clone(),
+                            ActivationSource::Hotkey,
+                            SessionDestination::Dictation,
+                        );
+                    }
+                }
+                RecoveryAction::OpenSettings => {
+                    let _ = show_settings_window(app);
+                }
+            }
+        })?;
+
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ShortcutAction {
+    Dictation,
+    Scratchpad,
+    Recovery(RecoveryAction),
+}
+
+// Keep OS registration and durable settings in one transaction. Callers supply
+// the platform boundary so failure paths can be exercised without global hooks.
+fn apply_shortcut_changes<B, T>(
+    removed: &[B],
+    added: &[B],
+    mut register: impl FnMut(&B) -> Result<(), String>,
+    mut unregister: impl FnMut(&B) -> Result<(), String>,
+    persist: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    let mut removed_count = 0;
+    let mut added_count = 0;
+    let result = (|| {
+        for binding in removed {
+            unregister(binding)?;
+            removed_count += 1;
+        }
+        for binding in added {
+            register(binding)?;
+            added_count += 1;
+        }
+        persist()
+    })();
+    match result {
+        Ok(saved) => Ok(saved),
+        Err(error) => {
+            let mut rollback_errors = Vec::new();
+            for binding in added[..added_count].iter().rev() {
+                if let Err(error) = unregister(binding) {
+                    rollback_errors.push(error);
+                }
+            }
+            for binding in &removed[..removed_count] {
+                if let Err(error) = register(binding) {
+                    rollback_errors.push(error);
+                }
+            }
+            if rollback_errors.is_empty() {
+                Err(error)
+            } else {
+                Err(format!(
+                    "{error}; shortcut restoration failed: {}",
+                    rollback_errors.join("; ")
+                ))
+            }
+        }
+    }
+}
+
+fn shortcut_bindings(settings: &Settings) -> Result<Vec<(Shortcut, ShortcutAction)>, String> {
+    dictation_shortcuts(settings)
+        .into_iter()
+        .map(|label| (label, ShortcutAction::Dictation))
+        .chain(std::iter::once((
+            settings.scratchpad_hotkey.clone(),
+            ShortcutAction::Scratchpad,
+        )))
+        .chain(
+            recovery_shortcuts(settings)
+                .into_iter()
+                .map(|(action, label)| (label, ShortcutAction::Recovery(action))),
+        )
+        .map(|(label, action)| {
+            parse_shortcut(&label)
+                .map(|key| (key, action))
+                .map_err(|e| e.to_string())
+        })
+        .collect()
+}
+
+fn register_binding(
+    app: &AppHandle,
+    shared: Arc<Mutex<AppState>>,
+    binding: &(Shortcut, ShortcutAction),
+) -> Result<(), Box<dyn std::error::Error>> {
+    match binding.1 {
+        ShortcutAction::Dictation => register_hotkey(app, shared, binding.0),
+        ShortcutAction::Scratchpad => register_scratchpad_hotkey(app, shared, binding.0),
+        ShortcutAction::Recovery(action) => {
+            register_recovery_shortcut(app, shared, action, binding.0)
+        }
+    }
+}
+
+// Existing OS-registered chords may never reach the webview. Route them to the
+// recorder instead of executing actions, and consume their matching release.
+fn intercept_shortcut_recording(
+    state: &mut AppState,
+    shortcut: Shortcut,
+    edge: ShortcutState,
+) -> bool {
+    let label = canonical_shortcut(shortcut);
+    if !state
+        .app
+        .get_webview_window("settings")
+        .is_some_and(|window| window.is_focused().unwrap_or(false))
+    {
+        state.shortcut_recording_until = None;
+    }
+    if state
+        .shortcut_recording_until
+        .is_some_and(|until| until > Instant::now())
+    {
+        if edge == ShortcutState::Pressed {
+            state.recorded_held_shortcuts.insert(label.clone());
+        } else if edge == ShortcutState::Released && state.recorded_held_shortcuts.remove(&label) {
+            let _ = state
+                .app
+                .emit_to("settings", "lyra://shortcut-recorded", label);
+        }
+        return true;
+    }
+    if state.recorded_held_shortcuts.contains(&label) {
+        if edge == ShortcutState::Released {
+            state.recorded_held_shortcuts.remove(&label);
+        }
+        return true;
+    }
+    false
+}
+
+#[tauri::command]
+pub fn set_shortcut_recording(
+    recording: bool,
+    state: State<'_, Arc<Mutex<AppState>>>,
+) -> Result<(), String> {
+    let mut state = state.lock().map_err(|_| "state lock poisoned")?;
+    if recording && (benchmark_is_blocked(state.session.state()) || state.benchmark_active) {
+        return Err("Finish recording before editing shortcuts".to_owned());
+    }
+    state.shortcut_recording_until = recording.then(|| Instant::now() + Duration::from_secs(30));
     Ok(())
 }
 
@@ -679,6 +848,7 @@ fn validate_shortcut_set(settings: &Settings) -> Result<(), String> {
     let mut seen = std::collections::HashSet::new();
     let recovery = recovery_shortcuts(settings);
     let labels = std::iter::once(settings.hotkey.as_str())
+        .chain(settings.additional_hotkeys.iter().map(String::as_str))
         .chain(std::iter::once(settings.scratchpad_hotkey.as_str()))
         .chain(recovery.iter().map(|(_, shortcut)| shortcut.as_str()));
     for label in labels {
@@ -691,18 +861,26 @@ fn validate_shortcut_set(settings: &Settings) -> Result<(), String> {
     Ok(())
 }
 
-fn unregister_recovery_shortcuts(app: &AppHandle, settings: &Settings) {
-    for (_, label) in recovery_shortcuts(settings) {
-        if let Ok(shortcut) = parse_shortcut(&label) {
-            let _ = app.global_shortcut().unregister(shortcut);
-        }
-    }
-}
-
 fn parse_shortcut(value: &str) -> Result<Shortcut, Box<dyn std::error::Error>> {
     let shortcut = Shortcut::from_str(value.trim())?;
-    if shortcut.mods.is_empty() {
-        return Err("a shortcut must include at least one modifier".into());
+    if shortcut.mods.is_empty()
+        && !matches!(
+            shortcut.key.to_string().as_str(),
+            "F13"
+                | "F14"
+                | "F15"
+                | "F16"
+                | "F17"
+                | "F18"
+                | "F19"
+                | "F20"
+                | "F21"
+                | "F22"
+                | "F23"
+                | "F24"
+        )
+    {
+        return Err("use a modifier combination or a single F13–F24 key".into());
     }
     Ok(shortcut)
 }
@@ -723,13 +901,6 @@ fn canonical_shortcut(shortcut: Shortcut) -> String {
     }
     parts.push(shortcut.key.to_string());
     parts.join("+")
-}
-
-fn configured_shortcut(
-    state: &Arc<Mutex<AppState>>,
-) -> Result<Shortcut, Box<dyn std::error::Error>> {
-    let label = current_hotkey_label(state);
-    parse_shortcut(&label)
 }
 
 fn create_tray(app: &AppHandle) -> Result<TrayController, Box<dyn std::error::Error>> {
@@ -876,19 +1047,7 @@ pub fn retry_hotkey(state: State<'_, Arc<Mutex<AppState>>>) -> Result<HotkeyStat
         .lock()
         .map(|state| state.app.clone())
         .map_err(|_| "state lock poisoned".to_owned())?;
-    let status = match configured_shortcut(&shared_state) {
-        Ok(shortcut) if app.global_shortcut().is_registered(shortcut) => HotkeyStatus {
-            hotkey: current_hotkey_label(&shared_state),
-            registered: true,
-            error: None,
-        },
-        Ok(shortcut) => try_register_hotkey_with_shortcut(&app, shared_state.clone(), shortcut),
-        Err(error) => HotkeyStatus {
-            hotkey: current_hotkey_label(&shared_state),
-            registered: false,
-            error: Some(error.to_string()),
-        },
-    };
+    let status = try_register_hotkey(&app, shared_state.clone());
     let mut state = shared_state
         .lock()
         .map_err(|_| "state lock poisoned".to_owned())?;
@@ -929,140 +1088,116 @@ pub fn save_settings(
         );
         return Err(message);
     }
-    let previous_hotkey_registered = parse_shortcut(&previous.hotkey)
-        .ok()
-        .is_some_and(|shortcut| state.app.global_shortcut().is_registered(shortcut));
-    let candidate_shortcut = if settings.hotkey.trim() != previous.hotkey.trim() {
-        let candidate = parse_shortcut(&settings.hotkey).map_err(|error| {
-            let message = error.to_string();
-            state.hotkey_status = HotkeyStatus {
-                hotkey: previous.hotkey.clone(),
-                registered: previous_hotkey_registered,
-                error: Some(message.clone()),
-            };
-            state.emit_hotkey_status();
-            message
-        })?;
-        if let Err(error) = register_hotkey(&state.app, shared_state.clone(), candidate) {
-            let message = error.to_string();
-            state.hotkey_status = HotkeyStatus {
-                hotkey: previous.hotkey.clone(),
-                registered: parse_shortcut(&previous.hotkey)
-                    .ok()
-                    .is_some_and(|old| state.app.global_shortcut().is_registered(old)),
-                error: Some(message.clone()),
-            };
-            state.emit_hotkey_status();
-            return Err(message);
-        }
-        Some(candidate)
-    } else {
-        None
-    };
-    let candidate_scratchpad_shortcut = if settings.scratchpad_hotkey.trim()
-        != previous.scratchpad_hotkey.trim()
+    if benchmark_is_blocked(state.session.state())
+        && (dictation_shortcuts(&previous) != dictation_shortcuts(&settings)
+            || previous.dictation_hotkey_modes != settings.dictation_hotkey_modes
+            || previous.scratchpad_activation_mode != settings.scratchpad_activation_mode
+            || previous.scratchpad_hotkey != settings.scratchpad_hotkey
+            || previous.recovery_shortcuts != settings.recovery_shortcuts)
     {
-        let candidate =
-            parse_shortcut(&settings.scratchpad_hotkey).map_err(|error| error.to_string())?;
-        if let Err(error) = register_scratchpad_hotkey(&state.app, shared_state.clone(), candidate)
-        {
-            if let Some(primary) = candidate_shortcut {
-                let _ = state.app.global_shortcut().unregister(primary);
-            }
-            let message = error.to_string();
-            state.scratchpad_hotkey_status = HotkeyStatus {
-                hotkey: previous.scratchpad_hotkey.clone(),
-                registered: parse_shortcut(&previous.scratchpad_hotkey)
-                    .ok()
-                    .is_some_and(|shortcut| state.app.global_shortcut().is_registered(shortcut)),
-                error: Some(message.clone()),
-            };
-            let _ = state.app.emit(
-                "lyra://scratchpad-hotkey-status",
-                state.scratchpad_hotkey_status.clone(),
-            );
-            return Err(message);
-        }
-        Some(candidate)
-    } else {
-        None
-    };
-    if let Some(candidate) = candidate_shortcut {
-        settings.hotkey = canonical_shortcut(candidate);
+        return Err("Finish recording before changing shortcuts".to_owned());
     }
-    if let Some(candidate) = candidate_scratchpad_shortcut {
-        settings.scratchpad_hotkey = canonical_shortcut(candidate);
-    }
-    let recovery_changed = settings.recovery_shortcuts != previous.recovery_shortcuts;
-    if recovery_changed {
-        unregister_recovery_shortcuts(&state.app, &previous);
-        if let Err(error) =
-            register_recovery_shortcuts_for(&state.app, shared_state.clone(), &settings)
-        {
-            let _ = register_recovery_shortcuts_for(&state.app, shared_state.clone(), &previous);
-            if let Some(candidate) = candidate_scratchpad_shortcut {
-                let _ = state.app.global_shortcut().unregister(candidate);
-            }
-            if let Some(candidate) = candidate_shortcut {
-                let _ = state.app.global_shortcut().unregister(candidate);
-            }
-            return Err(error.to_string());
-        }
-    }
-    let saved = match state.settings.set(settings.clone()) {
+    settings.dictation_hotkey_modes = settings
+        .dictation_hotkey_modes
+        .iter()
+        .map(|(key, mode)| {
+            parse_shortcut(key)
+                .map(|shortcut| (canonical_shortcut(shortcut), *mode))
+                .map_err(|error| error.to_string())
+        })
+        .collect::<Result<_, _>>()?;
+    settings.hotkey =
+        canonical_shortcut(parse_shortcut(&settings.hotkey).map_err(|e| e.to_string())?);
+    settings.additional_hotkeys = settings
+        .additional_hotkeys
+        .iter()
+        .map(|label| {
+            parse_shortcut(label)
+                .map(canonical_shortcut)
+                .map_err(|e| e.to_string())
+        })
+        .collect::<Result<_, _>>()?;
+    settings.scratchpad_hotkey =
+        canonical_shortcut(parse_shortcut(&settings.scratchpad_hotkey).map_err(|e| e.to_string())?);
+    let old_bindings = shortcut_bindings(&previous)?;
+    let new_bindings = shortcut_bindings(&settings)?;
+    // Re-register only changed assignments. Roll back every mutation if registration or persistence fails.
+    let removed: Vec<_> = old_bindings
+        .iter()
+        .filter(|binding| !new_bindings.contains(binding))
+        .cloned()
+        .collect();
+    let added: Vec<_> = new_bindings
+        .iter()
+        .filter(|binding| !old_bindings.contains(binding))
+        .cloned()
+        .collect();
+    let app = state.app.clone();
+    let result = apply_shortcut_changes(
+        &removed,
+        &added,
+        |binding| {
+            register_binding(&app, shared_state.clone(), binding)
+                .map_err(|error| format!("{}: {error}", canonical_shortcut(binding.0)))
+        },
+        |binding| {
+            app.global_shortcut()
+                .unregister(binding.0)
+                .map_err(|error| error.to_string())
+        },
+        || {
+            state
+                .settings
+                .set(settings.clone())
+                .map_err(|error| error.to_string())
+        },
+    );
+    let saved = match result {
         Ok(saved) => saved,
         Err(error) => {
-            if let Some(candidate) = candidate_shortcut {
-                let _ = state.app.global_shortcut().unregister(candidate);
-                if let Ok(old) = parse_shortcut(&previous.hotkey) {
-                    let _ = register_hotkey(&state.app, shared_state.clone(), old);
-                }
-            }
-            if let Some(candidate) = candidate_scratchpad_shortcut {
-                let _ = state.app.global_shortcut().unregister(candidate);
-            }
-            if recovery_changed {
-                unregister_recovery_shortcuts(&state.app, &settings);
-                let _ =
-                    register_recovery_shortcuts_for(&state.app, shared_state.clone(), &previous);
-            }
-            return Err(error.to_string());
+            let message = error;
+            warn!(error = %message, "shortcut assignment change failed; previous settings preserved");
+            state.hotkey_status.error = Some(message.clone());
+            state.hotkey_status.registered = old_bindings
+                .iter()
+                .all(|(key, _)| state.app.global_shortcut().is_registered(*key));
+            state.emit_hotkey_status();
+            return Err(message);
         }
     };
+    if !removed.is_empty() || !added.is_empty() {
+        info!(
+            dictation_bindings = saved.additional_hotkeys.len() + 1,
+            "shortcut assignments updated"
+        );
+    }
     themes.update_preferences(saved.seasonal_themes_enabled, saved.seasonal_motion_enabled);
     if previous.activation_mode != saved.activation_mode {
         state.activation.set_mode(saved.activation_mode);
-        state.scratchpad_activation.set_mode(saved.activation_mode);
     }
-    if let Some(candidate) = candidate_shortcut {
-        if let Ok(old) = parse_shortcut(&previous.hotkey) {
-            if old != candidate {
-                let _ = state.app.global_shortcut().unregister(old);
-            }
-        }
-        state.hotkey_status = HotkeyStatus {
-            hotkey: saved.hotkey.clone(),
-            registered: true,
-            error: None,
-        };
-        state.emit_hotkey_status();
-    }
-    if let Some(candidate) = candidate_scratchpad_shortcut {
-        if let Ok(old) = parse_shortcut(&previous.scratchpad_hotkey) {
-            if old != candidate {
-                let _ = state.app.global_shortcut().unregister(old);
-            }
-        }
-        state.scratchpad_hotkey_status = HotkeyStatus {
-            hotkey: saved.scratchpad_hotkey.clone(),
-            registered: true,
-            error: None,
-        };
-        let _ = state.app.emit(
-            "lyra://scratchpad-hotkey-status",
-            state.scratchpad_hotkey_status.clone(),
-        );
-    }
+    state.scratchpad_activation.set_mode(
+        saved
+            .scratchpad_activation_mode
+            .unwrap_or(saved.activation_mode),
+    );
+    state.hotkey_status = HotkeyStatus {
+        hotkey: dictation_shortcuts(&saved).join(" · "),
+        registered: dictation_shortcuts(&saved).iter().all(|label| {
+            parse_shortcut(label).is_ok_and(|key| state.app.global_shortcut().is_registered(key))
+        }),
+        error: None,
+    };
+    state.emit_hotkey_status();
+    state.scratchpad_hotkey_status = HotkeyStatus {
+        hotkey: saved.scratchpad_hotkey.clone(),
+        registered: parse_shortcut(&saved.scratchpad_hotkey)
+            .is_ok_and(|key| state.app.global_shortcut().is_registered(key)),
+        error: None,
+    };
+    let _ = state.app.emit(
+        "lyra://scratchpad-hotkey-status",
+        state.scratchpad_hotkey_status.clone(),
+    );
     if previous.max_duration_seconds != saved.max_duration_seconds {
         if let Some(control) = &state.active_capture {
             control.update_max_duration(saved.max_duration_seconds);
@@ -1981,7 +2116,7 @@ fn schedule_update_checks(app: &AppHandle) {
 
 fn start_session(
     state: Arc<Mutex<AppState>>,
-    _source: ActivationSource,
+    source: ActivationSource,
     destination: SessionDestination,
 ) -> Result<bool, String> {
     let state_for_error_reset = state.clone();
@@ -2039,12 +2174,26 @@ fn start_session(
             let _ = level_app.emit("lyra://input-level", level);
         });
         let settings = state.settings.get();
+        // Endpointing follows the initiating gesture, independently of bar preferences.
+        let capture_mode = match (source, destination) {
+            (ActivationSource::Hotkey, SessionDestination::Dictation) => state
+                .activation
+                .active_mode()
+                .unwrap_or(crate::domain::ActivationMode::Toggle),
+            (ActivationSource::Hotkey, SessionDestination::Scratchpad) => {
+                state.scratchpad_activation.active_mode().unwrap_or(
+                    settings
+                        .scratchpad_activation_mode
+                        .unwrap_or(settings.activation_mode),
+                )
+            }
+            _ => settings.activation_mode,
+        };
         let capture = match state.audio.start(
             CaptureOptions {
                 device_id: settings.audio_device_id.clone(),
                 max_duration_seconds: settings.max_duration_seconds,
-                silence_after_ms: (settings.activation_mode
-                    == crate::domain::ActivationMode::Toggle)
+                silence_after_ms: (capture_mode == crate::domain::ActivationMode::Toggle)
                     .then_some(settings.auto_stop_after_silence_ms)
                     .flatten(),
                 adaptive_audio: settings.adaptive_audio_enabled,
@@ -2672,8 +2821,8 @@ fn schedule_error_reset(state: &Arc<Mutex<AppState>>, request_id: &str) {
 #[cfg(test)]
 mod tests {
     use super::{
-        benchmark_is_blocked, canonical_shortcut, parse_shortcut, request_can_commit,
-        validate_shortcut_set,
+        apply_shortcut_changes, benchmark_is_blocked, canonical_shortcut, parse_shortcut,
+        request_can_commit, validate_shortcut_set,
     };
     use crate::domain::DictationState;
     use crate::domain::{DictationStateMachine, SessionEvent, SessionSnapshot};
@@ -2706,8 +2855,94 @@ mod tests {
         let shortcut = parse_shortcut("alt + ctrl + Space").expect("valid shortcut");
         assert_eq!(canonical_shortcut(shortcut), "Ctrl+Alt+Space");
         assert!(parse_shortcut("Space").is_err());
+        for key in 13..=24 {
+            assert!(parse_shortcut(&format!("F{key}")).is_ok());
+        }
+        assert!(parse_shortcut("F12").is_err());
+        assert!(parse_shortcut("A").is_err());
         assert!(parse_shortcut("Ctrl+Alt").is_err());
         assert!(parse_shortcut("Ctrl+Space+A").is_err());
+    }
+
+    #[test]
+    fn shortcut_transactions_restore_old_assignments_on_registration_or_save_failure() {
+        use std::cell::RefCell;
+        for fail_registration in [true, false] {
+            let registered = RefCell::new(vec![1, 2]);
+            let result = apply_shortcut_changes(
+                &[1],
+                &[3, 4],
+                |key| {
+                    if fail_registration && *key == 4 {
+                        return Err("occupied shortcut".to_owned());
+                    }
+                    registered.borrow_mut().push(*key);
+                    Ok(())
+                },
+                |key| {
+                    registered.borrow_mut().retain(|old| old != key);
+                    Ok(())
+                },
+                || Err::<(), _>("disk write failed".to_owned()),
+            );
+            assert!(result.is_err());
+            registered.borrow_mut().sort();
+            assert_eq!(*registered.borrow(), vec![1, 2]);
+        }
+    }
+
+    #[test]
+    fn shortcut_transaction_handles_removal_failure_and_reports_restore_failure() {
+        use std::cell::RefCell;
+        let registered = RefCell::new(vec![1, 2]);
+        let result = apply_shortcut_changes(
+            &[1, 2],
+            &[3],
+            |key| {
+                registered.borrow_mut().push(*key);
+                Ok(())
+            },
+            |key| {
+                if *key == 2 {
+                    return Err("remove failed".to_owned());
+                }
+                registered.borrow_mut().retain(|old| old != key);
+                Ok(())
+            },
+            || Ok(()),
+        );
+        assert_eq!(result, Err("remove failed".to_owned()));
+        registered.borrow_mut().sort();
+        assert_eq!(*registered.borrow(), vec![1, 2]);
+        let result = apply_shortcut_changes(
+            &[1],
+            &[3],
+            |_| Err("register failed".to_owned()),
+            |_| Ok(()),
+            || Ok(()),
+        );
+        assert!(result.unwrap_err().contains("restoration failed"));
+    }
+
+    #[test]
+    fn shortcut_transaction_commits_successful_registration() {
+        use std::cell::RefCell;
+        let registered = RefCell::new(vec![1, 2]);
+        let result = apply_shortcut_changes(
+            &[1],
+            &[3],
+            |key| {
+                registered.borrow_mut().push(*key);
+                Ok(())
+            },
+            |key| {
+                registered.borrow_mut().retain(|old| old != key);
+                Ok(())
+            },
+            || Ok(42),
+        );
+        assert_eq!(result, Ok(42));
+        assert_eq!(*registered.borrow(), vec![2, 3]);
     }
 
     #[test]
@@ -2723,6 +2958,18 @@ mod tests {
     fn shortcut_validation_detects_primary_and_recovery_conflicts() {
         let mut settings = Settings::default();
         assert!(validate_shortcut_set(&settings).is_ok());
+        settings.additional_hotkeys = vec!["F20".to_owned()];
+        assert!(validate_shortcut_set(&settings).is_ok());
+        settings
+            .additional_hotkeys
+            .push("alt+ctrl+Space".to_owned());
+        assert!(validate_shortcut_set(&settings).is_err());
+        settings.additional_hotkeys = vec![settings.scratchpad_hotkey.clone()];
+        assert!(validate_shortcut_set(&settings).is_err());
+        settings.additional_hotkeys =
+            vec![settings.recovery_shortcuts.open_settings.clone().unwrap()];
+        assert!(validate_shortcut_set(&settings).is_err());
+        settings.additional_hotkeys.clear();
 
         settings.scratchpad_hotkey = settings.hotkey.clone();
         assert!(validate_shortcut_set(&settings).is_err());

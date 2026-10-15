@@ -1,4 +1,5 @@
 import { BookOpen, FileText, Mic, Settings2 } from "lucide-react";
+import { Fragment } from "react";
 import { startDictation, stopDictation } from "../bridge";
 import { Card, Page, Shortcut } from "../components/Controls";
 import type { LyraState } from "../state/useLyra";
@@ -37,10 +38,12 @@ export default function Home({
         <h1>{copy[0]}</h1>
         <p>
           {active ? (
-            "Release the shortcut when you’re finished."
+            "Release the shortcut you held, or press your toggle shortcut again to finish."
           ) : (
             <>
-              Hold <Shortcut value={state.settings.hotkey} /> and speak
+              {[state.settings.hotkey, ...state.settings.additionalHotkeys].map((shortcut, index) => (
+                <Fragment key={shortcut}>{index > 0 && " or "}{(state.settings.dictationHotkeyModes[shortcut] ?? state.settings.activationMode) === "push_to_talk" ? "Hold " : "Press "}<Shortcut value={shortcut} /></Fragment>
+              ))} and speak
             </>
           )}
         </p>

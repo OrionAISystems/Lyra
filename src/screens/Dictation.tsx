@@ -1,12 +1,16 @@
 import { Clock3, Keyboard, Pilcrow, Radio, Send, Timer } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { ShortcutRecorder } from "../components/ShortcutRecorder";
 import { Card, Page, Row, Select, Toggle } from "../components/Controls";
 import type { LyraState } from "../state/useLyra";
 export default function Dictation({ state }: { state: LyraState }) {
   const s = state.settings,
     u = state.updateSettings;
-  const [scratchpadShortcutDraft, setScratchpadShortcutDraft] = useState(s.scratchpadHotkey);
-  useEffect(() => setScratchpadShortcutDraft(s.scratchpadHotkey), [s.scratchpadHotkey]);
+  const [activeRecorder, setActiveRecorder] = useState<string | null>(null);
+  const bindings = [s.hotkey, ...s.additionalHotkeys];
+  const recorder = (label: string, value: string | undefined, onChange: (value: string) => Promise<void>, onRemove?: () => void) =>
+    <ShortcutRecorder key={label} label={label} value={value} onChange={onChange} onRemove={onRemove}
+      disabled={activeRecorder !== null && activeRecorder !== label} onRecordingChange={(active) => setActiveRecorder(active ? label : null)} />;
   return (
     <Page
       title="Dictation"
@@ -15,7 +19,7 @@ export default function Dictation({ state }: { state: LyraState }) {
       <Card>
         <Row
           icon={<Keyboard />}
-          title="Activation mode"
+          title="Bar activation"
           description={
             s.activationMode === "push_to_talk"
               ? "Push-to-talk while held"
@@ -23,7 +27,7 @@ export default function Dictation({ state }: { state: LyraState }) {
           }
         >
           <Select
-            label="Activation mode"
+            label="Bar activation"
             value={s.activationMode}
             onChange={(v) =>
               void u({ activationMode: v as typeof s.activationMode })
@@ -35,30 +39,52 @@ export default function Dictation({ state }: { state: LyraState }) {
         </Row>
         <Row
           icon={<Keyboard />}
-          title="Global shortcut"
-          description="Start or stop dictation"
+          title="Global shortcuts"
+          className="shortcut-settings-row"
+          description="The shortcut that starts a recording controls when it stops"
         >
-          <input
-            value={s.hotkey}
-            onChange={(e) => void u({ hotkey: e.target.value })}
-          />
+          <div className="shortcut-list">
+            {bindings.map((binding, index) => (
+              <div className="shortcut-binding" key={index}>
+                {recorder(`dictation shortcut ${index + 1}`, binding, async (value) => {
+                  const next = bindings.map((old, i) => i === index ? value : old);
+                  const modes = { ...s.dictationHotkeyModes };
+                  const mode = modes[binding] ?? s.activationMode;
+                  delete modes[binding]; modes[value] = mode;
+                  await u({ hotkey: next[0], additionalHotkeys: next.slice(1), dictationHotkeyModes: modes });
+                }, bindings.length > 1 ? () => {
+                  const next = bindings.filter((_, i) => i !== index);
+                  const modes = { ...s.dictationHotkeyModes }; delete modes[binding];
+                  void u({ hotkey: next[0], additionalHotkeys: next.slice(1), dictationHotkeyModes: modes });
+                } : undefined)}
+                <Select label={`Dictation shortcut ${index + 1} behavior`} disabled={activeRecorder !== null}
+                  value={s.dictationHotkeyModes[binding] ?? s.activationMode}
+                  onChange={(mode) => void u({ dictationHotkeyModes: { ...s.dictationHotkeyModes, [binding]: mode as typeof s.activationMode } })}>
+                  <option value="push_to_talk">Hold</option>
+                  <option value="toggle">Toggle</option>
+                </Select>
+              </div>
+            ))}
+            {recorder("new dictation shortcut", undefined, async (value) => {
+              await u({ additionalHotkeys: [...s.additionalHotkeys, value],
+                dictationHotkeyModes: { ...s.dictationHotkeyModes, [value]: "push_to_talk" } });
+            })}
+          </div>
         </Row>
         <Row
           icon={<Keyboard />}
           title="Scratchpad shortcut"
+          className="shortcut-settings-row"
           description="Record a thought directly into Scratchpad"
         >
-          <input
-            aria-label="Scratchpad shortcut"
-            aria-describedby="scratchpad-shortcut-status"
-            value={scratchpadShortcutDraft}
-            onChange={(e) => setScratchpadShortcutDraft(e.target.value)}
-            onBlur={() => {
-              const value = scratchpadShortcutDraft.trim();
-              if (!value) setScratchpadShortcutDraft(s.scratchpadHotkey);
-              else if (value !== s.scratchpadHotkey) void u({ scratchpadHotkey: value });
-            }}
-          />
+          <div className="shortcut-binding">
+            {recorder("Scratchpad shortcut", s.scratchpadHotkey, async (value) => { await u({ scratchpadHotkey: value }); })}
+            <Select label="Scratchpad shortcut behavior" disabled={activeRecorder !== null}
+              value={s.scratchpadActivationMode ?? s.activationMode}
+              onChange={(mode) => void u({ scratchpadActivationMode: mode as typeof s.activationMode })}>
+              <option value="push_to_talk">Hold</option><option value="toggle">Toggle</option>
+            </Select>
+          </div>
         </Row>
         <Row
           icon={<Timer />}
@@ -118,35 +144,16 @@ export default function Dictation({ state }: { state: LyraState }) {
           title="Paste last"
           description="Recover the most recent in-memory result"
         >
-          <input
-            placeholder="Not assigned"
-            value={s.recoveryShortcuts.pasteLast ?? ""}
-            onChange={(e) =>
-              void u({
-                recoveryShortcuts: {
-                  ...s.recoveryShortcuts,
-                  pasteLast: e.target.value || null,
-                },
-              })
-            }
-          />
+          {recorder("Paste last shortcut", s.recoveryShortcuts.pasteLast ?? undefined, async (value) => { await u({ recoveryShortcuts: { ...s.recoveryShortcuts, pasteLast: value } }); },
+            s.recoveryShortcuts.pasteLast ? () => { void u({ recoveryShortcuts: { ...s.recoveryShortcuts, pasteLast: null } }); } : undefined)}
         </Row>
         <Row
           icon={<Keyboard />}
           title="Open settings"
           description="Required before the tray icon can be hidden"
         >
-          <input
-            value={s.recoveryShortcuts.openSettings ?? ""}
-            onChange={(e) =>
-              void u({
-                recoveryShortcuts: {
-                  ...s.recoveryShortcuts,
-                  openSettings: e.target.value || null,
-                },
-              })
-            }
-          />
+          {recorder("Open settings shortcut", s.recoveryShortcuts.openSettings ?? undefined, async (value) => { await u({ recoveryShortcuts: { ...s.recoveryShortcuts, openSettings: value } }); },
+            s.recoveryShortcuts.openSettings ? () => { void u({ recoveryShortcuts: { ...s.recoveryShortcuts, openSettings: null } }); } : undefined)}
         </Row>
       </Card>
       {state.hotkey.error && (
