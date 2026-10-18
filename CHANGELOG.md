@@ -2,6 +2,17 @@
 
 Lyra releases are published from the private source repository to the public [Lyra-Releases](https://github.com/OrionAISystems/Lyra-Releases) repository. The private source copy is the canonical release history; tagged builds mirror it publicly and use the current version section as their release notes.
 
+## [0.5.13] - 2026-10-18
+
+### Improved
+
+- Keep History listing off the UI thread and combine retention and metadata scanning to reduce repeated filesystem work. History continues to load 50 entries at a time and decrypts text only when opened.
+
+### Fixed
+
+- Show clearer, sanitized runtime download failures with certificate, timeout and connection recovery guidance, without exposing request URLs or proxy details.
+- Preserve partial runtime downloads after an interrupted response so retry can resume them.
+
 ## [0.5.12] - 2026-10-14
 
 ### Added

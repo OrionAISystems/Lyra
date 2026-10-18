@@ -1,6 +1,6 @@
 # Lyra build stage
 
-v0.5.12 (2026-10-14 local time) adds recorded multi-shortcut dictation with independent Hold/Toggle modes and compact dropdown bounds. Local automated, rendered and user-confirmed F20/keyboard evidence passed. Windows CI and publication status are tracked in [docs/ACCEPTANCE-V0.5.12.md](docs/ACCEPTANCE-V0.5.12.md); installed-updater acceptance remains unverified.
+v0.5.13 (2026-10-18 local time) moves History listing off the UI thread, combines retention and metadata scanning, and improves runtime download failure guidance and interrupted-download recovery. Verification and publication status are tracked in [docs/ACCEPTANCE-V0.5.13.md](docs/ACCEPTANCE-V0.5.13.md); installed-app acceptance remains unverified.
 
 ## Stage 0 — foundation
 

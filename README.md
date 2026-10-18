@@ -6,7 +6,7 @@ The repository is intentionally standalone. Lyra does not depend on Orion's gate
 
 ## Current phase
 
-v0.5.12 (2026-10-14 local time) adds multiple recorded dictation shortcuts with independent Hold/Toggle modes, including F13–F24 hardware buttons. The initiating shortcut controls stopping, while bar and Scratchpad activation remain independent. The installer and signed updater feed are published through [Lyra-Releases](https://github.com/OrionAISystems/Lyra-Releases/releases/tag/v0.5.12); validation and publication status are tracked in [docs/ACCEPTANCE-V0.5.12.md](docs/ACCEPTANCE-V0.5.12.md).
+v0.5.13 (2026-10-18 local time) moves History listing off the UI thread and reduces repeated filesystem scans. It also clarifies runtime download failures and preserves interrupted downloads for retry. Validation and publication status are tracked in [docs/ACCEPTANCE-V0.5.13.md](docs/ACCEPTANCE-V0.5.13.md); signed installers are published through [Lyra-Releases](https://github.com/OrionAISystems/Lyra-Releases/releases/tag/v0.5.13).
 
 Settings migrations through schema v7 are automatic and idempotent. Existing History, Scratchpad, appearance, audio, personalization, and shortcut preferences are preserved; seasonal themes and motion can each be disabled. Runtime and model installation remains separate and explicit; the optional Nemotron model is independently versioned and verified.
 
@@ -49,10 +49,10 @@ cargo check --release --locked --manifest-path src-tauri/Cargo.toml
 cargo test --release --locked --manifest-path src-tauri/Cargo.toml --features regression-bench
 ```
 
-Verify the existing signed theme channel while confirming the stable app remains v0.5.12:
+Verify the existing signed theme channel while confirming the stable app remains v0.5.13:
 
 ```powershell
-npm run verify:public-themes -- --latest-version 0.5.12
+npm run verify:public-themes -- --latest-version 0.5.13
 ```
 
 Verify the public app and artwork feeds without credentials:
