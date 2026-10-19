@@ -1,0 +1,35 @@
+name: Set up Rust and shared build cache
+description: Use the repository toolchain and refresh compatible build artifacts per revision.
+runs:
+  using: composite
+  steps:
+    - name: Install repository Rust toolchain
+      id: toolchain
+      shell: pwsh
+      run: |
+        $toolchain = (Get-Content -Raw rust-toolchain.toml | Select-String 'channel = "([^"]+)"').Matches.Groups[1].Value
+        if (-not $toolchain) { throw "Missing Rust toolchain channel" }
+        rustup toolchain install $toolchain --profile minimal --component rustfmt --no-self-update
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        rustc --version --verbose
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        cargo --version
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        if (-not $env:ImageOS -or -not $env:ImageVersion) {
+          throw "Hosted runner image identity is required for build cache compatibility"
+        }
+        "image=$env:ImageOS-$env:ImageVersion" >> $env:GITHUB_OUTPUT
+
+    - name: Restore Cargo dependencies and compiled release artifacts
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          src-tauri/target/release
+          !src-tauri/target/release/bundle
+        # Keep compiler/runner compatibility strict; refresh immutable caches per commit.
+        key: ${{ runner.os }}-${{ runner.arch }}-cargo-v2-${{ steps.toolchain.outputs.image }}-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('src-tauri/Cargo.lock', 'src-tauri/Cargo.toml') }}-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-${{ runner.arch }}-cargo-v2-${{ steps.toolchain.outputs.image }}-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('src-tauri/Cargo.lock', 'src-tauri/Cargo.toml') }}-
+          ${{ runner.os }}-${{ runner.arch }}-cargo-v2-${{ steps.toolchain.outputs.image }}-${{ hashFiles('rust-toolchain.toml') }}-

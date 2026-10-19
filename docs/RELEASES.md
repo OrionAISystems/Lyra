@@ -20,6 +20,48 @@ Seasonal art uses a separate `workflow_dispatch` path. It signs decoded catalog 
 
 The public repository must remain release-only. Its root may contain the public README and changelog, alongside release assets and metadata. Do not add source code, models, native runtime archives, credentials, CI logs, or private organization documentation there.
 
+## Workflow toolchain and build reuse
+
+Both verification and tagged releases use the shared
+`.github/actions/setup-rust` action and the exact version in
+[`rust-toolchain.toml`](../rust-toolchain.toml), currently Rust 1.99.1 (the latest
+stable release when adopted). Update that file to adopt future stable versions;
+the workflows do not depend on whichever Rust happens to ship on the runner.
+Local Cargo commands use the same file automatically.
+
+The shared cache includes the runner image, toolchain, Cargo manifests/lockfile,
+and source commit. Each new commit can save refreshed artifacts instead of
+repeatedly restoring an immutable, stale cache. Compatible prior commits are
+fallbacks, including across dependency/version bumps, but different runner
+images or toolchains never share compiled artifacts. A tag on the verified main
+commit reuses its exact cache when the runner image matches. Installer bundles
+are excluded. Cache writes happen after successful jobs; pull-request caches
+remain scoped by GitHub and cannot replace the default-branch cache.
+
+CI keeps benchmark-enabled Rust tests and passes the same features to the theme
+fixture via `LYRA_FIXTURE_FEATURES=regression-bench`. The fixture compiles the
+library test executable once, then runs its four cases directly with separate
+environments. Exact test names and one-test assertions prevent a renamed or
+missing test from silently passing. Releases exercise default features and still
+run the complete frontend, Rust, signed-theme, signing and publication gates.
+Production optimization settings are unchanged.
+
+The first job on a new toolchain or runner image must populate a cold cache.
+Compare subsequent compatible runs using job/step durations, cache restore/save
+times, compiler versions and image versions in Actions logs. Track Rust test
+compilation, theme fixtures, the unbundled CI build and installer publication
+separately; a successful cache download alone does not prove Cargo reused it.
+The previous v0.5.10 reference was 13m30s for CI and 11m16s for release; this
+change needs hosted-run measurements before claiming a restored timing target.
+
+Local verification on 2026-10-18 with Rust 1.99.1 passed formatting, 154 Rust
+tests (four hardware/provider cases ignored), the default-feature release check,
+both default and benchmark-feature signed-theme fixtures, 38 frontend tests,
+the frontend build, release metadata checks and actionlint. A repeated warm
+benchmark-feature fixture completed in 4.65 seconds overall; Cargo reported
+1.02 seconds and no recompilation. This is local reuse evidence, not a hosted
+before/after comparison or an installer publication measurement.
+
 When the user explicitly requests skipping main CI for a hotfix, run all CI-equivalent gates locally first and record them in the versioned acceptance document. Put `[skip ci]` on a separate documentation-only main push tip, and tag the tested release source commit whose message contains no skip directive. A skip directive on the tagged commit can suppress the tag workflow too. The signed tag publication and public-artifact checks remain required.
 
 ## Required protected inputs

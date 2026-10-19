@@ -32,16 +32,8 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci --no-audit --no-fund
 
-      - name: Cache Cargo registry, Git dependencies, and release artifacts
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            src-tauri/target/release
-          key: ${{ runner.os }}-${{ runner.arch }}-cargo-release-${{ hashFiles('src-tauri/Cargo.lock', 'src-tauri/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-cargo-release-
+      - name: Set up Rust and shared build cache
+        uses: ./.github/actions/setup-rust
 
       - name: Verify release metadata
         run: |
@@ -62,6 +54,8 @@ jobs:
 
       - name: Verify signed seasonal theme fixture through Rust
         run: npm run test:themes-fixture
+        env:
+          LYRA_FIXTURE_FEATURES: regression-bench
 
       - name: Warm the release Tauri build cache
         if: github.event_name == 'push'

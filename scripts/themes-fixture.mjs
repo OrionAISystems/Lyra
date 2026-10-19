@@ -16,6 +16,23 @@ import {
 const root = process.cwd();
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 const fixtureDirectory = await mkdtemp(join(tmpdir(), "lyra-themes-fixture-"));
+let rustTestExecutable;
+
+function fixtureExecutable() {
+  if (rustTestExecutable) return rustTestExecutable;
+  const features = process.env.LYRA_FIXTURE_FEATURES;
+  const output = run("cargo", [
+    "test", "--release", "--locked", "--manifest-path", "src-tauri/Cargo.toml",
+    "--lib", "--no-run", "--message-format=json",
+    ...(features ? ["--features", features] : []),
+  ], { stdio: ["ignore", "pipe", "inherit"], maxBuffer: 16 * 1024 * 1024 });
+  const artifacts = output.split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line))
+    .filter((message) => message.reason === "compiler-artifact"
+      && message.target.name === "lyra_lib" && message.profile.test && message.executable);
+  assert.equal(artifacts.length, 1, "Expected exactly one Lyra library test executable");
+  rustTestExecutable = artifacts[0].executable;
+  return rustTestExecutable;
+}
 
 function invoke(command, args, options = {}) {
   const windowsShell = process.platform === "win32" && command.endsWith(".cmd");
@@ -52,13 +69,9 @@ function assertCommandFails(command, args, pattern) {
 }
 
 function runRustFixture(envelopePath, publicKeyPath, { assetDirectory, expectedInvalid = false, expectedInvalidAsset = false } = {}) {
-  const result = invoke("cargo", [
-    "test",
-    "--release",
-    "--locked",
-    "--manifest-path",
-    "src-tauri/Cargo.toml",
-    "catalog_fixture_from_environment_is_verified_by_production_pipeline",
+  const result = invoke(fixtureExecutable(), [
+    "seasonal_themes::tests::catalog_fixture_from_environment_is_verified_by_production_pipeline",
+    "--exact",
   ], {
     env: {
       ...process.env,
@@ -73,16 +86,13 @@ function runRustFixture(envelopePath, publicKeyPath, { assetDirectory, expectedI
     throw new Error(`Rust catalog fixture failed (${result.error?.message ?? `exit ${result.status}`}):\n${result.stdout ?? ""}\n${result.stderr ?? ""}`);
   }
   process.stdout.write(result.stdout ?? "");
+  assert.match(result.stdout ?? "", /1 passed;/, "Rust catalog fixture must execute one test");
 }
 
 function runRustCacheFixture(envelopePath, publicKeyPath, assetDirectory) {
-  const result = invoke("cargo", [
-    "test",
-    "--release",
-    "--locked",
-    "--manifest-path",
-    "src-tauri/Cargo.toml",
-    "cache_recovers_and_repairs_signed_fixture_offline",
+  const result = invoke(fixtureExecutable(), [
+    "seasonal_themes::tests::cache_recovers_and_repairs_signed_fixture_offline",
+    "--exact",
   ], {
     env: {
       ...process.env,
@@ -97,6 +107,7 @@ function runRustCacheFixture(envelopePath, publicKeyPath, assetDirectory) {
     throw new Error(`Rust theme cache fixture failed (${result.error?.message ?? `exit ${result.status}`}):\n${result.stdout ?? ""}\n${result.stderr ?? ""}`);
   }
   process.stdout.write(result.stdout ?? "");
+  assert.match(result.stdout ?? "", /1 passed;/, "Rust cache fixture must execute one test");
 }
 
 function assertSharedValidationBoundary(payload) {
