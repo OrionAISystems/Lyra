@@ -1,6 +1,11 @@
 # Lyra releases
 
-Lyra keeps source private in [`OrionAISystems/Lyra`](https://github.com/OrionAISystems/Lyra) and publishes release-only files plus the public [`CHANGELOG.md`](https://github.com/OrionAISystems/Lyra-Releases/blob/main/CHANGELOG.md) to the [`OrionAISystems/Lyra-Releases`](https://github.com/OrionAISystems/Lyra-Releases) repository. Installed clients therefore need no GitHub authentication. Release [v0.5.13](https://github.com/OrionAISystems/Lyra-Releases/releases/tag/v0.5.13) (2026-10-18 local time) improves History listing responsiveness and runtime download failure handling. See [ACCEPTANCE-V0.5.13.md](ACCEPTANCE-V0.5.13.md) for validation and publication status. Earlier versioned acceptance documents preserve historical updater and hardware evidence.
+Source licensing and redistribution are described in [OPEN-SOURCE.md](OPEN-SOURCE.md).
+Installer bundles include `LICENSE`, `THIRD_PARTY_NOTICES.md`, and `licenses/`.
+After dependency updates, run `npm run notices:generate` and review the inventory;
+CI and releases verify it with `npm run notices:check` before packaging.
+
+Lyra maintains its MIT-licensed source in [`OrionAISystems/Lyra`](https://github.com/OrionAISystems/Lyra) and publishes release-only files plus the public [`CHANGELOG.md`](https://github.com/OrionAISystems/Lyra-Releases/blob/main/CHANGELOG.md) to the [`OrionAISystems/Lyra-Releases`](https://github.com/OrionAISystems/Lyra-Releases) repository. Installed clients therefore need no GitHub authentication. Release [v0.5.13](https://github.com/OrionAISystems/Lyra-Releases/releases/tag/v0.5.13) (2026-10-18 local time) improves History listing responsiveness and runtime download failure handling. See [ACCEPTANCE-V0.5.13.md](ACCEPTANCE-V0.5.13.md) for validation and publication status. Earlier versioned acceptance documents preserve historical updater and hardware evidence.
 
 Signed seasonal themes use a separate publication path; their catalog and versioned artwork are described in [THEMES.md](THEMES.md), with acceptance evidence in [ACCEPTANCE-V0.5.5.md](ACCEPTANCE-V0.5.5.md).
 
@@ -9,7 +14,7 @@ Signed seasonal themes use a separate publication path; their catalog and versio
 1. Update all version files together, add the new top `CHANGELOG.md` section, and run `npm run verify:version` plus `npm run verify:changelog`.
 2. Confirm the committed updater public key in `src-tauri/tauri.conf.json`, then run `npm run verify:release-config`.
 3. Pull requests and pushes to `main` run the frontend checks, release-mode Rust tests, and formatting checks. A trusted push to `main` also performs the unbundled Tauri release build and warms the default-branch Cargo/release-target cache used by tagged releases.
-4. Push a protected `vX.Y.Z` tag to the private source repository after the relevant `main` checks have passed.
+4. Push a protected `vX.Y.Z` tag to the source repository after the relevant `main` checks have passed.
 5. The tag workflow restores the Cargo/release-target cache, repeats the release-mode Rust checks, and runs the single authoritative NSIS/updater build. Authenticode signing is applied when the optional Windows certificate is configured.
 6. CI mirrors the canonical changelog to `Lyra-Releases` and uses the current version section as the public release notes.
 7. The pinned Tauri Action publishes the installer, updater artifact and signature, and `latest.json` to `Lyra-Releases`.
@@ -18,7 +23,7 @@ Signed seasonal themes use a separate publication path; their catalog and versio
 
 Seasonal art uses a separate `workflow_dispatch` path. It signs decoded catalog bytes with the existing Tauri updater key, publishes PNGs to a `themes-<id>-v<revision>` prerelease with `make_latest=false`, verifies each uploaded asset, then commits only `themes/catalog.json` to `Lyra-Releases/main`. This does not invoke or change the app updater feed. See [THEMES.md](THEMES.md) for input requirements and acceptance checks.
 
-The public repository must remain release-only. Its root may contain the public README and changelog, alongside release assets and metadata. Do not add source code, models, native runtime archives, credentials, CI logs, or private organization documentation there.
+`OrionAISystems/Lyra-Releases` must remain release-only. Its root may contain the public README and changelog, alongside release assets and metadata. Do not add source code, models, native runtime archives, credentials, CI logs, or private organization documentation there.
 
 ## Workflow toolchain and build reuse
 

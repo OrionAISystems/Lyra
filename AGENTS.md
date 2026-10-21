@@ -36,7 +36,7 @@ unless the user or higher-priority instructions authorize it.
 | `updater.rs`, `seasonal_themes.rs` | Signed application updates and separate signed artwork feed |
 | `commands.rs`, `lib.rs` | Tauri wiring, lifecycle coordination and events |
 | `src/` | Settings/bar presentation and intent-level interaction |
-| `benchmarks/transcription/` | Opt-in internal fixture replay and regression evidence |
+| `benchmarks/transcription/` | Opt-in developer fixture replay and regression evidence |
 
 Keep manual, silence and maximum-duration capture endpoints on the shared
 coordinator path. Partials are request-scoped; only final results enter cleanup,
@@ -49,6 +49,11 @@ formatting/profile opt-outs and later personalization overrides. Read
 ambiguity policy; change that contract explicitly when behavior changes.
 
 ## Privacy and publication boundaries
+
+- Follow `LICENSE`, `THIRD_PARTY_NOTICES.md`, and `docs/OPEN-SOURCE.md`. Keep
+  dependency copyright/license notices intact; regenerate and verify notices
+  after lockfile changes. Source preparation does not authorize visibility
+  changes, history rewrites, commits, pushes, or releases.
 
 - The application retains raw audio only in memory. The microphone level test
   must not retain samples or invoke recognition. History starts off; Scratchpad
@@ -63,8 +68,9 @@ ambiguity policy; change that contract explicitly when behavior changes.
 - Runtime/model downloads are separate from application installation. Follow
   [docs/SETUP.md](docs/SETUP.md) and [docs/MODELS.md](docs/MODELS.md); do not silently
   download models or replace a running user's artifacts during verification.
-- Source is private; `OrionAISystems/Lyra-Releases` is release-only. Keep benchmark
-  code, reports, fixtures and internal instructions out of public assets. The
+- Source and reviewed synthetic benchmark evidence are prepared for MIT-licensed
+  publication; `OrionAISystems/Lyra-Releases` remains release-only. Keep benchmark
+  tooling out of installer assets and private inputs out of all Git content. The
   `regression-bench` feature stays off in default application builds.
 - Benchmark files are developer inputs, distinct from app audio retention.
   Keep private recordings/reports in ignored `audio/` or `local/`; only reviewed

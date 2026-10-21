@@ -2,7 +2,7 @@
 
 The shared cleanup fixes doubled spoken punctuation, sentence/self-correction casing, and the agreed canonical quantity formatting. For example, `report period.` becomes `report.`, `twelve boxes` becomes `12 boxes`, and `forty five dollars` becomes `$45`. See [formatting policy](../../docs/TEXT-FORMATTING.md) and [benchmark usage](README.md).
 
-The internal benchmark calls the existing local transcription pipeline. Its opt-in feature stays off in application builds; no application UI, dependency, model download or public-release artifact was added.
+The developer benchmark calls the existing local transcription pipeline. Its opt-in feature stays off in application builds; no application UI, dependency, model download or public-release artifact was added.
 
 ## Verification
 

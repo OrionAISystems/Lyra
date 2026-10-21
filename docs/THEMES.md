@@ -39,7 +39,7 @@ Theme artwork is served only from versioned prerelease assets named `themes-<id>
 
 ## Theme descriptors and rendering slots
 
-Private source descriptors live at `themes/<id>/theme.json`. Their palette tokens are exactly `bg`, `panel`, `panel2`, `panel3`, `line`, `text`, `muted`, `chrome`, `sidebar`, `surface`, `control`, `accent`, `accent2`, and `glow`. Colors use six-digit `#RRGGBB` hex. `text`, `muted`, `accent`, and `accent2` must each reach at least 4.5:1 contrast against every surface token (`bg`, `panel`, `panel2`, `panel3`, `chrome`, `sidebar`, `surface`, and `control`) in both dark and light palettes.
+Source descriptors live at `themes/<id>/theme.json`. Their palette tokens are exactly `bg`, `panel`, `panel2`, `panel3`, `line`, `text`, `muted`, `chrome`, `sidebar`, `surface`, `control`, `accent`, `accent2`, and `glow`. Colors use six-digit `#RRGGBB` hex. `text`, `muted`, `accent`, and `accent2` must each reach at least 4.5:1 contrast against every surface token (`bg`, `panel`, `panel2`, `panel3`, `chrome`, `sidebar`, `surface`, and `control`) in both dark and light palettes.
 
 The renderer has eight named PNG slots: `idle`, `listening`, `processing`, `success`, `error`, `bar`, `empty`, and `ambience`. A bundled descriptor points to paths relative to its theme folder, such as `assets/pumpkin.png`; the engine loads and packages those files as data URLs. Remote catalog entries have the same metadata and palettes, but each artwork slot is an object with `url`, lowercase SHA-256 `sha256`, and `sizeBytes` fields. Multiple slots may share one image.
 
@@ -65,7 +65,7 @@ After the workflow is present on `main`, dispatch **Publish Lyra seasonal theme*
 gh workflow run publish-themes.yml --ref main -f theme_id=october -f catalog_revision=1
 ```
 
-Use a catalog revision greater than the one currently published for later updates. The workflow validates all artwork and palette constraints, signs the exact generated payload with `TAURI_SIGNING_PRIVATE_KEY`, creates a short-lived GitHub App token from `LYRA_RELEASES_APP_CLIENT_ID` and `LYRA_RELEASES_APP_PRIVATE_KEY`, and publishes only PNG release assets plus the signed `themes/catalog.json` envelope. The token is limited to contents write access on `Lyra-Releases`. The workflow never copies private descriptors, source code, signing keys, or CI files to the public repository.
+Use a catalog revision greater than the one currently published for later updates. The workflow validates all artwork and palette constraints, signs the exact generated payload with `TAURI_SIGNING_PRIVATE_KEY`, creates a short-lived GitHub App token from `LYRA_RELEASES_APP_CLIENT_ID` and `LYRA_RELEASES_APP_PRIVATE_KEY`, and publishes only PNG release assets plus the signed `themes/catalog.json` envelope. The token is limited to contents write access on `Lyra-Releases`. The workflow never copies source descriptors, source code, signing keys, or CI files to the public repository.
 
 If a run stops after creating the theme prerelease, a retry can fill in missing assets with their original names and hashes. Existing assets with unexpected names, lengths, or hashes fail closed. The catalog commit happens only after all release assets are downloaded again and verified.
 

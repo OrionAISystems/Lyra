@@ -865,7 +865,7 @@ mod tests {
         let path =
             std::env::temp_dir().join(format!("lyra-fallback-{}.json", uuid::Uuid::new_v4()));
         let store = UsageStatsStore::for_tests(path.clone());
-        let sensitive_detail = r"C:\Users\Met\AppData\Local\Lyra\runtime\nemo_speech_asr_c.dll";
+        let sensitive_detail = r"C:\Users\Example\AppData\Local\Lyra\runtime\nemo_speech_asr_c.dll";
         let record = SessionRecord {
             timestamp_ms: timestamp_ms(),
             app_version: "0.4.4".to_owned(),
@@ -886,7 +886,7 @@ mod tests {
         store.record_session(record);
 
         let persisted = fs::read_to_string(&path).expect("read persisted usage record");
-        assert!(!persisted.contains("C:\\Users\\Met"));
+        assert!(!persisted.contains("C:\\Users\\Example"));
         assert!(persisted.contains("local_backend_retry"));
         fs::remove_file(path).ok();
     }

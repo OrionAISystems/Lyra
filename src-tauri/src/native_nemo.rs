@@ -1,3 +1,7 @@
+// C ABI declarations adapted from NVIDIA NeMo-Speech.cpp v0.1.0.
+// Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES; Apache-2.0.
+// Lyra adds Rust representations, loading, errors, and lifecycle handling.
+// See THIRD_PARTY_NOTICES.md and licenses/upstream/NeMo-Speech.cpp-0.1.0-LICENSE.
 use std::{
     ffi::{c_char, c_int, c_void, CStr, CString},
     fs,

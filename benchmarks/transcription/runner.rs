@@ -1,4 +1,4 @@
-//! Internal, opt-in fixture replay. Never called by the desktop application.
+//! Developer, opt-in fixture replay. Never called by the desktop application.
 use std::{collections::HashSet, fs, io::Write, path::Path, time::Instant};
 
 use serde::{Deserialize, Serialize};

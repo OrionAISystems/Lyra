@@ -1,11 +1,14 @@
 {
   "name": "lyra",
   "private": true,
+  "license": "MIT",
   "version": "0.5.13",
   "description": "Lightweight local-first Windows dictation for the Orion ecosystem",
   "type": "module",
   "scripts": {
     "bench:transcription": "cargo run --release --locked --manifest-path src-tauri/Cargo.toml --features regression-bench --example transcription-bench --",
+    "notices:generate": "node scripts/dependency-notices.mjs",
+    "notices:check": "node scripts/dependency-notices.mjs --check",
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",

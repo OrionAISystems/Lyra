@@ -75,6 +75,11 @@ jobs:
           cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
           cargo test --release --locked --manifest-path src-tauri/Cargo.toml
 
+      - name: Verify dependency attribution
+        run: |
+          cargo fetch --manifest-path src-tauri/Cargo.toml --locked --target x86_64-pc-windows-msvc
+          npm run notices:check
+
       - name: Verify signed seasonal theme fixture through Rust
         run: npm run test:themes-fixture
 

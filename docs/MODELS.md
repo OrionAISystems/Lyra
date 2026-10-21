@@ -1,5 +1,9 @@
 # Runtime and model manifest
 
+These external artifacts retain their upstream licenses; they are not relicensed
+under Lyra's MIT license. See [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)
+for attribution, source references, and downstream redistribution boundaries.
+
 ## Native runtime
 
 - Project: NVIDIA NeMo-Speech.cpp

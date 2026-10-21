@@ -19,6 +19,18 @@ if (config.bundle?.targets?.length !== 1 || config.bundle.targets[0] !== "nsis")
 if (config.bundle?.createUpdaterArtifacts !== true) {
   errors.push("bundle.createUpdaterArtifacts must remain enabled for production releases");
 }
+if (config.bundle?.license !== "MIT") {
+  errors.push("bundle.license must identify Lyra's MIT license");
+}
+for (const [source, destination] of Object.entries({
+  "../LICENSE": "LICENSE",
+  "../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md",
+  "../licenses/": "licenses/",
+})) {
+  if (config.bundle?.resources?.[source] !== destination) {
+    errors.push(`bundle.resources must preserve attribution resource ${source} as ${destination}`);
+  }
+}
 
 if (errors.length > 0) {
   console.error("Release configuration is not ready:");

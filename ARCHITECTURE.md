@@ -49,7 +49,7 @@ AudioCapture -> in-memory PCM -> TranscriptionRouter
                          \          |             /
                            result / recovery events
 
-release tag -> private CI -> changelog sync -> NSIS + Tauri-signed updater artifact -> public Lyra-Releases
+release tag -> release CI -> changelog sync -> NSIS + Tauri-signed updater artifact -> public Lyra-Releases
                                                                                      ^
                                                                          signed latest.json polling
 
@@ -94,7 +94,7 @@ Settings shortcut pills record physical key combinations on release. A bounded n
 
 The benchmark records one phrase, retains its PCM only in memory, replays it through installed eligible engines, and persists numeric scores plus environment metadata. A recommendation is informational until the user explicitly applies it.
 
-The separate internal fixture regression harness under `benchmarks/transcription` is compiled only with the `regression-bench` feature. It uses the same router and text processing without app commands, microphone capture, injection, cloud routing, or settings writes. Its local fixture files and reports are developer inputs, excluded from public release packaging. Parakeet is measured warm after a load replay; Nemotron's per-request model load is measured in isolated native workers to contain library aborts and preserve the suite report. See the benchmark README for scoring, baseline compatibility and hardware limits.
+The separate developer fixture regression harness under `benchmarks/transcription` is compiled only with the `regression-bench` feature. It uses the same router and text processing without app commands, microphone capture, injection, cloud routing, or settings writes. Its local fixture files and reports are developer inputs, excluded from public release packaging. Parakeet is measured warm after a load replay; Nemotron's per-request model load is measured in isolated native workers to contain library aborts and preserve the suite report. See the benchmark README for scoring, baseline compatibility and hardware limits.
 
 ## v0.3 settings and lifecycle contracts
 

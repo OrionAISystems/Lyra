@@ -51,6 +51,12 @@
     "targets": ["nsis"],
     "createUpdaterArtifacts": true,
     "publisher": "OrionAISystems",
+    "license": "MIT",
+    "resources": {
+      "../LICENSE": "LICENSE",
+      "../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md",
+      "../licenses/": "licenses/"
+    },
     "category": "Utility",
     "shortDescription": "Local-first Windows dictation",
     "longDescription": "Quiet, local-first dictation for the Orion ecosystem.",

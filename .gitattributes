@@ -1,0 +1,4 @@
+# Preserve upstream license text, including its original trailing whitespace.
+# Stable newlines keep content-addressed notices consistent across checkouts.
+licenses/texts/*.txt text eol=lf -whitespace
+licenses/upstream/** text eol=lf

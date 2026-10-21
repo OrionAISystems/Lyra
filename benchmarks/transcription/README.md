@@ -1,6 +1,6 @@
-# Internal transcription regression benchmark
+# Transcription regression benchmark
 
-This development tool lives with the private Lyra source so it calls the real `TranscriptionRouter`, local Parakeet backend, Nemotron streaming replay, and `process_transcription_text`. It adds no application UI. The `regression-bench` Cargo feature is off by default; its example executable is not a Tauri bundle binary. The release workflow does not enable this feature or upload these sources, fixtures, reports, or baselines to Lyra-Releases. CI tests the harness without native models; recognition runs are an explicit developer task.
+This development tool lives with the Lyra source so it calls the real `TranscriptionRouter`, local Parakeet backend, Nemotron streaming replay, and `process_transcription_text`. It adds no application UI. The `regression-bench` Cargo feature is off by default; its example executable is not a Tauri bundle binary. The release workflow does not enable this feature or upload these sources, fixtures, reports, or baselines to Lyra-Releases. CI tests the harness without native models; recognition runs are an explicit developer task.
 
 The existing in-app one-phrase microphone benchmark remains separate. It stores numeric scores but never audio; no reusable recordings were found in this checkout. This harness does not capture microphones, write app settings, download models, use credentials, call cloud recognition, or paste text. It reads installed verified artifacts from `%LOCALAPPDATA%\Lyra` (or `--root`). Native Parakeet runtime fallback is retained and recorded per trial.
 

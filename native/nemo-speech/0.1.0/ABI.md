@@ -1,5 +1,10 @@
 # NeMo-Speech.cpp ABI pin
 
+The NVIDIA upstream interface is Apache-2.0 licensed, copyright 2026 NVIDIA
+CORPORATION & AFFILIATES. Lyra adapts that interface into Rust and adds its own
+loading/lifecycle implementation. Preserve the [upstream license](../../../licenses/upstream/NeMo-Speech.cpp-0.1.0-LICENSE)
+and [third-party notices](../../../THIRD_PARTY_NOTICES.md) when redistributing.
+
 Lyra loads the official NeMo-Speech.cpp v0.1.0 Windows runtime dynamically. The Rust binding in `src-tauri/src/native_nemo.rs` mirrors the installed v1 stable C ABI rather than linking an import library at build time.
 
 - ABI header: <https://raw.githubusercontent.com/NVIDIA/NeMo-Speech.cpp/main/include/nemo_speech/asr.h>

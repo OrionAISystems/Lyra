@@ -3,6 +3,8 @@ name = "lyra"
 version = "0.5.13"
 description = "Local-first Windows dictation for Orion"
 authors = ["OrionAISystems"]
+license = "MIT"
+repository = "https://github.com/OrionAISystems/Lyra"
 edition = "2021"
 
 [features]

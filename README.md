@@ -1,5 +1,10 @@
 # Lyra
 
+MIT-licensed source for Windows dictation. See [LICENSE](LICENSE),
+[third-party notices](THIRD_PARTY_NOTICES.md), [contributing](CONTRIBUTING.md),
+and [security reporting](SECURITY.md). Source publication and redistribution
+boundaries are documented in [OPEN-SOURCE.md](docs/OPEN-SOURCE.md).
+
 Lyra is a Windows-first, tray-first dictation utility for the Orion ecosystem. A global shortcut or bar gesture captures microphone audio, local Parakeet or optional English Nemotron recognition processes it, and the final text is cleaned up and safely injected into the application that was active before recording began. With the default local-first cloud-fallback route, Lyra sends audio to OpenAI automatically if local recognition fails and an OpenAI credential is stored; it does not ask for confirmation per capture. Credentials stay in Windows Credential Manager.
 
 The repository is intentionally standalone. Lyra does not depend on Orion's gateway or shared UI package, and runtime/model artifacts are managed outside Git under `%LOCALAPPDATA%\Lyra\`.
@@ -65,13 +70,13 @@ The durable manual evidence sheet is [docs/ACCEPTANCE-V0.4.md](docs/ACCEPTANCE-V
 
 The v0.5.0 scope and review gate are in [PLAN.md](PLAN.md); local build and hands-on results belong in [docs/ACCEPTANCE-V0.5.md](docs/ACCEPTANCE-V0.5.md).
 
-The first public release is published from the private source repository to the release-only [`OrionAISystems/Lyra-Releases`](https://github.com/OrionAISystems/Lyra-Releases) repository. Installed clients use its public signed `latest.json` feed and do not need GitHub credentials.
+Official application releases are built from the source repository to the release-only [`OrionAISystems/Lyra-Releases`](https://github.com/OrionAISystems/Lyra-Releases) repository. Installed clients use its public signed `latest.json` feed and do not need GitHub credentials.
 
 To build the local installer after configuring updater signing, run `npm run tauri:build`. Authenticode signing is optional, so local and early release installers may be unsigned by Windows. The debug output under `src-tauri/target/debug` is left intact for development; release output is written under `src-tauri/target/release`.
 
 ## Architecture and roadmap
 
-The internal [transcription regression benchmark](benchmarks/transcription/README.md) replays labeled audio fixtures through the existing local pipeline, measures accuracy/timing, and compares approved baselines. It is an opt-in developer tool excluded from normal app builds and public release assets.
+The developer [transcription regression benchmark](benchmarks/transcription/README.md) replays labeled audio fixtures through the existing local pipeline, measures accuracy/timing, and compares approved baselines. It is an opt-in developer tool excluded from normal app builds and installer release assets.
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) describes boundaries and data flow.
 - [BUILD-STAGE.md](BUILD-STAGE.md) records what is complete, what is hardware-gated, and the next vertical slices.

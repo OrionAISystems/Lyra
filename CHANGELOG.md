@@ -1,6 +1,6 @@
 # Lyra changelog
 
-Lyra releases are published from the private source repository to the public [Lyra-Releases](https://github.com/OrionAISystems/Lyra-Releases) repository. The private source copy is the canonical release history; tagged builds mirror it publicly and use the current version section as their release notes.
+Lyra releases are published from the source repository to the public [Lyra-Releases](https://github.com/OrionAISystems/Lyra-Releases) repository. This source copy is the canonical release history; tagged builds mirror it publicly and use the current version section as their release notes.
 
 ## [0.5.13] - 2026-10-18
 
